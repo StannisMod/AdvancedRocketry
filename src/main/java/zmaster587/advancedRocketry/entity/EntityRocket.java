@@ -1037,8 +1037,10 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         float gravMult = DimensionManager.getInstance()
                 .getDimensionProperties(this.world.provider.getDimension())
                 .getGravitationalMultiplier();
-        // Per-tick gravity decrement scaled to existing space-flight convention.
-        double gravity = 0.04 * gravMult;
+        // Per-tick gravity decrement: vanilla's own, so a rocket in free flight falls at the rate a
+        // player and a tier-2 ship do. It used to be 0.04 — half of vanilla — on no stated grounds
+        // beyond "the existing space-flight convention".
+        double gravity = StatsRocket.GRAVITY_BLOCKS_PER_TICK_SQUARED * gravMult;
 
         // Thrust authority comes from the SAME classic stat the launch path uses:
         // getAcceleration(g) is the net per-tick climb at full thrust and is
@@ -1189,7 +1191,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         float gravMult = DimensionManager.getInstance()
                 .getDimensionProperties(this.world.provider.getDimension())
                 .getGravitationalMultiplier();
-        double gravity = 0.04 * gravMult;
+        double gravity = StatsRocket.GRAVITY_BLOCKS_PER_TICK_SQUARED * gravMult;
 
         // Climb authority is exactly the classic ascent acceleration: > 0 means
         // the rocket can gain altitude at full vertical thrust (i.e. TWR > 1).
@@ -2106,7 +2108,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                     //If out of fuel or descending then accelerate downwards
                     if (isInOrbit() || !burningFuel) {
                         //this.motionY = Math.min(this.motionY - 0.001, 1);
-                        this.motionY = this.motionY - 0.1f * 1 / 20f * 9.81 * (DimensionManager.getInstance().getDimensionProperties(this.world.provider.getDimension()).getGravitationalMultiplier());
+                        // Descent under gravity alone. Was `0.1f * 1/20f * 9.81` = 0.04905, which is
+                        // an honest 9.81 scaled by a tenth of a tick for no reason anyone recorded;
+                        // it now uses the one constant every falling body in the mod shares.
+                        this.motionY = this.motionY - StatsRocket.GRAVITY_BLOCKS_PER_TICK_SQUARED
+                                * DimensionManager.getInstance()
+                                        .getDimensionProperties(this.world.provider.getDimension())
+                                        .getGravitationalMultiplier();
                         motionY = Math.max(-2, motionY);
                         this.velocityChanged = true;
                     } else {

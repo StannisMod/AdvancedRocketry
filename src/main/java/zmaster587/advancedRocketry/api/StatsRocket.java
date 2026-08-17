@@ -36,8 +36,22 @@ public class StatsRocket {
     /** Standard gravity, m/s². One unit of {@code gravitationalMultiplier} is one standard gravity. */
     public static final float STANDARD_GRAVITY = 9.81f;
 
-    /** Game ticks per second; the step the per-tick accelerations below are expressed over. */
-    private static final float TICKS_PER_SECOND = 20f;
+    /**
+     * Free-fall acceleration in blocks per tick squared, at one standard gravity: vanilla's own
+     * {@code motionY -= 0.08} (`EntityLivingBase.travel`).
+     *
+     * <p>This is 9.81 m/s² and not a stronger gravity, because one tick is <b>90.3 ms</b>, not 50:
+     * {@code 0.08 / 0.0903² = 9.81}. Four unrelated vanilla constants agree with that tick length —
+     * terminal velocity 3.92 blocks/tick = 43.4 m/s, the jump impulse 0.42 blocks/tick = 4.65 m/s,
+     * walking 2.39 m/s, sprinting 3.11 m/s — so the game is SI-consistent at one metre per block and
+     * only its SECOND differs from ours. Every derived readout in m/s² converts by dividing a
+     * per-tick quantity by 0.0903², never by 0.05².</p>
+     *
+     * <p>A rocket, a player and a tier-2 ship all fall at this rate. They did not before: the classic
+     * ascent used 0.05, the classic descent 0.04905, free flight 0.04 and a ship 0.0245, so a ship
+     * descended out from under the crew standing on it.</p>
+     */
+    public static final float GRAVITY_BLOCKS_PER_TICK_SQUARED = 0.08f;
 
     /**
      * The newtons that one unit of the pre-3.0.0 dimensionless thrust rating maps onto
@@ -253,16 +267,17 @@ public class StatsRocket {
     }
 
     /**
-     * Net climb per tick at full thrust, in the units the entity adds to its motion.
-     * The net specific force {@code (thrust - weight) / mass} is expressed in standard
-     * gravities and then stepped once per tick.
+     * Net climb per tick at full thrust, in blocks per tick squared — the units the entity adds to its
+     * motion. The net specific force {@code (thrust - weight) / mass} is expressed in standard
+     * gravities and then scaled by what one standard gravity is worth per tick, so a rocket at TWR 0
+     * falls at exactly the rate a player does.
      */
     private float netClimbPerTick(float massKg, float gravitationalMultiplier) {
         if (massKg <= 0) {
             return 0;
         }
         float netNewtons = getThrust() - weightNewtons(massKg, gravitationalMultiplier);
-        return netNewtons / massKg / STANDARD_GRAVITY / TICKS_PER_SECOND;
+        return netNewtons / massKg / STANDARD_GRAVITY * GRAVITY_BLOCKS_PER_TICK_SQUARED;
     }
 
     public float getAcceleration(float gravitationalMultiplier) {

@@ -81,7 +81,18 @@ public class VSConfig extends VSConfigTemplate {
     public static double gravityVecX = 0;
 
     @Name("Gravity Vector Y")
-    public static double gravityVecY = -9.8;
+    // -32, and neither this number nor 9.81 is the wrong one. Declare 1 block = 1 m and 1 tick =
+    // 90.3 ms, and vanilla's own gravity — `motionY -= 0.08` once per tick, i.e. 0.08 blocks/tick² —
+    // IS 9.81 m/s². Four independent vanilla constants agree with that tick length: terminal velocity
+    // 3.92 blocks/tick = 43.4 m/s, the jump impulse 0.42 blocks/tick = 4.65 m/s, walking 2.39 m/s,
+    // sprinting 3.11 m/s. Minecraft is SI-consistent at one metre per block; its second is simply
+    // 0.553 of a wall second.
+    //
+    // This field is spent against a timestep measured in WALL seconds (physSpeedMultiplier /
+    // targetTps), so the value that makes a ship fall at 0.08 blocks/tick² — exactly a player's rate
+    // — is 0.08 * 400 = 32. Left at 9.8 a ship fell 3.3x slower than the player standing on its deck,
+    // which is a ship that descends out from under its own crew.
+    public static double gravityVecY = -32;
 
     @Name("Gravity Vector Z")
     public static double gravityVecZ = 0;

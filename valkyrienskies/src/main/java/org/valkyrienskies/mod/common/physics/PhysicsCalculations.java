@@ -18,7 +18,11 @@ import java.lang.Math;
 import java.util.*;
 
 public class PhysicsCalculations {
-    public static final double DRAG_CONSTANT = 0.99;
+    // Per GAME tick, matching vanilla's own `motionY *= 0.98` exactly: paired with a gravity of -32
+    // this puts a ship's terminal velocity at 3.92 blocks/tick, which is a player's. At the upstream
+    // 0.99 a ship kept accelerating to 7.92 blocks/tick and outran anyone standing on it in a long
+    // descent, so matching the acceleration alone would not have been enough.
+    public static final double DRAG_CONSTANT = 0.98;
     public static final double EPSILON = 1.0E-8;
     private final PhysicsObject parent;
     private final WorldPhysicsCollider worldCollision;

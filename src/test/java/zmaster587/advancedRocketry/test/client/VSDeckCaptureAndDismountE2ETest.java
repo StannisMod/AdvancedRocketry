@@ -992,7 +992,12 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         bot().waitTicks(20);
 
         dismountByRealKey();
-        bot().waitTicks(6); // let the dismount capture settle before the deck starts moving
+        // Wait for the body to SETTLE onto the deck before moving anything. Measured 2026-08-17: at 6
+        // ticks it was still descending the last third of a block of its dismount, and that settle -
+        // not the deck - was the whole of the 0.33 "relative sink" the first three runs reported. A
+        // measurement that starts mid-settle attributes the arrangement's own transient to the subject.
+        bot().waitTicks(40);
+        double restingGap = sampleSupport().clientY - sampleSupport().shipY;
 
         // The deck must actually descend, and it has to be COMMANDED to. Measured 2026-08-17: simply
         // standing up does NOT drop the ship on this build - the first run of this scenario read
@@ -1016,14 +1021,23 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         String tr = supportTrace(rows);
         double shipDrop = rows[0].shipY - rows[SUPPORT_SAMPLES - 1].shipY;
         double sink = relativeSink(rows[0], rows[SUPPORT_SAMPLES - 1]);
-        System.out.println("[decksupport] falling shipDrop=" + shipDrop + " relativeSink=" + sink
+        System.out.println("[decksupport] falling restingGap=" + restingGap + " shipDrop=" + shipDrop
+                + " relativeSink=" + sink
                 + " ticksWithoutSupport=" + ticksWithoutSupport + "/" + SUPPORT_SAMPLES);
         System.out.println("[decksupport] falling trace=" + tr);
 
-        // Arrangement gate FIRST: without a deck that actually dropped, a green here means nothing.
-        Assume.assumeTrue("the deck never dropped, so this run says nothing about a falling deck "
-                + "(shipDrop=" + shipDrop + " over " + SUPPORT_SAMPLES + " ticks) trace=" + tr,
-                shipDrop > 0.5);
+        // Arrangement gate FIRST, and it has to demand a SUSTAINED descent, not merely that the deck
+        // moved at some point. Measured 2026-08-17 across three attempts: `force-vel-by-id` loses to
+        // the station-keeping hold, which returns the ship to the same Y within ~2 ticks, so the deck
+        // makes a brief excursion and settles. A window that only checks total displacement passes on
+        // that excursion and then reports the body's lag while it unwinds as though it were a gravity
+        // effect - which is exactly what the first three runs of this scenario did.
+        double lateDrop = rows[SUPPORT_SAMPLES - 6].shipY - rows[SUPPORT_SAMPLES - 1].shipY;
+        Assume.assumeTrue("the deck did not sustain a descent, so this run says nothing about a "
+                + "falling deck: it fell " + shipDrop + " blocks in total but only " + lateDrop
+                + " over the last 5 sampled ticks, i.e. it settled back onto its hold. A ship with no "
+                + "flight computer - hence no hold at all - is the arrangement this needs. trace=" + tr,
+                lateDrop > 0.05);
         assertTrue("the support probe never reported, so the client's capture decision was never "
                 + "reached and this test measured its own arrangement: trace=" + tr,
                 rows[SUPPORT_SAMPLES - 1].probeReach >= 0.0);
