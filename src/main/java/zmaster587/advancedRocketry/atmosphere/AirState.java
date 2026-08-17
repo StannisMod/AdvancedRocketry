@@ -17,6 +17,11 @@ import zmaster587.advancedRocketry.api.IAtmosphere;
  * <p>
  * Nitrogen is inert: nothing produces or consumes it. It exists so that the oxygen fraction is a
  * quantity a governor can act on rather than a synonym for "how much gas is in the room".
+ * <p>
+ * <b>Air is also a heat reservoir.</b> It carries a temperature, and gas arriving from anywhere else
+ * mixes into it by the calorimeter rule rather than replacing it. That is what makes a compartment
+ * something a machine can warm and a chiller can draw on, and it is why the temperature lives HERE
+ * rather than beside the gas: the air is the body that has it.
  */
 public class AirState {
 
@@ -29,11 +34,27 @@ public class AirState {
     private int nitrogen;
     private int oxygen;
     private int carbonDioxide;
+    /**
+     * Kelvin. Held as thousandths so that a mix of two zones does not lose a degree to integer
+     * truncation every time it happens — a room re-breathed a hundred times a minute would otherwise
+     * cool by arithmetic alone.
+     */
+    private int temperatureMilliK;
 
     public AirState(int nitrogen, int oxygen, int carbonDioxide) {
+        this(nitrogen, oxygen, carbonDioxide, ambientKelvin() * 1000);
+    }
+
+    public AirState(int nitrogen, int oxygen, int carbonDioxide, int temperatureMilliK) {
         this.nitrogen = Math.max(0, nitrogen);
         this.oxygen = Math.max(0, oxygen);
         this.carbonDioxide = Math.max(0, carbonDioxide);
+        this.temperatureMilliK = Math.max(0, temperatureMilliK);
+    }
+
+    /** What air sits at when nothing has happened to it — the cabin the rest of the mod reads. */
+    public static int ambientKelvin() {
+        return Math.max(1, ARConfiguration.getCurrentConfig().shipHeatAmbientKelvin);
     }
 
     /**
@@ -123,12 +144,81 @@ public class AirState {
         return taken;
     }
 
-    public void addNitrogen(int amount) {
+    /**
+     * The temperature of this zone's air, in kelvin.
+     * <p>
+     * A zone holding no gas has none of its own and reports the ambient the rest of the system reads:
+     * there is no body there to be hot, and a vacuum that remembered what it held before it was opened
+     * would hand the next thing that looked at it a number about a room that no longer exists.
+     */
+    public double getTemperatureKelvin() {
+        if (getTotalPressure() <= 0)
+            return ambientKelvin();
+        return temperatureMilliK / 1000.0D;
+    }
+
+    /** The same reading in thousandths, which is what a probe and the NBT deal in. */
+    public int getTemperatureMilliK() {
+        return getTotalPressure() <= 0 ? ambientKelvin() * 1000 : temperatureMilliK;
+    }
+
+    /**
+     * How much heat this zone's air absorbs per kelvin, given how many blocks it fills.
+     * <p>
+     * Proportional to pressure AND volume, because those two are what say how much gas is actually
+     * there. A half-pressurised room therefore holds half the heat and swings twice as fast for the
+     * same energy, which is the physics rather than a rule anyone had to add. The unit is the heat
+     * unit per kelvin — the same currency a coolant loop's capacity is quoted in, because there is
+     * only one.
+     *
+     * @param volumeBlocks the zone's size, as the flood-fill measured it
+     */
+    public long getHeatCapacity(int volumeBlocks) {
+        long perBlockAtOneAtm = Math.max(0, ARConfiguration.getCurrentConfig().lifeSupportAirHeatCapacity);
+        if (perBlockAtOneAtm <= 0)
+            return 0L;
+        return (long) getTotalPressure() * Math.max(0, volumeBlocks) * perBlockAtOneAtm / ONE_ATM;
+    }
+
+    /**
+     * Nitrogen arriving at a stated temperature, mixed in by the calorimeter rule.
+     * <p>
+     * The temperature is an ARGUMENT and there is deliberately no overload without it. Gas coming out
+     * of a tank or down a duct from somewhere else is at its own temperature, and a signature that let
+     * a caller omit it would mix silently at the room's own reading — which is the same class of
+     * defect as a machine being allowed to declare how much heat it removes. A caller that really is
+     * moving the room's own air says so by passing {@link #getTemperatureKelvin()}.
+     */
+    public void addNitrogen(int amount, double incomingKelvin) {
+        mixIn(Math.max(0, amount), incomingKelvin);
         nitrogen += Math.max(0, amount);
     }
 
-    public void addOxygen(int amount) {
+    public void addOxygen(int amount, double incomingKelvin) {
+        mixIn(Math.max(0, amount), incomingKelvin);
         oxygen += Math.max(0, amount);
+    }
+
+    /**
+     * `T = (C_here·T_here + C_in·T_in) / (C_here + C_in)` — two bodies in contact end up at one
+     * temperature, weighted by how much of each there is.
+     * <p>
+     * Weighted by PRESSURE alone rather than by the full capacity, which is the same answer: the
+     * volume and the per-block constant are common to both sides of the fraction and cancel. Gas
+     * arriving into a vacuum simply brings its own temperature, which is the degenerate case of the
+     * same formula rather than a branch anyone had to think about.
+     */
+    private void mixIn(int amountArriving, double incomingKelvin) {
+        if (amountArriving <= 0)
+            return;
+        int here = getTotalPressure();
+        if (here <= 0) {
+            temperatureMilliK = (int) Math.max(0, Math.round(incomingKelvin * 1000.0D));
+            return;
+        }
+        double mixed = (here * getTemperatureKelvin() + (double) amountArriving * incomingKelvin)
+                / (here + amountArriving);
+        temperatureMilliK = (int) Math.max(0, Math.round(mixed * 1000.0D));
     }
 
     /**
@@ -173,14 +263,20 @@ public class AirState {
         nbt.setInteger("n2", nitrogen);
         nbt.setInteger("o2", oxygen);
         nbt.setInteger("co2", carbonDioxide);
+        nbt.setInteger("airK", temperatureMilliK);
     }
 
     public static AirState readFromNBT(NBTTagCompound nbt) {
-        return new AirState(nbt.getInteger("n2"), nbt.getInteger("o2"), nbt.getInteger("co2"));
+        // A zone written before air had a temperature reads back 0, which is not a temperature any
+        // room was ever at. Absent means ambient, not absolute zero.
+        int written = nbt.getInteger("airK");
+        return new AirState(nbt.getInteger("n2"), nbt.getInteger("o2"), nbt.getInteger("co2"),
+                written > 0 ? written : ambientKelvin() * 1000);
     }
 
     @Override
     public String toString() {
-        return "AirState[n2=" + nitrogen + ", o2=" + oxygen + ", co2=" + carbonDioxide + "]";
+        return "AirState[n2=" + nitrogen + ", o2=" + oxygen + ", co2=" + carbonDioxide
+                + ", K=" + getTemperatureKelvin() + "]";
     }
 }

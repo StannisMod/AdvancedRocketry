@@ -10861,6 +10861,10 @@ public class TestProbeCommand extends CommandBase {
                     // heats slower has to be able to CHANGE the capacity, or it is asserting a
                     // tuned number rather than the relation between capacity and temperature.
                     "shipHeat",
+                    // What air and coolant sit at with nothing in them. Read far more often than
+                    // written: a test that arranges a zone hotter than the room has to know what the
+                    // room IS, and hard-coding it would restate a tuned number.
+                    "shipHeatAmbientKelvin",
                     "shipHeatPipeCapacity",
                     "shipHeatAccumulatorCapacity",
                     "shipHeatWasteFraction",
@@ -10881,7 +10885,11 @@ public class TestProbeCommand extends CommandBase {
                     // this one. The attenuation is here for the opposite reason: the clause is that no
                     // configuration can reach total immunity, so the test has to be able to ASK for it.
                     "shipHeatStarFluxReferenceKelvin",
-                    "shipHeatShieldAttenuation"));
+                    "shipHeatShieldAttenuation",
+                    // What a block of air holds per kelvin. A mixing test asserts a RELATION between
+                    // two zones' capacities, and it has to be able to switch the reservoir off
+                    // entirely to show that the relation is what carries the result.
+                    "lifeSupportAirHeatCapacity"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -16985,6 +16993,8 @@ public class TestProbeCommand extends CommandBase {
      *   "airO2": &lt;int&gt;,               //   -1 means the position is in no zone at all
      *   "airCO2": &lt;int&gt;,
      *   "airPressure": &lt;int&gt;,          // their sum in hundredths of an atm (100 = 1.00 atm)
+     *   "airTempMilliK": &lt;int&gt;,        // the zone air's temperature, thousandths of a kelvin
+     *   "airHeatCapacity": &lt;long&gt;,     // heat units per kelvin: pressure x volume, the mixing weight
      *   "hasFluid": true|false,        // private TileOxygenVent.hasFluid
      *   "fluidAmount": &lt;int&gt;,          // tank contents
      *   "energyStored": &lt;int&gt;
@@ -16992,10 +17002,13 @@ public class TestProbeCommand extends CommandBase {
      * </pre>
      */
     private void handleVent(MinecraftServer server, ICommandSender sender, String[] args) {
-        // /artest vent setair <dim> <x> <y> <z> <n2> <o2> <co2> — overwrite the gas contents of
-        // the zone containing this position. Nothing in production can put a chosen amount of CO2
-        // into a room short of parking crew in it for minutes, so a test that wants to drive the
-        // regeneration path needs this the same way it needs `energy inject`.
+        // /artest vent setair <dim> <x> <y> <z> <n2> <o2> <co2> [milliK] — overwrite the gas
+        // contents of the zone containing this position, and optionally its TEMPERATURE. Nothing in
+        // production can put a chosen amount of CO2 into a room short of parking crew in it for
+        // minutes, so a test that wants to drive the regeneration path needs this the same way it
+        // needs `energy inject`. The temperature is optional and defaults to ambient: a mixing test
+        // has to be able to arrange two zones that genuinely differ, and no production path sets a
+        // compartment's temperature directly.
         if (args.length >= 8 && "setair".equalsIgnoreCase(args[0])) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int x = parseIntOr(args[2], 0);
@@ -17020,9 +17033,13 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"no atmosphere handler for dim\"}");
                 return;
             }
+            zmaster587.advancedRocketry.atmosphere.AirState written =
+                    args.length >= 9
+                            ? new zmaster587.advancedRocketry.atmosphere.AirState(n2, o2, co2,
+                                    parseIntOr(args[8], 0))
+                            : new zmaster587.advancedRocketry.atmosphere.AirState(n2, o2, co2);
             boolean ok = handler.setAirState(
-                    (zmaster587.advancedRocketry.api.util.IBlobHandler) tile,
-                    new zmaster587.advancedRocketry.atmosphere.AirState(n2, o2, co2));
+                    (zmaster587.advancedRocketry.api.util.IBlobHandler) tile, written);
             if (ok)
                 handler.refreshDerivedAtmosphereAt(new BlockPos(x, y + 1, z));
             send(sender, "{\"ok\":" + ok + "}");
@@ -17228,7 +17245,8 @@ public class TestProbeCommand extends CommandBase {
 
         // Gas contents of the zone this vent anchors. Reported as -1 where the position is in no
         // zone at all, so a caller can tell "no zone" from "a zone holding nothing".
-        int airN2 = -1, airO2 = -1, airCo2 = -1, airPressure = -1;
+        int airN2 = -1, airO2 = -1, airCo2 = -1, airPressure = -1, airTempMilliK = -1;
+        long airHeatCapacity = -1L;
         // "zone" when the position is in a live zone, "none" otherwise. This field describes the
         // POSITION fields below and nothing else: -1 has meant "in no zone" since INV-ATM-19 was
         // pinned, and a probe may not quietly widen what an existing field answers. The vent's own
@@ -17247,6 +17265,10 @@ public class TestProbeCommand extends CommandBase {
                 airO2 = air.getOxygen();
                 airCo2 = air.getCarbonDioxide();
                 airPressure = air.getPressureCentiAtm();
+                airTempMilliK = air.getTemperatureMilliK();
+                // The zone's own volume decides its capacity, so the readout has to ask the handler
+                // for it rather than report a figure per block that no test could compare.
+                airHeatCapacity = air.getHeatCapacity(handler.getBlobSizeAt(new BlockPos(x, y + 1, z)));
             }
         }
 
@@ -17283,6 +17305,11 @@ public class TestProbeCommand extends CommandBase {
         out.append(",\"airCO2\":").append(airCo2);
         out.append(",\"airPressure\":").append(airPressure);
         out.append(",\"airSource\":\"").append(airSource).append('"');
+        // Air as a RESERVOIR: what it is at, and how much it takes to move it. The capacity is the
+        // half a mixing test needs, because two zones at the same pressure and different volumes mix
+        // by their capacities and would otherwise look like they should meet in the middle.
+        out.append(",\"airTempMilliK\":").append(airTempMilliK);
+        out.append(",\"airHeatCapacity\":").append(airHeatCapacity);
         // The gases this VENT holds, independent of whether its position resolves to a zone. While
         // a breached room is losing its air the graph is already empty, so the position fields
         // above say -1 and only these can see the loss happening. Zeros once it is vacuum, which is

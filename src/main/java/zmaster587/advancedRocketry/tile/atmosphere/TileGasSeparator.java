@@ -150,14 +150,19 @@ public class TileGasSeparator extends TileInventoriedRFConsumerTank implements I
         if (available <= 0)
             return;
 
+        // Gas out of a tank arrives at the temperature the tank has been sitting at, not at the
+        // room's. Venting a bottle into a hot compartment therefore cools it a little, which is not a
+        // mechanic anyone added — it is what the calorimeter rule says once the gas has to declare a
+        // temperature at all.
+        double fromTheTank = AirState.ambientKelvin();
         if (held.getFluid() == AdvancedRocketryFluids.fluidOxygen) {
             int admitted = Math.min(available, air.oxygenHeadroom());
             if (admitted <= 0)
                 return;
-            air.addOxygen(admitted);
+            air.addOxygen(admitted, fromTheTank);
             drain(volumeFor(admitted, cell), true);
         } else if (held.getFluid() == AdvancedRocketryFluids.fluidNitrogen) {
-            air.addNitrogen(available);
+            air.addNitrogen(available, fromTheTank);
             drain(volumeFor(available, cell), true);
         }
     }

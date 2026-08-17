@@ -269,6 +269,8 @@ public class ARConfiguration {
     @ConfigProperty
     public int lifeSupportRespirationRate;
     @ConfigProperty
+    public int lifeSupportAirHeatCapacity;
+    @ConfigProperty
     public int lifeSupportRecirculatorRate;
     @ConfigProperty
     public int lifeSupportRecirculatorPower;
@@ -565,6 +567,7 @@ public class ARConfiguration {
         arConfig.lifeSupportMinPartialO2 = config.get(OXYGEN, "lifeSupportMinPartialO2", 160000, "Oxygen partial pressure below which a zone stops being breathable, in millionths of an atmosphere (210000 is sea-level air).", 0, AirState.ONE_ATM).getInt();
         arConfig.lifeSupportMaxPartialO2 = config.get(OXYGEN, "lifeSupportMaxPartialO2", 300000, "Oxygen partial pressure above which a zone becomes toxic and fire-prone, in millionths of an atmosphere.", 0, AirState.ONE_ATM).getInt();
         arConfig.lifeSupportRespirationRate = config.get(OXYGEN, "lifeSupportRespirationRate", 2000, "Oxygen a single crew member turns into CO2 each second, in millionths of an atmosphere times the zone volume in blocks. Larger rooms therefore last proportionally longer.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.lifeSupportAirHeatCapacity = config.get(OXYGEN, "lifeSupportAirHeatCapacity", 40, "How much heat one block of air at one atmosphere absorbs per kelvin. This is what makes a compartment a heat reservoir rather than an empty space: a big pressurised room warms slowly and holds the warmth, a small or half-pressurised one swings fast, and a vacuum holds nothing at all. Set it to 0 and air stops carrying heat, which leaves every zone reading ambient forever.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportRecirculatorRate = config.get(OXYGEN, "lifeSupportRecirculatorRate", 6000, "CO2 a single recirculator turns back into oxygen each second, in millionths of an atmosphere. At the default it keeps up with three crew in a room of any size.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportRecirculatorPower = config.get(OXYGEN, "lifeSupportRecirculatorPower", 400, "Power a recirculator draws per operation. Reversing combustion is endothermic: the energy cost is the point, not a tax.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportCarbonPerDust = config.get(OXYGEN, "lifeSupportCarbonPerDust", 60000, "CO2 that must be regenerated before one carbon dust is produced, in millionths of an atmosphere. At the defaults a recirculator running flat out yields a dust every ten seconds.", 1, Integer.MAX_VALUE).getInt();
