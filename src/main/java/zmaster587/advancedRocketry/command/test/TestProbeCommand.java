@@ -211,6 +211,9 @@ public class TestProbeCommand extends CommandBase {
                 case "subnet":
                     handleSubsystemNetwork(server, sender, tail(args));
                     break;
+                case "heat":
+                    handleHeat(server, sender, tail(args));
+                    break;
                 case "gascharge":
                     handleGasCharge(server, sender, tail(args));
                     break;
@@ -16678,6 +16681,60 @@ public class TestProbeCommand extends CommandBase {
                 : Math.round(heatState.getTemperatureKelvin() * 1000.0D));
         out.append('}');
         send(sender, out.toString());
+    }
+
+    // Coolant-loop block probe -----------------------------------------
+
+    /**
+     * {@code /artest heat set|read <dim> <x> <y> <z> [amount]} — the energy written down on ONE
+     * block of a coolant loop.
+     *
+     * <p>Deliberately per BLOCK, where {@code subnet info heat} answers per LOOP. That is the split
+     * the design makes: a loop is the thing with a temperature, and a block is the thing with a
+     * name and therefore the thing that gets saved. A test about persistence has to address the
+     * side that persists, and reading the loop would not distinguish "the energy came back from the
+     * blocks" from "the loop happened to be re-derived".</p>
+     *
+     * <p>{@code set} goes through the tile's own {@code setStoredHeat}, which is the same call the
+     * per-tick physics makes — the probe supplies a starting state, it does not implement one.</p>
+     *
+     * <pre>
+     * {"ok":true,"isLoopBlock":true,"heatStored":4530,"heatCapacity":20}
+     * </pre>
+     */
+    private void handleHeat(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5
+                || !("set".equalsIgnoreCase(args[0]) || "read".equalsIgnoreCase(args[0]))) {
+            send(sender, "{\"error\":\"unknown heat subcommand — try set <dim> <x> <y> <z> <amount>"
+                    + " | read <dim> <x> <y> <z>\"}");
+            return;
+        }
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        net.minecraft.tileentity.TileEntity tile = world.getTileEntity(pos);
+        // Absence is a VALUE here, with the quantities zero beside it: "there is no loop block at
+        // this position" and "the loop block here is holding nothing" are both real answers and a
+        // test must be able to parse either without the reply changing shape.
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.heat.TileHeatLoopBlock)) {
+            send(sender, "{\"ok\":true,\"isLoopBlock\":false,\"heatStored\":0,\"heatCapacity\":0}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.heat.TileHeatLoopBlock loopBlock =
+                (zmaster587.advancedRocketry.tile.heat.TileHeatLoopBlock) tile;
+        if ("set".equalsIgnoreCase(args[0])) {
+            if (args.length < 6) {
+                send(sender, "{\"error\":\"usage: set <dim> <x> <y> <z> <amount>\"}");
+                return;
+            }
+            loopBlock.setStoredHeat(parseLongOr(args[5], 0L));
+        }
+        send(sender, "{\"ok\":true,\"isLoopBlock\":true,\"heatStored\":" + loopBlock.getStoredHeat()
+                + ",\"heatCapacity\":" + loopBlock.getHeatCapacity() + "}");
     }
 
     // Gas separator state probe ---------------------------------------

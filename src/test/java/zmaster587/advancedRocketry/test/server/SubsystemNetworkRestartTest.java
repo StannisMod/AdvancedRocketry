@@ -37,6 +37,9 @@ public class SubsystemNetworkRestartTest {
     private static final Pattern MEMBERS = Pattern.compile("\"members\":(-?\\d+)");
     private static final Pattern PRIORITY = Pattern.compile("\"priority\":(-?\\d+)");
     private static final Pattern BIAS = Pattern.compile("\"resistanceBias\":([0-9.]+)");
+    private static final Pattern HEAT_STORED = Pattern.compile("\"heatStored\":(-?\\d+)");
+    private static final Pattern HEAT_CAPACITY = Pattern.compile("\"heatCapacity\":(-?\\d+)");
+    private static final Pattern TEMPERATURE = Pattern.compile("\"temperatureMilliK\":(-?\\d+)");
 
     /** One chunk, so a single probe pulls every node of both networks back into memory. */
     private static final int Y = 64;
@@ -49,8 +52,15 @@ public class SubsystemNetworkRestartTest {
     private static final int SHIELD_SINK = VENT + 6;
     private static final int SHIELD_CONSOLE = VENT + 7;
 
+    /** The coolant loop sits in the same chunk, past the shield run. */
+    private static final int PIPE_A = VENT + 9;
+    private static final int PIPE_B = VENT + 10;
+    private static final int ACCUMULATOR = VENT + 11;
+
     private static final int ZONE_PRIORITY = 1;
     private static final String RESISTANCE_BIAS = "0.75";
+    /** Not a round number, so a value that came back by coincidence would not look like a pass. */
+    private static final long STORED_HEAT = 4531L;
 
     private Path workDir;
     private RealDedicatedServerHarness firstBoot;
@@ -145,6 +155,83 @@ public class SubsystemNetworkRestartTest {
                 Double.parseDouble(stringOf(BIAS, consoleAfter, "bias (boot 2)")), 1.0e-6);
     }
 
+    /**
+     * The third case, and the one that is neither of the other two: a coolant loop's ENERGY.
+     *
+     * <p>It is not a setting — nobody typed it — and it is not derivable from the blocks either, so
+     * neither half of the test above covers it. It is written down per block for exactly the reason
+     * the settings are: a loop has no durable name and is rebuilt from the world, while a block has
+     * its position. This pins that decision, which is otherwise only an argument.</p>
+     *
+     * <p>Read per BLOCK first and per LOOP second, deliberately. The loop's figure alone could not
+     * tell energy that came back from the blocks from energy that was never gone.</p>
+     */
+    @Test
+    public void aCoolantLoopsEnergyComesBackFromItsBlocks() throws Exception {
+        // ─────── Boot 1: a loop, and some energy in it ───────
+        firstBoot = RealDedicatedServerHarness.startWith(workDir, /*cleanupOnClose=*/false);
+
+        place(firstBoot, "advancedrocketry:heatPipe", PIPE_A);
+        place(firstBoot, "advancedrocketry:heatPipe", PIPE_B);
+        place(firstBoot, "advancedrocketry:heatAccumulator", ACCUMULATOR);
+
+        String written = exec(firstBoot,
+                "artest heat set 0 " + PIPE_A + " " + Y + " " + Z + " " + STORED_HEAT);
+        assertTrue("premise: the position must hold a loop block: " + written,
+                written.contains("\"isLoopBlock\":true"));
+        assertEquals("premise: the block must accept the energy: " + written,
+                STORED_HEAT, longOf(HEAT_STORED, written, "block heat (boot 1)"));
+
+        // One tick, so the loop finds itself and spreads the energy over its members at one
+        // temperature — which is the state a real ship would be saved in, not a lump in one pipe.
+        exec(firstBoot, "artest subnet solve heat 0 1");
+        String loopBefore = subnetHeat(firstBoot, PIPE_A);
+        long loopHeatBefore = longOf(HEAT_STORED, loopBefore, "loop heat (boot 1)");
+        long loopCapacityBefore = longOf(HEAT_CAPACITY, loopBefore, "loop capacity (boot 1)");
+        long temperatureBefore = longOf(TEMPERATURE, loopBefore, "temperature (boot 1)");
+        assertEquals("premise: all three blocks must be one loop: " + loopBefore,
+                3, intOf(MEMBERS, loopBefore, "members (boot 1)"));
+        assertEquals("premise: the loop must hold exactly what was put in it: " + loopBefore,
+                STORED_HEAT, loopHeatBefore);
+
+        firstBoot.close();
+        firstBoot = null;
+
+        // ─────── Boot 2: same world, and the loop is a fresh object ───────
+        secondBoot = RealDedicatedServerHarness.startWith(workDir, /*cleanupOnClose=*/true);
+
+        String forced = exec(secondBoot, "artest chunk forceload 0 " + (PIPE_A >> 4) + " " + (Z >> 4));
+        assertTrue("chunk forceload failed: " + forced, forced.contains("\"ok\":true"));
+
+        // The blocks first: this is where the energy actually was, and the only place it could have
+        // come from — nothing saved the loop.
+        long fromBlocks = 0L;
+        for (int x : new int[]{PIPE_A, PIPE_B, ACCUMULATOR}) {
+            String block = exec(secondBoot, "artest heat read 0 " + x + " " + Y + " " + Z);
+            assertTrue("the loop block at " + x + " must be back: " + block,
+                    block.contains("\"isLoopBlock\":true"));
+            fromBlocks += longOf(HEAT_STORED, block, "block heat at " + x + " (boot 2)");
+        }
+        assertEquals("every heat unit must come back off the blocks that were holding it — this is "
+                        + "the whole reason the energy lives on blocks and not in the network",
+                STORED_HEAT, fromBlocks);
+
+        exec(secondBoot, "artest subnet solve heat 0 1");
+        String loopAfter = subnetHeat(secondBoot, PIPE_A);
+        assertEquals("the loop must be REBUILT with the same membership — nothing persisted it: "
+                + loopAfter, 3, intOf(MEMBERS, loopAfter, "members (boot 2)"));
+        assertEquals("with the same capacity, because the same blocks are back: " + loopAfter,
+                loopCapacityBefore, longOf(HEAT_CAPACITY, loopAfter, "loop capacity (boot 2)"));
+        assertEquals("and holding the same energy: " + loopAfter,
+                loopHeatBefore, longOf(HEAT_STORED, loopAfter, "loop heat (boot 2)"));
+        assertEquals("so a player finds the ship exactly as hot as they left it: " + loopAfter,
+                temperatureBefore, longOf(TEMPERATURE, loopAfter, "temperature (boot 2)"));
+    }
+
+    private String subnetHeat(RealDedicatedServerHarness harness, int x) throws Exception {
+        return exec(harness, "artest subnet info heat 0 " + x + " " + Y + " " + Z);
+    }
+
     private void place(RealDedicatedServerHarness harness, String block, int x) throws Exception {
         String resp = exec(harness, "artest place 0 " + x + " " + Y + " " + Z + " " + block);
         assertTrue(block + " place failed at " + x + ": " + resp, resp.contains("\"placed\":true"));
@@ -160,6 +247,10 @@ public class SubsystemNetworkRestartTest {
 
     private static int intOf(Pattern pattern, String response, String label) {
         return Integer.parseInt(stringOf(pattern, response, label));
+    }
+
+    private static long longOf(Pattern pattern, String response, String label) {
+        return Long.parseLong(stringOf(pattern, response, label));
     }
 
     private static String stringOf(Pattern pattern, String response, String label) {
