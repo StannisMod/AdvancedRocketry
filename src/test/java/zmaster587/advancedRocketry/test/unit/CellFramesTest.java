@@ -8,6 +8,7 @@ import zmaster587.advancedRocketry.space.CellFrames;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -103,5 +104,61 @@ public class CellFramesTest {
         assertEquals("...and equals the plain in-cell delta",
                 ship.staticFrameDistanceTo(bodyInSameCell),
                 drifting.distanceBetween(ship, bodyInSameCell, 999L), 1e-6);
+    }
+
+    // ── separations wider than a block long ───────────────────────────────────
+
+    /**
+     * The furthest apart two sectors can be while a block delta between them still holds. Past this
+     * the components are clamped, which is the whole subject of the two tests below.
+     */
+    private static final long BLOCK_REACH_SECTORS = Long.MAX_VALUE / GalacticCoord.CELL;
+
+    @Test
+    public void anOrdinarySeparationIsExactAndSaysSo() {
+        // The control. Everything inside a galaxy is here, and a delta that reported itself clamped
+        // when it was not would make the flag below useless by crying wolf.
+        BlockDelta delta = CellFrames.STATIC.deltaBetween(cell(0L, 0L), cell(1_000_000L, 0L), 0L);
+        assertFalse("a separation a million cells wide fits a long of blocks and must not be flagged",
+                delta.isSaturated());
+        assertEquals(1_000_000L * GalacticCoord.CELL, delta.dx());
+    }
+
+    @Test
+    public void aSeparationTooWideForABlockLongCOMESBACKSAYINGSO() {
+        // Deliberately asked for. Two things in different galaxies are further apart than three block
+        // longs can hold — the galaxy lattice is millions of light years across — and the clamped
+        // vector that comes back is a DIRECTION, not a distance. What must never happen is that it is
+        // indistinguishable from a real one: a consumer measuring it would report a separation of
+        // exactly Long.MAX_VALUE blocks as though it had measured something.
+        GalacticCoord here = cell(0L, 0L);
+        GalacticCoord farAway = cell(2L * BLOCK_REACH_SECTORS, 0L);
+
+        BlockDelta delta = CellFrames.STATIC.deltaBetween(here, farAway, 0L);
+        assertTrue("a separation past the block range must report itself saturated",
+                delta.isSaturated());
+        assertEquals("and must be held at the bound, never wrapped to a small number pointing back",
+                Long.MAX_VALUE, delta.dx());
+
+        // The direction survives, which is what the render and nav channels actually read.
+        assertTrue("the clamped component must keep the sign of the real separation", delta.dx() > 0L);
+
+        // And the distance is still answerable at that magnitude — through the positions, which are
+        // sectorised, rather than through the delta, which is not.
+        double honest = CellFrames.STATIC.distanceBetween(here, farAway, 0L);
+        assertTrue("the true distance must exceed what the clamped vector can express: " + honest
+                        + " vs " + delta.length(),
+                honest > delta.length());
+    }
+
+    @Test
+    public void addingToASaturatedDeltaDoesNotLaunderItBackIntoAnExactOne() {
+        // A sum involving a lower bound is a lower bound. Dropping the flag here would let a clamped
+        // vector re-enter the system as an exact answer one addition later.
+        BlockDelta clamped = BlockDelta.saturated(Long.MAX_VALUE, 0L, 0L);
+        assertTrue(clamped.plus(BlockDelta.of(1L, 2L, 3L)).isSaturated());
+        assertTrue(BlockDelta.of(1L, 2L, 3L).plus(clamped).isSaturated());
+        assertFalse("two exact deltas still add to an exact one",
+                BlockDelta.of(1L, 0L, 0L).plus(BlockDelta.of(2L, 0L, 0L)).isSaturated());
     }
 }

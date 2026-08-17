@@ -283,9 +283,10 @@ public final class GalaxyField {
     /**
      * Where a VOID cell is at tick {@code tick}: carried by the Hubble flow and nothing else.
      *
-     * <p>Precision out here is identical to precision inside a galaxy, because the offset is measured
-     * from the cell's origin in the same light-year vocabulary — which is what choosing a galaxy scale
-     * whose cell fits one {@code long} of blocks bought.</p>
+     * <p>Out here a position is stated in LIGHT YEARS, not in blocks, and that is what makes the
+     * intergalactic regime expressible at all: a galaxy cube is millions of light years across, which
+     * is orders past what a block {@code long} holds, and the layer never asks one to hold it. The
+     * cell NAME carries the magnitude (a sector triple) and this vector carries the rest.</p>
      */
     public static LightYearVector comovingPositionAt(GalacticCoord cell, long tick) {
         return LightYearVector.ofCell(cell).scale(Cosmology.scaleFactorAt(tick));

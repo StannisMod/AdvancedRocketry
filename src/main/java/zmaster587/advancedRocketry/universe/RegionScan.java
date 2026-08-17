@@ -50,6 +50,7 @@ public final class RegionScan {
     private final int cellsDone;
     private final int cellsPerStep;
     private final int ticksPerStep;
+    private final int totalCells;
 
     private RegionScan(GalacticCoord min, GalacticCoord max, long distanceCells, long strideCells,
                        long startTick, long stepDeadline, int cellsDone, int cellsPerStep,
@@ -63,6 +64,34 @@ public final class RegionScan {
         this.cellsDone = cellsDone;
         this.cellsPerStep = Math.max(1, cellsPerStep);
         this.ticksPerStep = Math.max(0, ticksPerStep);
+        this.totalCells = countLooks(min, max, this.strideCells);
+    }
+
+    /**
+     * How many looks the region between two corners holds at {@code stride} &mdash; computed once,
+     * here, and REFUSED rather than clamped when it will not fit an {@code int}.
+     *
+     * <p>A survey is walked by an {@code int} cursor, so a region with more looks than an {@code int}
+     * can index is not a long survey: it is one that would report itself complete at 2·10⁹ looks with
+     * the rest of the region never visited, and progress would read 100 % while the sky was untouched.
+     * That was unreachable while a scan's reach was a few hundred cells and becomes reachable the
+     * moment survey ranges grow with the galaxy, so the bound is stated where the survey is built.</p>
+     *
+     * <p>The product is checked in {@code double} first: the three counts are {@code long}s and their
+     * product overflows one long before it passes an {@code int}, so multiplying to find out would be
+     * the same silent wrap in a different place. Fifty-three bits of mantissa is far more than a
+     * comparison against 2<sup>31</sup> needs.</p>
+     */
+    private static int countLooks(GalacticCoord min, GalacticCoord max, long stride) {
+        long x = countAlong(min.sectorX(), max.sectorX(), stride);
+        long y = countAlong(min.sectorY(), max.sectorY(), stride);
+        long z = countAlong(min.sectorZ(), max.sectorZ(), stride);
+        if ((double) x * (double) y * (double) z > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("a survey of " + x + "x" + y + "x" + z
+                    + " looks cannot be walked: " + min.cellKey() + " .. " + max.cellKey()
+                    + " at a stride of " + stride + " cells. Narrow the region or widen the stride.");
+        }
+        return (int) (x * y * z);
     }
 
     /**
@@ -199,18 +228,20 @@ public final class RegionScan {
     /**
      * How many cells this survey LOOKS at — not how many the region contains. The two differ by the
      * stride: a region a hundred territories wide is a hundred looks, not a hundred million cells.
-     * Bounded at construction; never unbounded.
+     * Bounded at construction; never unbounded, and never a clamped count standing in for a real one.
      */
     public int totalCells() {
-        long cells = countAlong(min.sectorX(), max.sectorX())
-                * countAlong(min.sectorY(), max.sectorY())
-                * countAlong(min.sectorZ(), max.sectorZ());
-        return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, cells));
+        return totalCells;
     }
 
-    /** How many sampled cells one axis of the region holds, at this survey's stride. */
+    /** How many sampled cells one axis of the region holds, at a given stride. */
+    private static long countAlong(long lo, long hi, long stride) {
+        return Math.max(0L, (hi - lo) / Math.max(1L, stride) + 1L);
+    }
+
+    /** The same, at this survey's own stride — what the sweep order is built from. */
     private long countAlong(long lo, long hi) {
-        return Math.max(0L, (hi - lo) / strideCells + 1L);
+        return countAlong(lo, hi, strideCells);
     }
 
     /** {@code true} once every cell of the region has been resolved. */

@@ -257,27 +257,44 @@ public final class GalaxyGenConfig {
      * orders — so a spiral is something a player FINDS rather than the default sky.
      */
     private static List<GalaxyType> defaultGalaxyTypes() {
+        // The bands are REAL radii, read off a catalogue and stated in light years so they can be
+        // checked against one — never a multiple of UniverseScale.REFERENCE_GALAXY_RADIUS_LY. They
+        // were once about a thirtieth of these; multiplying that table back up by the same factor is
+        // the mistake to avoid, because it gives dwarf galaxies larger than real spirals. Each band
+        // is instead the range its own class actually occupies:
+        //   dwarf spheroidal  Sculptor ~1 000 ly, Fornax ~2 300 ly
+        //   dwarf irregular   SMC ~3 500 ly, LMC ~7 000 ly
+        //   spiral            M33 ~15 000 ly, Milky Way 50 000 ly, the largest discs past 60 000 ly
+        //   elliptical        M87 ~60 000 ly, the cluster-centre giants far past that
+        // scaleHeightRatio is a FRACTION of the radius, so it needs no re-derivation and the heights
+        // it now produces are the real ones: a spiral's 0.02 is 1 000 ly at 50 000 ly of radius,
+        // which is the disc thickness that makes a galaxy's population come out at 10^11.
         List<GalaxyType> l = new ArrayList<>();
-        //                      name              profile                  radius band     flatten arms  km/s  core  weight
-        l.add(new GalaxyType("Dwarf Spheroidal", GalaxyProfile.SPHEROID, 120d, 500d, 0.70d, 0, 20d, 0.90d, 700));
-        l.add(new GalaxyType("Dwarf Irregular", GalaxyProfile.DISC, 200d, 900d, 0.30d, 0, 50d, 0.60d, 290));
-        l.add(new GalaxyType("Spiral", GalaxyProfile.DISC, 900d, 2200d, 0.02d, 2, 220d, 0.08d, 7));
-        l.add(new GalaxyType("Barred Spiral", GalaxyProfile.DISC, 1000d, 2500d, 0.02d, 4, 210d, 0.10d, 2));
-        l.add(new GalaxyType("Elliptical", GalaxyProfile.SPHEROID, 1500d, 3500d, 0.60d, 0, 40d, 0.50d, 1));
+        //                      name              profile                  radius band (ly)  flatten arms  km/s  core  weight
+        l.add(new GalaxyType("Dwarf Spheroidal", GalaxyProfile.SPHEROID, 500d, 3_000d, 0.70d, 0, 20d, 0.90d, 700));
+        l.add(new GalaxyType("Dwarf Irregular", GalaxyProfile.DISC, 2_000d, 10_000d, 0.30d, 0, 50d, 0.60d, 290));
+        l.add(new GalaxyType("Spiral", GalaxyProfile.DISC, 15_000d, 60_000d, 0.02d, 2, 220d, 0.08d, 7));
+        l.add(new GalaxyType("Barred Spiral", GalaxyProfile.DISC, 20_000d, 75_000d, 0.02d, 4, 210d, 0.10d, 2));
+        l.add(new GalaxyType("Elliptical", GalaxyProfile.SPHEROID, 30_000d, 150_000d, 0.60d, 0, 40d, 0.50d, 1));
         return Collections.unmodifiableList(l);
     }
 
     /**
-     * The stock cluster table.
+     * The stock cluster table, and every subdivision in it is now the real one.
      *
-     * <p><b>The subdivisions are NOT the real-galaxy ones, and the reason is the scale choice one
-     * level up.</b> A real nucleus runs about 10⁷ times the field density, i.e. {@code k = 215}. That
-     * number belongs to a galaxy of 10¹¹ stars; ours is compressed in RADIUS while the star separation
-     * stays real, so it holds of the order of a million — and a 5-light-year nucleus at {@code k = 215}
-     * would hold ninety times its own galaxy's entire population. {@code k = 25} puts a nucleus at
-     * about a tenth of its galaxy, which is what a real nuclear bulge is. Star separation is the
-     * primary quantity here and the galaxy accommodates it; the contrast has to follow that choice
-     * rather than be imported from the uncompressed world.</p>
+     * <p><b>Two of the three always were.</b> An open cluster's and a globular's contrast is measured
+     * against the FIELD, and the field's density is {@link UniverseScale#MEAN_STAR_SEPARATION_LY} —
+     * real, and never compressed. So {@code k = 4} really does put about a thousand stars in a
+     * ten-light-year open cluster and {@code k = 14} about a million in a globular, which is what
+     * those objects hold.</p>
+     *
+     * <p><b>The NUCLEUS was the exception, and it no longer is.</b> Its contrast is the one number in
+     * this table that is a statement about its whole GALAXY, and the galaxy used to be compressed in
+     * radius while the star separation stayed real — so it held of the order of a million stars, and a
+     * real nucleus's {@code k = 215} (about 10⁷ times the field) would have put ninety times the
+     * galaxy's entire population inside five light years. It was held at {@code k = 25} for that
+     * reason, and the reason is gone: a galaxy at its real radius holds ~10¹¹ systems, and 10⁷ times
+     * the field over a few light years is the nuclear star cluster a real one has.</p>
      */
     private static List<ClusterType> defaultClusterTypes() {
         List<ClusterType> l = new ArrayList<>();
@@ -295,7 +312,7 @@ public final class GalaxyGenConfig {
      * The cluster every galaxy has at its own centre — the richest one, and no special case: it is a
      * cluster like the others, drawn at the galaxy's centre instead of on the cluster lattice.
      */
-    public static final ClusterType NUCLEUS = new ClusterType("Nucleus", 25, 4d, 8d, 0.4d, 1);
+    public static final ClusterType NUCLEUS = new ClusterType("Nucleus", 215, 4d, 8d, 0.4d, 1);
 
     /** Edge of the cube that holds at most one cluster, in light years. */
     public static final double CLUSTER_SPACING_LY = 300d;

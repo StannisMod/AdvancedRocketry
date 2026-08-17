@@ -269,37 +269,80 @@ public class GalaxyFieldTest {
     }
 
     @Test
-    public void aGalaxyCellFitsInsideOneLongOfBlocks() {
-        // This is what the galaxy SIZE was chosen for, and it is a structural claim rather than a
-        // balance one. Out in the void a position is an offset from its galaxy cell's origin, so that
-        // offset has to span a whole cell; a Milky-Way-sized galaxy at a realistic separation would
-        // put the cell past the long range and force the void into a second, coarser representation.
-        // Choosing this scale buys one primitive instead of two.
+    public void theGalaxyLatticeFitsTheSECTORSPACE_whichIsWhatNamesAPosition() {
+        // What actually bounds this layer, and what does NOT.
+        //
+        // It does not: a galaxy cube no longer fits one long of BLOCKS, and never had to. A position
+        // here is a cell NAME — a sector triple — plus an offset inside that cell, so the addressable
+        // range is the sector space, not a block count. This test used to assert the opposite, and
+        // that false constraint is what the galaxy scale had been compressed thirty-fold to satisfy.
         long spacing = GalaxyGenConfig.DEFAULT_GALAXY_SPACING;
-        long limitCells = Long.MAX_VALUE / GalacticCoord.CELL;
-        assertTrue("a galaxy cell of " + spacing + " cells overflows a long of blocks",
-                spacing <= limitCells);
-        // The bound is not the edge but the DIAGONAL: two points in one void cell can be that far
-        // apart, and a separation that cannot be expressed is a separation that silently wraps.
-        assertTrue("a galaxy cell's diagonal overflows a long of blocks — the margin is only "
-                        + String.format("%.2f", limitCells / (double) spacing) + "x on the edge",
-                Math.sqrt(3d) * spacing <= limitCells);
+        long blockLimitCells = Long.MAX_VALUE / GalacticCoord.CELL;
+        assertTrue("a galaxy cube that fits a long of blocks means the scale is still compressed: "
+                        + spacing + " cells vs " + blockLimitCells,
+                spacing > blockLimitCells);
+
+        // It does: the DIAGONAL of a galaxy cube has to be nameable, because a sector coordinate that
+        // wraps renames the cell. That is the real ceiling and it is orders away.
+        double diagonal = Math.sqrt(3d) * spacing;
+        double headroom = Long.MAX_VALUE / diagonal;
+        System.out.println(String.format(
+                "galaxy cube %d cells (%.3e ly), diagonal %.3e cells, sector headroom %.2ex",
+                spacing, UniverseScale.lightYearsForCells(spacing), diagonal, headroom));
+        assertTrue("the galaxy lattice must fit the sector space with room to spare — headroom is only "
+                        + String.format("%.2f", headroom) + "x", headroom >= 1000d);
     }
 
     @Test
-    public void aGalaxyHoldsAPopulationOfTheRightOrder() {
-        // Estimated rather than counted: sweeping every super-cell of a galaxy is 10^8 draws. The
-        // profile is integrated by Monte Carlo over the galaxy's own sphere, which is the same
-        // function the generator consults, so this measures the shipped shape and not a model of it.
-        //
-        // The band is deliberately wide — three orders. What it guards is the ORDER: a galaxy holding
-        // thousands would make interstellar travel a tour of a village, and one holding billions would
-        // put the cell past the long range the test above depends on.
-        GalaxyGenConfig config = cfg(GalaxyGenConfig.DEFAULT_GALAXY_DENSITY);
-        GalaxyField f = new GalaxyField(config);
-        Galaxy home = f.home(0xC0FFEEL);
+    public void theReferenceSizeIsTheSizeTheTypeTableIsWrittenAgainst() {
+        // The reference anchors the galaxy SEPARATION, and the type bands are absolute light years so
+        // they can be checked against a catalogue. Nothing mechanical tied the two together, so the
+        // bands could sit two orders from the reference and nothing would notice — which is exactly
+        // what happened. This is that tie: the reference has to be a size an ordinary spiral IS.
+        GalaxyGenConfig config = GalaxyGenConfig.defaults();
+        GalaxyGenConfig.GalaxyType spiral = typeNamed(config, "Spiral");
+        assertTrue("the reference galaxy radius (" + UniverseScale.REFERENCE_GALAXY_RADIUS_LY
+                        + " ly) falls outside the spiral band [" + spiral.minRadiusLy + ", "
+                        + spiral.maxRadiusLy + "] — one of the two was moved without the other",
+                UniverseScale.REFERENCE_GALAXY_RADIUS_LY >= spiral.minRadiusLy
+                        && UniverseScale.REFERENCE_GALAXY_RADIUS_LY <= spiral.maxRadiusLy);
+    }
+
+    @Test
+    public void authoredContentIsAdmittedToTheDISCGIANTSandToNoDwarf() {
+        // The floor is a constraint on the TYPE DRAW, so what it really states is a SET: the classes a
+        // galaxy holding authored content may be. A floor that slipped below the dwarf-irregular band
+        // would let a pack's content be seated in an object a few thousand light years across and
+        // land outside it on the next seed.
+        GalaxyGenConfig config = GalaxyGenConfig.defaults();
+        double floor = UniverseScale.MIN_AUTHORED_GALAXY_RADIUS_LY;
+        for (GalaxyGenConfig.GalaxyType t : config.galaxyTypes) {
+            boolean dwarf = t.name.startsWith("Dwarf");
+            boolean qualifies = t.minRadiusLy >= floor;
+            assertEquals(t.name + " qualifies for authored content: expected " + !dwarf,
+                    !dwarf, qualifies);
+        }
+    }
+
+    private static GalaxyGenConfig.GalaxyType typeNamed(GalaxyGenConfig config, String name) {
+        for (GalaxyGenConfig.GalaxyType t : config.galaxyTypes) {
+            if (name.equals(t.name)) {
+                return t;
+            }
+        }
+        throw new AssertionError("the stock table has no type named " + name);
+    }
+
+    /**
+     * The population a galaxy of this shape holds, at the SHIPPED densities.
+     *
+     * <p>Estimated rather than counted: sweeping every super-cell of a real-sized galaxy is 10¹¹
+     * draws. The profile is integrated by Monte Carlo over the galaxy's own sphere, and it is the same
+     * function the generator consults, so this measures the shipped shape and not a model of it.</p>
+     */
+    private static double estimateSystems(Galaxy galaxy, GalaxyGenConfig config) {
         double superCellLy = UniverseScale.lightYearsForCells(config.minSpacing);
-        double sphereLy3 = 4d / 3d * Math.PI * Math.pow(home.radiusLy(), 3);
+        double sphereLy3 = 4d / 3d * Math.PI * Math.pow(galaxy.radiusLy(), 3);
         double superCells = sphereLy3 / Math.pow(superCellLy, 3);
 
         // A fixed LCG, so the estimate is the same number on every run and a red is a real change.
@@ -310,23 +353,71 @@ public class GalaxyFieldTest {
             double[] p = new double[3];
             for (int axis = 0; axis < 3; axis++) {
                 state = state * 6364136223846793005L + 1442695040888963407L;
-                p[axis] = ((state >>> 11) * 0x1.0p-53 - 0.5d) * 2d * home.radiusLy();
+                p[axis] = ((state >>> 11) * 0x1.0p-53 - 0.5d) * 2d * galaxy.radiusLy();
             }
-            sum += home.densityAt(p[0], p[1], p[2]);
+            sum += galaxy.densityAt(p[0], p[1], p[2]);
         }
-        // The samples fill the CUBE around the galaxy; the sphere is pi/6 of it, and densityAt is
-        // already zero outside the radius, so the cube mean scales straight onto the cube's volume.
-        double cubeLy3 = Math.pow(2d * home.radiusLy(), 3);
+        // The samples fill the CUBE around the galaxy; densityAt is already zero outside the radius,
+        // so the cube mean scales straight onto the cube's volume.
+        double cubeLy3 = Math.pow(2d * galaxy.radiusLy(), 3);
         double meanOverSphere = (sum / samples) * cubeLy3 / sphereLy3;
-        double systems = config.density * superCells * meanOverSphere;
+        return config.density * superCells * meanOverSphere;
+    }
 
-        System.out.println("home galaxy " + home + ": ~" + (long) systems + " systems ("
-                + (long) superCells + " super-cells in its sphere, mean profile "
-                + String.format("%.5f", meanOverSphere) + ")");
-        assertTrue("a galaxy holding only " + (long) systems + " systems is a village",
-                systems > 1e4d);
-        assertTrue("a galaxy holding " + (long) systems + " systems is past the scale this "
-                + "lattice was sized for", systems < 1e7d);
+    /** A spiral at exactly the reference radius: the galaxy the whole layer is quoted against. */
+    private static Galaxy referenceSpiral() {
+        return new Galaxy(0L, 0L, 0L, GalacticCoord.ORIGIN,
+                typeNamed(GalaxyGenConfig.defaults(), "Spiral"),
+                UniverseScale.REFERENCE_GALAXY_RADIUS_LY,
+                0d, 0d, Math.toRadians(20d), 0d, LightYearVector.ZERO);
+    }
+
+    @Test
+    public void aReferenceSpiralHoldsTenToTheEleventhSystems() {
+        // STATED BEFORE THE SWEEP. A galaxy at the reference radius, at the shipped star separation and
+        // the shipped disc thickness, must come out at the population a real one has: ~10^11. This is
+        // not a balance pin — it is the arithmetic that made the real scale choosable at all. Size,
+        // separation and population are ONE fact (pi.R^2.h at h = 1000 ly and ~76 ly^3 per seat), so a
+        // galaxy that came out at 10^6 here would mean the radius, the separation or the disc height
+        // had stopped agreeing with each other.
+        final double EXPECTED_SYSTEMS = 1e11d;
+        final double TOLERANCE_FACTOR = 3d;
+
+        GalaxyGenConfig config = GalaxyGenConfig.defaults();
+        Galaxy reference = referenceSpiral();
+        double systems = estimateSystems(reference, config);
+
+        System.out.println(String.format(
+                "reference spiral r=%.0f ly, disc height %.0f ly, star separation %.2f ly"
+                        + " -> ~%.3e systems (expected %.0e +/- x%.0f)",
+                reference.radiusLy(), reference.radiusLy() * reference.type().scaleHeightRatio,
+                UniverseScale.MEAN_STAR_SEPARATION_LY, systems, EXPECTED_SYSTEMS, TOLERANCE_FACTOR));
+
+        assertTrue("a reference-sized galaxy holding ~" + String.format("%.3e", systems)
+                        + " systems is not the 10^11 the scale was taken for",
+                systems >= EXPECTED_SYSTEMS / TOLERANCE_FACTOR
+                        && systems <= EXPECTED_SYSTEMS * TOLERANCE_FACTOR);
+    }
+
+    @Test
+    public void everySeedsHomeGalaxyIsAPlaceOfTheRightOrder() {
+        // The home galaxy's radius is DRAWN, so its population is not one number — a spiral at the
+        // small end of its band and a giant elliptical differ by three orders, which is what a drawn
+        // radius cubed means. The band here is therefore wide on purpose; what it guards is that no
+        // seed opens on a village, and that none opens on something the lattice cannot address.
+        GalaxyGenConfig config = GalaxyGenConfig.defaults();
+        GalaxyField f = new GalaxyField(config);
+        for (long seed : new long[] {0xC0FFEEL, 1L, 2L, 3L, 17L, 99L}) {
+            Galaxy home = f.home(seed);
+            double systems = estimateSystems(home, config);
+            System.out.println("seed " + seed + " home " + home + ": ~"
+                    + String.format("%.3e", systems) + " systems");
+            assertTrue("seed " + seed + "'s home galaxy holds only " + (long) systems + " systems",
+                    systems > 1e9d);
+            assertTrue("seed " + seed + "'s home galaxy holds " + String.format("%.3e", systems)
+                    + " systems, past the largest galaxy a catalogue has (~10^14 stars)",
+                    systems < 3e14d);
+        }
     }
 
     // ─── The intergalactic regime (R3 + R8) ────────────────────────────────────

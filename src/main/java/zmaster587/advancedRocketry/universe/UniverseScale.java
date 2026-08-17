@@ -83,23 +83,33 @@ public final class UniverseScale {
     // ─── The galaxy lattice ────────────────────────────────────────────────────
     // One level up, and the same scheme: a cube that holds at most one galaxy, and a galaxy seated
     // inside it. What is stated here is a REFERENCE SIZE and a RATIO; the separation follows from
-    // them, and an individual galaxy's radius is drawn per type around the reference.
+    // them, and an individual galaxy's radius is drawn per type.
     //
-    // The reference is deliberately about a thirtieth of a real giant galaxy, and the separation is
-    // scaled with it so the RATIO stays real. That is what buys the whole void a single primitive:
-    // an offset inside one galaxy cube has to fit a long, and at real sizes it would not.
+    // The reference is a REAL galaxy, and the separation is the real one, so the whole layer is at
+    // its physical scale. It used to be about a thirtieth of that, to keep a galaxy cube inside one
+    // long of BLOCKS; nothing stores a position that way — every position in this layer is a sector
+    // triple plus an in-cell offset — so the compression was paying for a representation nobody
+    // built. What the sector triple actually gives at this scale is measured in GalaxyFieldTest.
 
     /**
-     * The size a galaxy is quoted against, in light years — a mid-sized spiral, holding of the order
-     * of a million systems at {@link #MEAN_STAR_SEPARATION_LY}. Every type's radius band is drawn
-     * around it.
+     * The size a galaxy is quoted against, in light years — a mid-sized spiral, i.e. the Milky Way,
+     * holding of the order of 10<sup>11</sup> systems at {@link #MEAN_STAR_SEPARATION_LY}.
      *
-     * <p>It is about a thirtieth of a real giant galaxy, and that is the number the whole layer is
-     * sized by: a position out in the void is an offset from its galaxy cell's origin, so the cell
-     * edge has to fit a {@code long} of blocks. At real sizes it would not, and the void would need a
-     * second, coarser representation of its own.</p>
+     * <p>It is not itself a bound on anything: it anchors {@link #MEAN_GALAXY_SEPARATION_LY} and it
+     * is the size {@code GalaxyGenConfig}'s type table is written against. Those bands are stated as
+     * ABSOLUTE light years, so they can be checked against a real catalogue rather than read as
+     * ratios nobody can verify — which means that <b>moving this number does not move them, and they
+     * must be RE-DERIVED from real radii rather than scaled.</b> Scaling the old table by the same
+     * factor produced dwarf galaxies larger than real spirals.</p>
+     *
+     * <p>The compressed value it replaces was chosen so that a galaxy CUBE fit inside one
+     * {@code long} of blocks, because a void position was believed to be a block offset from its
+     * cell's origin. It is not: it is a sector triple plus an in-cell offset, and the sector space
+     * carries this scale with six orders of headroom. The one place a whole separation is still
+     * expressed as a block {@code long} is a {@link zmaster587.advancedRocketry.space.BlockDelta},
+     * which is now able to say when it could not hold one.</p>
      */
-    public static final double REFERENCE_GALAXY_RADIUS_LY = 1_500d;
+    public static final double REFERENCE_GALAXY_RADIUS_LY = 50_000d;
 
     /**
      * How far apart galaxies stand, in galaxy DIAMETERS. This is the real number — galaxies in a
@@ -126,8 +136,14 @@ public final class UniverseScale {
      * years out would work on one seed and put that content outside its own galaxy on the next. The
      * floor is expressed as a constraint on which TYPES such a galaxy may be drawn from, never as a
      * clamp applied afterwards.
+     *
+     * <p>It is set at the smallest DISC GIANT a real catalogue holds, which is what makes the
+     * qualifying set "the spirals and the ellipticals" and excludes both dwarf classes. It is a
+     * separate number from any type's band on purpose: the two are not the same statement, and the
+     * day a pack widens the spiral band downwards this floor should keep its meaning rather than
+     * follow it.</p>
      */
-    public static final double MIN_AUTHORED_GALAXY_RADIUS_LY = 900d;
+    public static final double MIN_AUTHORED_GALAXY_RADIUS_LY = 15_000d;
 
     /**
      * Where the universe ORIGIN sits inside the home galaxy, as a fraction of its radius — and it is

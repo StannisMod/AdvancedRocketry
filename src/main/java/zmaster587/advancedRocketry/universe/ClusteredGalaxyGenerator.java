@@ -256,9 +256,19 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             for (long supY = Math.floorDiv(loY, s); supY <= Math.floorDiv(hiY, s) && !capped; supY++) {
                 for (long supZ = Math.floorDiv(loZ, s); supZ <= Math.floorDiv(hiZ, s) && !capped; supZ++) {
                     int k = subdivisionAt(seed, supX, supY, supZ);
-                    for (long i = 0; i < k && !capped; i++) {
-                        for (long j = 0; j < k && !capped; j++) {
-                            for (long m = 0; m < k && !capped; m++) {
+                    // Only the sub-cells the query box actually reaches. A system seated in a
+                    // sub-cell is placed INSIDE it, so this is exactly the same answer as walking all
+                    // k³ and filtering — and it is the difference between a bounded query and a
+                    // 10⁷-cell walk, because a galactic nucleus divides one coarse cell that finely.
+                    long iLo = subIndex(offsetInCoarse(loX, supX, s), s, k);
+                    long iHi = subIndex(offsetInCoarse(hiX, supX, s), s, k);
+                    long jLo = subIndex(offsetInCoarse(loY, supY, s), s, k);
+                    long jHi = subIndex(offsetInCoarse(hiY, supY, s), s, k);
+                    long mLo = subIndex(offsetInCoarse(loZ, supZ, s), s, k);
+                    long mHi = subIndex(offsetInCoarse(hiZ, supZ, s), s, k);
+                    for (long i = iLo; i <= iHi && !capped; i++) {
+                        for (long j = jLo; j <= jHi && !capped; j++) {
+                            for (long m = mLo; m <= mHi && !capped; m++) {
                                 Optional<Generated> g = systemForLattice(seed,
                                         Lattice.of(supX, supY, supZ, i, j, m, k, s));
                                 if (!g.isPresent()) {
@@ -865,6 +875,16 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                 subIndex(Math.floorMod(sectorX, s), s, k),
                 subIndex(Math.floorMod(sectorY, s), s, k),
                 subIndex(Math.floorMod(sectorZ, s), s, k), k, s);
+    }
+
+    /**
+     * Where a region bound sits inside coarse super-cell {@code sup}, as an offset clamped into it —
+     * so a bound lying outside the cell reads as its nearest face rather than as a sub-index off the
+     * end of the lattice.
+     */
+    private static long offsetInCoarse(long sector, long sup, long coarseEdge) {
+        long offset = sector - sup * coarseEdge;
+        return Math.min(coarseEdge - 1L, Math.max(0L, offset));
     }
 
     /** Which sub-cell an offset inside a coarse cell falls in, on one axis. */

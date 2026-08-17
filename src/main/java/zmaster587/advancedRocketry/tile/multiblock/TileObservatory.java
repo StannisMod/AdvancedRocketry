@@ -60,6 +60,9 @@ import java.util.Map;
 
 public class TileObservatory extends TileMultiPowerConsumer implements IModularInventory, IDataInventory, IGuiCallback {
 
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("AdvancedRocketry|Observatory");
+
     private final java.util.Map<Long, NBTTagCompound> savedDataBusNbt = new java.util.HashMap<>();
     final static int openTime = 100;
     final static int observationTime = 1000;
@@ -802,13 +805,36 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         }
         // Re-aiming mid-sweep is allowed and costs only the cell in flight: every cell already
         // resolved is already written to the crystal, so there is nothing else to lose.
-        activeScan = RegionScan.directed(origin, dirX, dirY, dirZ, distanceSteps,
-                world.getTotalWorldTime(), RegionScan.Tuning.fromConfig());
+        RegionScan aimed = buildScan(() -> RegionScan.directed(origin, dirX, dirY, dirZ, distanceSteps,
+                world.getTotalWorldTime(), RegionScan.Tuning.fromConfig()));
+        if (aimed == null) {
+            return false;
+        }
+        activeScan = aimed;
         passive = false;
         lastScanDiscoveries = 0;
         lastScanObscured = 0;
         markDirty();
         return true;
+    }
+
+    /**
+     * Build a survey, or refuse to start one — a configuration that describes a region no survey can
+     * walk is reported and declined, never started half-way.
+     *
+     * <p>{@code RegionScan} refuses such a region rather than clamping its look count, because a
+     * clamped count reports the sweep complete with most of the region never visited. Here that
+     * refusal has to become an operator-visible "the machine did not start" plus a line in the log
+     * naming the setting, since the alternative is a tile that throws out of a GUI action.</p>
+     */
+    private RegionScan buildScan(java.util.function.Supplier<RegionScan> build) {
+        try {
+            return build.get();
+        } catch (IllegalArgumentException refused) {
+            LOGGER.error("the observatory at " + pos + " cannot start a survey: "
+                    + refused.getMessage() + " Check the telescopeScan* settings.");
+            return null;
+        }
     }
 
     /** Stop looking. Free — an aim the operator regrets must not have to be waited out. */
@@ -837,8 +863,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             return false;
         }
         int radius = Math.max(0, ARConfiguration.getCurrentConfig().telescopePassiveRadiusCells);
-        activeScan = RegionScan.local(origin, radius, world.getTotalWorldTime(),
-                RegionScan.Tuning.fromConfig());
+        RegionScan sweep = buildScan(() -> RegionScan.local(origin, radius,
+                world.getTotalWorldTime(), RegionScan.Tuning.fromConfig()));
+        if (sweep == null) {
+            return false;
+        }
+        activeScan = sweep;
         passive = true;
         lastScanDiscoveries = 0;
         lastScanObscured = 0;

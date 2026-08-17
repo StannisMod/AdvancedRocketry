@@ -109,35 +109,61 @@ public final class AbsolutePos {
      * The vector FROM {@code from} TO this position &mdash; the observer&rarr;body direction when
      * {@code from} is the observer.
      *
-     * <p>Saturates instead of wrapping. A separation that does not fit in a {@code long} of blocks is
-     * one between things in different galaxies, where a block vector is not the useful answer anyway;
-     * what must never happen is that it comes back as a small number pointing the wrong way.</p>
+     * <p>Saturates instead of wrapping, <b>and the delta says that it did</b>. A separation past a
+     * {@code long} of blocks is one between things in different galaxies &mdash; roughly 244 000 light
+     * years out, which the galaxy lattice reaches routinely &mdash; and there a block vector is a
+     * direction rather than a distance. Two things must never happen: that it comes back as a small
+     * number pointing the wrong way (which is what wrapping would do), and that a clamped vector is
+     * indistinguishable from a real one (which is what silent saturation did). For a distance at any
+     * magnitude use {@link #distanceTo}, which is computed from the sector delta and never clamps.</p>
      */
     public BlockDelta minus(AbsolutePos from) {
-        if (from == null) {
-            return BlockDelta.of(saturatingBlocks(sectorX, localX),
-                    saturatingBlocks(sectorY, localY), saturatingBlocks(sectorZ, localZ));
-        }
-        return BlockDelta.of(
-                saturatingBlocks(sectorX - from.sectorX, localX - from.localX),
-                saturatingBlocks(sectorY - from.sectorY, localY - from.localY),
-                saturatingBlocks(sectorZ - from.sectorZ, localZ - from.localZ));
+        AbsolutePos origin = (from == null) ? ORIGIN : from;
+        long dSectorX = sectorX - origin.sectorX;
+        long dSectorY = sectorY - origin.sectorY;
+        long dSectorZ = sectorZ - origin.sectorZ;
+        long dLocalX = localX - origin.localX;
+        long dLocalY = localY - origin.localY;
+        long dLocalZ = localZ - origin.localZ;
+
+        boolean clamped = boundHit(dSectorX, dLocalX) != 0
+                || boundHit(dSectorY, dLocalY) != 0
+                || boundHit(dSectorZ, dLocalZ) != 0;
+        long dx = saturatingBlocks(dSectorX, dLocalX);
+        long dy = saturatingBlocks(dSectorY, dLocalY);
+        long dz = saturatingBlocks(dSectorZ, dLocalZ);
+        return clamped ? BlockDelta.saturated(dx, dy, dz) : BlockDelta.of(dx, dy, dz);
     }
 
     /** {@code sectors * CELL + local}, held at the {@code long} bounds rather than wrapping past them. */
     private static long saturatingBlocks(long sectors, long local) {
+        int hit = boundHit(sectors, local);
+        if (hit != 0) {
+            return hit > 0 ? Long.MAX_VALUE : Long.MIN_VALUE;
+        }
+        return sectors * GalacticCoord.CELL + local;
+    }
+
+    /**
+     * Which {@code long} bound {@code sectors * CELL + local} runs into: {@code +1} past the top,
+     * {@code -1} past the bottom, {@code 0} when it fits.
+     *
+     * <p>The ONE place the overflow is decided. The clamped value and the flag that reports it are
+     * both read off this, so a delta cannot come back held at a bound while claiming to be exact.</p>
+     */
+    private static int boundHit(long sectors, long local) {
         if (sectors > Long.MAX_VALUE / GalacticCoord.CELL) {
-            return Long.MAX_VALUE;
+            return 1;
         }
         if (sectors < Long.MIN_VALUE / GalacticCoord.CELL) {
-            return Long.MIN_VALUE;
+            return -1;
         }
         long scaled = sectors * GalacticCoord.CELL;
         long sum = scaled + local;
         if (((scaled ^ sum) & (local ^ sum)) < 0L) {
-            return local > 0L ? Long.MAX_VALUE : Long.MIN_VALUE;
+            return local > 0L ? 1 : -1;
         }
-        return sum;
+        return 0;
     }
 
     /**

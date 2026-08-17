@@ -9,6 +9,7 @@ import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.navigation.CrystalEntry;
 import zmaster587.advancedRocketry.navigation.CrystalMemory;
 import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.InfoTier;
@@ -223,6 +224,27 @@ public class TelescopeRegionScanTest {
     }
 
     @Test
+    public void aRegionWithMoreLooksThanCanBeWalkedIsREFUSEDratherThanClamped() {
+        // A survey is walked by an int cursor, and its look count used to be CLAMPED to fit one. A
+        // clamped count does not make the sweep long — it makes it report itself complete at 2·10⁹
+        // looks with the rest of the region never visited, and progress read 100 % while the sky was
+        // untouched. The local radar is the reachable route: its radius is a config number and a cell
+        // stride cubes it, so ~1 300 cells of radius is already past an int.
+        try {
+            RegionScan.local(HOME, 2_000, 0L, tuning());
+            fail("a region of (2*2000+1)^3 looks cannot be walked and must be refused, not clamped");
+        } catch (IllegalArgumentException expected) {
+            assertTrue("the refusal must name what it could not do: " + expected.getMessage(),
+                    expected.getMessage().contains("cannot be walked"));
+        }
+
+        // And the boundary is not a cliff into silence: one that DOES fit is accepted and counted.
+        RegionScan fits = RegionScan.local(HOME, 100, 0L, tuning());
+        assertEquals("a region that fits must be counted exactly, never rounded",
+                201 * 201 * 201, fits.totalCells());
+    }
+
+    @Test
     public void aSurveyWithNoDirectionIsRefused() {
         try {
             RegionScan.directed(HOME, 0, 0, 0, 4, 0L, tuning());
@@ -343,6 +365,88 @@ public class TelescopeRegionScanTest {
 
         assertNotNull("a survey must discover the system that OWNS the cell it looked at",
                 crystal.forBody(401));
+    }
+
+    /**
+     * The real generator, counting every question the survey asks it.
+     *
+     * <p>A wrapper rather than a mock, because the claim under test is about the REAL galaxy: the one
+     * that now holds of the order of 10¹¹ systems. A test against an empty generator would pass by
+     * having nothing to enumerate.</p>
+     */
+    private static final class CountingGenerator implements zmaster587.advancedRocketry.universe.IGalaxyGenerator {
+
+        private final ClusteredGalaxyGenerator real;
+        int queries;
+
+        CountingGenerator(GalaxyGenConfig config) {
+            this.real = new ClusteredGalaxyGenerator(config);
+        }
+
+        @Override
+        public java.util.Optional<zmaster587.advancedRocketry.universe.StarSystem> systemAt(
+                long seed, GalacticCoord coord) {
+            queries++;
+            return real.systemAt(seed, coord);
+        }
+
+        @Override
+        public java.util.Map<GalacticCoord, zmaster587.advancedRocketry.universe.StarSystem>
+                systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
+            queries++;
+            return real.systemsInRegion(seed, min, max);
+        }
+
+        @Override
+        public java.util.Optional<GalacticCoord> anchorAt(long seed, GalacticCoord cell) {
+            queries++;
+            return real.anchorAt(seed, cell);
+        }
+
+        @Override
+        public java.util.List<SystemBody> bodiesFor(long seed, GalacticCoord systemCoord) {
+            queries++;
+            return real.bodiesFor(seed, systemCoord);
+        }
+
+        @Override
+        public int minSpacingCells() {
+            return real.minSpacingCells();
+        }
+    }
+
+    @Test
+    public void aSurveyResolvesPerLookAndNeverWalksTheGalaxy() {
+        // The claim the scale change rests on: a galaxy holding 10^11 systems is affordable ONLY
+        // because nothing ever enumerates one. A survey asks a bounded number of questions — a
+        // constant per look — and that number is a property of the INSTRUMENT, not of how much sky
+        // there is. A full-galaxy walk introduced anywhere on this path would blow the bound by nine
+        // orders, and this test would not merely fail: it would never return.
+        GalaxyGenConfig config = GalaxyGenConfig.defaults();
+        CountingGenerator counting = new CountingGenerator(config);
+        UniverseRegistry.setGenerator(counting);
+        UniverseRegistry.setStarLookup(TelescopeRegionScanTest::star);
+
+        UniverseRegistry registry = new UniverseRegistry();
+        registry.bindWorldSeed(0xC0FFEEL);
+
+        // Aimed at the real reach, through the real config's own stride.
+        RegionScan.Tuning live = new RegionScan.Tuning(100d, 1, 512, 100, 50d, 4,
+                config.minSpacing);
+        RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, live.maxRangeSteps(), 0L, live);
+        int looks = scan.totalCells();
+        assertTrue("the fixture must be a real sweep", looks >= 27);
+
+        CrystalMemory crystal = new CrystalMemory();
+        TelescopeScan.resolveBatch(registry, scan, 0, looks, crystal, 7_000L, dimId -> "Body-" + dimId);
+
+        // A handful of questions per look: which system owns the cell, and what that system holds.
+        int budget = looks * 8;
+        System.out.println("survey of " + looks + " looks asked the generator " + counting.queries
+                + " questions (budget " + budget + ")");
+        assertTrue("a survey asked the generator " + counting.queries + " questions for " + looks
+                        + " looks — something on this path is enumerating rather than resolving",
+                counting.queries <= budget);
     }
 
     @Test
