@@ -10,6 +10,9 @@ import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
 import zmaster587.advancedRocketry.atmosphere.LifeSupportNetwork;
+import zmaster587.advancedRocketry.api.capability.CapabilityHeatEmitter;
+import zmaster587.advancedRocketry.api.capability.IHeatEmitter;
+import zmaster587.advancedRocketry.subsystem.heat.HeatNetwork;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemSource;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
@@ -35,10 +38,17 @@ import java.util.List;
  * own output slot; a full slot backs the plant up rather than deleting the carbon, exactly as it
  * does one tier down.
  */
-public class TileLifeSupportPlant extends TileInventoriedRFConsumer implements IModularInventory, ISubsystemSource {
+public class TileLifeSupportPlant extends TileInventoriedRFConsumer
+        implements IModularInventory, ISubsystemSource, IHeatEmitter {
 
     /** Regeneration work done but not yet worth a whole dust, in µatm·blocks. */
     private int carbonBuffer;
+
+    /**
+     * Waste heat made and not yet picked up by a coolant loop, in heat units. Not persisted: it is
+     * at most a second's worth, and a plant left alone sheds it to the room rather than banking it.
+     */
+    private int pendingHeat;
 
     public TileLifeSupportPlant() {
         super(100000, 1);
@@ -97,6 +107,7 @@ public class TileLifeSupportPlant extends TileInventoriedRFConsumer implements I
         if (powerPerTick > 0 && rate > 0) {
             int cost = (int) ((long) powerPerTick * taken / rate);
             energy.extractEnergy(cost, false);
+            accrueWasteHeat(cost);
         }
 
         carbonBuffer += taken;
@@ -109,6 +120,62 @@ public class TileLifeSupportPlant extends TileInventoriedRFConsumer implements I
     @Override
     public int getGenerationPerTick() {
         return getAvailable();
+    }
+
+    // ─── the heat that work leaves behind ──────────────────────────────
+
+    /**
+     * A share of the electricity the plant just spent comes back out as heat. It is derived from
+     * what was actually spent rather than from the plant's rating, so a plant running at a tenth of
+     * its rate heats a ship a tenth as fast — the same relation the power cost already has.
+     */
+    private void accrueWasteHeat(int energySpent) {
+        if (energySpent <= 0 || !HeatNetwork.enabled()) {
+            pendingHeat = 0;
+            return;
+        }
+        int fraction = Math.max(0, ARConfiguration.getCurrentConfig().shipHeatWasteFraction);
+        long made = (long) energySpent * fraction / 1000L;
+        // Whatever no loop comes to collect goes into the air around the machine, so the buffer is
+        // capped at about a second's worth instead of growing without bound.
+        long cap = (long) Math.max(0, ARConfiguration.getCurrentConfig().lifeSupportPlantPower) * fraction / 1000L;
+        pendingHeat = (int) Math.max(0L, Math.min(cap, pendingHeat + made));
+    }
+
+    @Override
+    public int getPendingHeat() {
+        return pendingHeat;
+    }
+
+    @Override
+    public int takeHeat(int amount) {
+        int taken = Math.max(0, Math.min(amount, pendingHeat));
+        pendingHeat -= taken;
+        return taken;
+    }
+
+    /**
+     * The plant hosts the heat capability itself rather than being attached one. A coolant loop
+     * therefore reads our machines and foreign ones through exactly the same call, which is what
+     * keeps `instanceof` out of the thermal system entirely.
+     */
+    @Override
+    public boolean hasCapability(@Nonnull net.minecraftforge.common.capabilities.Capability<?> capability,
+                                 @Nullable EnumFacing facing) {
+        if (capability == CapabilityHeatEmitter.HEAT_EMITTER) {
+            return true;
+        }
+        return super.hasCapability(capability, facing);
+    }
+
+    @Override
+    @Nullable
+    public <T> T getCapability(@Nonnull net.minecraftforge.common.capabilities.Capability<T> capability,
+                               @Nullable EnumFacing facing) {
+        if (capability == CapabilityHeatEmitter.HEAT_EMITTER) {
+            return CapabilityHeatEmitter.HEAT_EMITTER.cast(this);
+        }
+        return super.getCapability(capability, facing);
     }
 
     // ─── the carbon it takes out of the air ────────────────────────────

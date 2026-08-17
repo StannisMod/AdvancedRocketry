@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -211,22 +212,30 @@ public final class SubsystemNetworkManager {
                 List<SourceNode> componentSources = new ArrayList<>();
                 List<SinkNode> componentSinks = new ArrayList<>();
                 List<ISubsystemNetworkController> componentControllers = new ArrayList<>();
+                // Every node once, whatever roles it plays: a domain reasoning about the component
+                // as one physical object needs the membership, and a node in two role maps is still
+                // one block.
+                Set<ISubsystemNetworkNode> componentMembers = new LinkedHashSet<>();
                 for (BlockPos pos : component) {
                     ISubsystemCable cable = cables.get(pos);
                     if (cable != null) {
                         componentCables.add(new CableNode(pos, cable));
+                        componentMembers.add(cable);
                     }
                     ISubsystemSource source = sources.get(pos);
                     if (source != null) {
                         componentSources.add(new SourceNode(pos, source));
+                        componentMembers.add(source);
                     }
                     ISubsystemSink sink = sinks.get(pos);
                     if (sink != null) {
                         componentSinks.add(new SinkNode(pos, sink));
+                        componentMembers.add(sink);
                     }
                     ISubsystemNetworkController controller = controllers.get(pos);
                     if (controller != null) {
                         componentControllers.add(controller);
+                        componentMembers.add(controller);
                     }
                 }
 
@@ -238,7 +247,8 @@ public final class SubsystemNetworkManager {
                 if (state == null) {
                     state = domain.newState();
                 }
-                domain.onComponentRebuilt(state, componentControllers);
+                List<ISubsystemNetworkNode> memberList = new ArrayList<>(componentMembers);
+                domain.onComponentRebuilt(state, componentControllers, memberList);
                 state.clearMembers();
                 state.setRoot(anchor);
                 for (BlockPos pos : componentMemberPositions) {
@@ -246,8 +256,8 @@ public final class SubsystemNetworkManager {
                     stateByPos.put(pos, state);
                 }
 
-                components.add(new ComponentTopology(
-                        state, componentCables, componentSources, componentSinks, componentControllers));
+                components.add(new ComponentTopology(domain, state, componentCables, componentSources,
+                        componentSinks, componentControllers, memberList));
                 if (domain.getLogger() != null) {
                     domain.getLogger().info(
                             "[{}Network] component anchor={} cables={} sources={} sinks={} controllers={}",
@@ -297,19 +307,24 @@ public final class SubsystemNetworkManager {
     }
 
     private static final class ComponentTopology {
+        private final SubsystemNetworkDomain domain;
         private final SubsystemNetworkState state;
         private final List<CableNode> cables;
         private final List<SourceNode> sources;
         private final List<SinkNode> sinks;
         private final List<ISubsystemNetworkController> controllers;
+        private final List<ISubsystemNetworkNode> members;
 
-        private ComponentTopology(SubsystemNetworkState state, List<CableNode> cables, List<SourceNode> sources,
-                                  List<SinkNode> sinks, List<ISubsystemNetworkController> controllers) {
+        private ComponentTopology(SubsystemNetworkDomain domain, SubsystemNetworkState state, List<CableNode> cables,
+                                  List<SourceNode> sources, List<SinkNode> sinks,
+                                  List<ISubsystemNetworkController> controllers, List<ISubsystemNetworkNode> members) {
+            this.domain = domain;
             this.state = state;
             this.cables = cables;
             this.sources = sources;
             this.sinks = sinks;
             this.controllers = controllers;
+            this.members = members;
         }
 
         private void solve() {
@@ -469,8 +484,13 @@ public final class SubsystemNetworkManager {
          * its last source went on showing the readout from the tick before it died. A display that
          * stops following its subject and keeps looking authoritative is the same defect twice over
          * here, because the console is also where the domain's settings are persisted.
+         * <p>
+         * The domain's own per-tick step runs FIRST, for the same reason and on the same one path:
+         * whatever it writes into the state is part of this tick's report, and a fourth exit added
+         * later cannot skip it.
          */
         private void publish() {
+            domain.onComponentTicked(state, members);
             for (ISubsystemNetworkController controller : controllers) {
                 controller.applyNetworkState(state);
             }

@@ -1,0 +1,19 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+	"ppp",
+	"c c",
+	"ppp"
+    ],
+    "key":
+    {
+        "p": { "type": "forge:ore_dict", "ore": "plateIron" },
+        "c": { "type": "forge:ore_dict", "ore": "stickCopper" }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:heatpipe",
+        "count": 8
+    }
+}

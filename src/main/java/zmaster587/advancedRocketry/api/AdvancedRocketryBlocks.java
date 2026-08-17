@@ -92,6 +92,8 @@ public class AdvancedRocketryBlocks {
     public static Block blockLifeSupportPlant;
     public static Block blockVentilationDuct;
     public static Block blockJettisonPort;
+    public static Block blockHeatPipe;
+    public static Block blockHeatAccumulator;
     public static Block blockCircleLight;
     public static Block blockSolarGenerator;
     public static Block blockDockingPort;

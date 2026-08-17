@@ -10852,7 +10852,15 @@ public class TestProbeCommand extends CommandBase {
                     // real DEFICIT, and the honest way to create one is to turn the supply down
                     // rather than to build a contrived amount of demand.
                     "lifeSupportPlantRate",
-                    "lifeSupportDuctThroughput"));
+                    "lifeSupportDuctThroughput",
+                    // The thermal system's master switch, so its disableability can be pinned from
+                    // both sides in one server, plus the two capacities: a test that a bigger loop
+                    // heats slower has to be able to CHANGE the capacity, or it is asserting a
+                    // tuned number rather than the relation between capacity and temperature.
+                    "shipHeat",
+                    "shipHeatPipeCapacity",
+                    "shipHeatAccumulatorCapacity",
+                    "shipHeatWasteFraction"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -16538,7 +16546,8 @@ public class TestProbeCommand extends CommandBase {
 
     /**
      * {@code /artest subnet info <domain> <dim> <x> <y> <z>} — the network the block at this
-     * position belongs to, in whichever domain was named ({@code lifesupport}, {@code shield}).
+     * position belongs to, in whichever domain was named ({@code lifesupport}, {@code shield},
+     * {@code heat}).
      *
      * <p>Naming the domain is the point: it is how a test can ask whether two subsystems laid
      * through the same wall stayed apart, which is otherwise only inferable from gas that did or
@@ -16549,8 +16558,14 @@ public class TestProbeCommand extends CommandBase {
      * <pre>
      * {"ok":true,"domain":"lifesupport","inNetwork":true,"connected":true,"status":5,
      *  "cables":3,"sources":1,"sinks":1,"sourceAvailable":12000,"sinkRequested":2700000,
-     *  "cableCapacity":18000,"deliveredFlow":6000,"saturatedCables":1,"members":5}
+     *  "cableCapacity":18000,"deliveredFlow":6000,"saturatedCables":1,"members":5,
+     *  "heatStored":0,"heatCapacity":0,"heatGeneration":0,"temperatureMilliK":0}
      * </pre>
+     *
+     * <p>The four heat fields describe a coolant loop's reservoir and are zero in every other
+     * domain. A loop does not distribute anything the way the other two do — it is one body at one
+     * temperature — so what a heat test reads out of this verb is {@code temperatureMilliK} and the
+     * {@code heatStored}/{@code heatCapacity} it came from, rather than {@code deliveredFlow}.
      */
     private void handleSubsystemNetwork(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length < 3
@@ -16561,13 +16576,26 @@ public class TestProbeCommand extends CommandBase {
         }
         String domainName = args[1].toLowerCase(java.util.Locale.ROOT);
         zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain domain;
-        if ("lifesupport".equals(domainName)) {
+        // "all" solves EVERY domain once per tick, which is what the game does. Solving one domain
+        // N times and then another N times is a different experiment wherever two subsystems feed
+        // each other within a tick — a machine hands its waste heat to a coolant loop, and a buffer
+        // that only holds a moment's worth loses the rest to the air if nothing collects it in time.
+        boolean everyDomain = "all".equals(domainName);
+        if (everyDomain) {
+            domain = null;
+        } else if ("lifesupport".equals(domainName)) {
             domain = zmaster587.advancedRocketry.atmosphere.LifeSupportNetwork.DOMAIN;
         } else if ("shield".equals(domainName)) {
             domain = com.github.stannismod.affs.world.shield.ShieldNetworkManager.DOMAIN;
+        } else if ("heat".equals(domainName)) {
+            domain = zmaster587.advancedRocketry.subsystem.heat.HeatNetwork.DOMAIN;
         } else {
             send(sender, "{\"error\":\"unknown domain\",\"domain\":\"" + escapeJson(domainName)
-                    + "\",\"known\":[\"lifesupport\",\"shield\"]}");
+                    + "\",\"known\":[\"lifesupport\",\"shield\",\"heat\",\"all\"]}");
+            return;
+        }
+        if (everyDomain && !"solve".equalsIgnoreCase(args[0])) {
+            send(sender, "{\"error\":\"'all' names no single network to report on — use it with solve\"}");
             return;
         }
         int dim = parseIntOr(args[2], Integer.MIN_VALUE);
@@ -16587,12 +16615,23 @@ public class TestProbeCommand extends CommandBase {
         if ("solve".equalsIgnoreCase(args[0])) {
             int ticks = args.length >= 4 ? parseIntOr(args[3], 1) : 1;
             ticks = Math.max(0, Math.min(20000, ticks));
+            int domainsSolved = everyDomain
+                    ? zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry.domains().size()
+                    : 1;
             for (int i = 0; i < ticks; i++) {
-                zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager
-                        .tick(domain, solveWorld);
+                if (everyDomain) {
+                    for (zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain each
+                            : zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry.domains()) {
+                        zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager
+                                .tick(each, solveWorld);
+                    }
+                } else {
+                    zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager
+                            .tick(domain, solveWorld);
+                }
             }
             send(sender, "{\"ok\":true,\"domain\":\"" + escapeJson(domainName)
-                    + "\",\"ticksSolved\":" + ticks + "}");
+                    + "\",\"ticksSolved\":" + ticks + ",\"domainsSolved\":" + domainsSolved + "}");
             return;
         }
 
@@ -16622,6 +16661,21 @@ public class TestProbeCommand extends CommandBase {
         out.append(",\"deliveredFlow\":").append(state == null ? 0 : state.getDeliveredFlow());
         out.append(",\"saturatedCables\":").append(state == null ? 0 : state.getSaturatedCables());
         out.append(",\"members\":").append(state == null ? 0 : state.getMemberPositions().size());
+        // The thermal reservoir, in every state and never as a dropped key: a loop that is holding
+        // nothing and a position that is in no loop are both legitimate answers, and a test that
+        // parses one of them must not throw on the other. Temperature is emitted in milli-kelvin
+        // because the envelope's numbers are read as integers, and beside the two quantities it was
+        // computed from, so a temperature that will not move can be attributed to Q or to C.
+        zmaster587.advancedRocketry.subsystem.heat.HeatNetworkState heatState =
+                state instanceof zmaster587.advancedRocketry.subsystem.heat.HeatNetworkState
+                        ? (zmaster587.advancedRocketry.subsystem.heat.HeatNetworkState) state
+                        : null;
+        out.append(",\"heatStored\":").append(heatState == null ? 0L : heatState.getStoredHeat());
+        out.append(",\"heatCapacity\":").append(heatState == null ? 0L : heatState.getHeatCapacity());
+        out.append(",\"heatGeneration\":").append(heatState == null ? 0 : heatState.getGenerationThisTick());
+        out.append(",\"temperatureMilliK\":").append(heatState == null
+                ? 0L
+                : Math.round(heatState.getTemperatureKelvin() * 1000.0D));
         out.append('}');
         send(sender, out.toString());
     }

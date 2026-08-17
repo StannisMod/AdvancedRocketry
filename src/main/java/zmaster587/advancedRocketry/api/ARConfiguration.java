@@ -49,6 +49,7 @@ public class ARConfiguration {
     private final static String PLANET = Constants.CONFIG_CATEGORY_PLANET;
     private final static String OXYGEN = "Oxygen System";
     private final static String ENERGY = "Energy Production";
+    private final static String HEAT = "Ship Thermal System";
     private final static String MISSION = "Resource Collection Missions";
     private final static String PERFORMANCE = "Performance";
     private final static String CLIENT = "Client";
@@ -293,6 +294,18 @@ public class ARConfiguration {
     public int lifeSupportDuctThroughput;
     @ConfigProperty
     public int lifeSupportBreachVentRate;
+    @ConfigProperty
+    public boolean shipHeat;
+    @ConfigProperty
+    public int shipHeatAmbientKelvin;
+    @ConfigProperty
+    public int shipHeatPipeCapacity;
+    @ConfigProperty
+    public int shipHeatAccumulatorCapacity;
+    @ConfigProperty
+    public int shipHeatPipeThroughput;
+    @ConfigProperty
+    public int shipHeatWasteFraction;
     @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
@@ -578,6 +591,12 @@ public class ARConfiguration {
 
 
         //Energy Production
+        arConfig.shipHeat = config.get(HEAT, "shipHeat", true, "Machines make waste heat, coolant loops carry it and hold it, and a loop that is given more than it can get rid of warms up. When false no block makes or stores heat and every loop reads as ambient, which is how the game behaved before the thermal system existed.").getBoolean();
+        arConfig.shipHeatAmbientKelvin = config.get(HEAT, "shipHeatAmbientKelvin", 293, "The temperature a coolant loop sits at when it is holding nothing, in kelvin. 293 is room temperature; everything a loop reads above this is heat it is currently carrying.", 1, 5000).getInt();
+        arConfig.shipHeatPipeCapacity = config.get(HEAT, "shipHeatPipeCapacity", 20, "How much heat one pipe block absorbs per kelvin. At the default a pipe holds about 20000 heat units over the roughly 1000 K between room temperature and the point where a loop starts damaging what it runs through, so a long run is a real heat sink and not just a wire.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.shipHeatAccumulatorCapacity = config.get(HEAT, "shipHeatAccumulatorCapacity", 1000, "How much heat one accumulator block absorbs per kelvin — fifty pipes' worth at the defaults, which is what makes a block of it worth the space when a jump has to be survived.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.shipHeatPipeThroughput = config.get(HEAT, "shipHeatPipeThroughput", 200000, "Heat one pipe block will carry each second between the loop and what is attached to it. The default is exactly one mid-game reactor at cruise, so a second reactor wants a second run rather than a longer one.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.shipHeatWasteFraction = config.get(HEAT, "shipHeatWasteFraction", 300, "How much of the energy a machine spends comes back out as waste heat a coolant loop can pick up, in thousandths. The rest is taken away by the air around the machine, which is why a planetside base needs no thermal build at all.", 0, 1000).getInt();
         arConfig.solarGeneratorMult = config.get(ENERGY, "solarGeneratorMultiplier", 1, "Power produced per tick by the solar generator.").getInt();
         arConfig.microwaveRecieverMulitplier = (float) config.get(ENERGY, "MicrowaveRecieverMultiplier", 1f, "Multiplier for microwave receiver power output.").getDouble();
         arConfig.defaultItemTimeBlackHole = config.get(ENERGY, "defaultBurnTime", 500, "Burn time in ticks for items not listed in blackHoleTimings.").getInt();

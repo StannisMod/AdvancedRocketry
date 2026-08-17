@@ -5,6 +5,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import org.apache.logging.log4j.Logger;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemNetworkController;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemNetworkNode;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState;
@@ -26,7 +27,8 @@ public final class ShieldNetworkManager {
         }
 
         @Override
-        public void onComponentRebuilt(SubsystemNetworkState state, List<ISubsystemNetworkController> controllers) {
+        public void onComponentRebuilt(SubsystemNetworkState state, List<ISubsystemNetworkController> controllers,
+                                       List<ISubsystemNetworkNode> members) {
             if (!(state instanceof ShieldNetworkState) || controllers == null || controllers.isEmpty()) {
                 return;
             }
