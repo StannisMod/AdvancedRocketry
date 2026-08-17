@@ -6,6 +6,7 @@ import org.junit.Test;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static zmaster587.advancedRocketry.test.AdvancedRocketryTestConstants.HYPERSPACE_JUMP_SPEED;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -50,13 +51,14 @@ public class VSUnmannedTransitSettlesOnItsPoseE2ETest extends AbstractSharedServ
         assertTrue("origin ship never registered in the pool-slot cell (dim " + originDim + ")",
                 waitForRegisteredShip(originDim));
 
-        String begin = exec("artest space transit-begin " + originDim + " " + ax + " " + ay + " " + az);
+        String begin = exec("artest space transit-begin " + originDim + " " + ax + " " + ay + " " + az
+                + " " + HYPERSPACE_JUMP_SPEED);
         assertTrue("transit did not begin (departure crossing failed): " + begin,
                 begin.contains("\"began\":true"));
 
         String lastTick = "";
         for (int i = 0; i < TICK_POLLS; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (extractInt(lastTick, "inTransit") == 0 && extractInt(lastTick, "targetDim") >= 0) {
                 break;
             }

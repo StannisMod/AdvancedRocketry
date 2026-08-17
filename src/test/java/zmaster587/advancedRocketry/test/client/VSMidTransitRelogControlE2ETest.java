@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
+import static zmaster587.advancedRocketry.test.AdvancedRocketryTestConstants.HYPERSPACE_JUMP_SPEED;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -150,9 +151,9 @@ public class VSMidTransitRelogControlE2ETest extends AbstractClientE2ETest {
         // ticks (the cells sit one 4M-block sector apart), so the relog lands INSIDE the transit
         // instead of racing a single-tick jump. ---------------------------------------------------
         String begin = exec("artest space transit-begin " + originDim
-                + " " + ax + " " + ay + " " + az + " 100000");
+                + " " + ax + " " + ay + " " + az + " " + HYPERSPACE_JUMP_SPEED);
         assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
-        String firstTick = exec("artest space transit-tick");
+        String firstTick = exec("artest space transit-tick 10");
         assertTrue("the ship must actually be IN TRANSIT when the pilot relogs — otherwise this "
                 + "pins an ordinary relog, not the mid-transit one: " + firstTick,
                 readInt(firstTick, "inTransit") >= 1);
@@ -167,7 +168,7 @@ public class VSMidTransitRelogControlE2ETest extends AbstractClientE2ETest {
         String lastTick = "";
         int arriveBudget = (int) (80 * TestTimeouts.factor());
         for (int i = 0; i < arriveBudget && targetDim < 0; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 targetDim = readInt(lastTick, "targetDim");
                 break;
@@ -183,7 +184,7 @@ public class VSMidTransitRelogControlE2ETest extends AbstractClientE2ETest {
         int reseatBudget = (int) (60 * TestTimeouts.factor());
         String lastReseatTick = "";
         for (int i = 0; i < reseatBudget && !seatedOnArrival; i++) {
-            lastReseatTick = exec("artest space transit-tick");
+            lastReseatTick = exec("artest space transit-tick 10");
             bot().waitTicks(2);
             seatedOnArrival = bot().reportRidingEntity().get("riding").getAsBoolean()
                     && bot().reportWeather().get("dim").getAsInt() == targetDim;

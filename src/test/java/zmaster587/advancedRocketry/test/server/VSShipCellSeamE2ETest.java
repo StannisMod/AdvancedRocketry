@@ -26,7 +26,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>The arrangement uses the REAL on-ramp to get a ship legitimately settled in a cell (assemble,
  * hold a throttle, climb past the ceiling, let the flight computer's own tick call entry), then moves
- * it past the face and drives {@code SpaceSubsystem.seam().requestCarry()} — production code, through
+ * it past the face and drives {@code SpaceSubsystem.cellCrossings().requestCarry()} — production code, through
  * a probe verb. The crossing itself is the shared one every other crossing uses.</p>
  *
  * <p><b>What this test does NOT cover, stated rather than implied:</b> the trigger wiring inside

@@ -505,8 +505,8 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                     // the carry is asked BEFORE the position is reported, because a report that
                     // saturates is what a ship gets when the carry was refused, not what it gets while
                     // one is available.
-                    zmaster587.advancedRocketry.space.CellSeamController seamCtl =
-                            zmaster587.advancedRocketry.space.SpaceSubsystem.seam();
+                    zmaster587.advancedRocketry.space.CellCrossingController seamCtl =
+                            zmaster587.advancedRocketry.space.SpaceSubsystem.cellCrossings();
                     if (seamCtl != null && seamCtl.requestCarry(world.provider.getDimension(),
                             getPos(), shipId, cell, pose)) {
                         return;

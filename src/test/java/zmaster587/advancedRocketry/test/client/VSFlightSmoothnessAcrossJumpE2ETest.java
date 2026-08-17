@@ -11,6 +11,7 @@ import org.lwjgl.input.Keyboard;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static zmaster587.advancedRocketry.test.AdvancedRocketryTestConstants.HYPERSPACE_JUMP_SPEED;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -196,7 +197,8 @@ public class VSFlightSmoothnessAcrossJumpE2ETest extends AbstractClientE2ETest {
         String begin = exec("artest space transit-begin " + originDim
                 + " " + (int) Math.round(readDouble(shipNow, "posX"))
                 + " " + (int) Math.round(readDouble(shipNow, "posY"))
-                + " " + (int) Math.round(readDouble(shipNow, "posZ")));
+                + " " + (int) Math.round(readDouble(shipNow, "posZ"))
+                + " " + HYPERSPACE_JUMP_SPEED);
         assertTrue("ARRANGEMENT: the transit must begin (departure crossing): " + begin,
                 readBool(begin, "began"));
 
@@ -204,7 +206,7 @@ public class VSFlightSmoothnessAcrossJumpE2ETest extends AbstractClientE2ETest {
         String lastTick = "";
         int arriveBudget = (int) (120 * TestTimeouts.factor());
         for (int i = 0; i < arriveBudget && targetDim < 0; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readIntOr(lastTick, "inTransit", -1) == 0) {
                 targetDim = readIntOr(lastTick, "targetDim", -1);
                 break;
@@ -218,7 +220,7 @@ public class VSFlightSmoothnessAcrossJumpE2ETest extends AbstractClientE2ETest {
         int reseatBudget = (int) (60 * TestTimeouts.factor());
         String lastReseatTick = "";
         for (int i = 0; i < reseatBudget && !seatedOnArrival; i++) {
-            lastReseatTick = exec("artest space transit-tick");
+            lastReseatTick = exec("artest space transit-tick 10");
             bot().waitTicks(2);
             seatedOnArrival = bot().reportRidingEntity().get("riding").getAsBoolean()
                     && bot().reportWeather().get("dim").getAsInt() == targetDim;

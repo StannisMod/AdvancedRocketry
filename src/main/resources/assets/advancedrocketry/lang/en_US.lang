@@ -920,6 +920,7 @@ msg.shipseam.failed=§cThe crossing failed - the ship could not be carried into 
 msg.shipseam.arrived=§aThe ship has crossed into the next neighbourhood.
 msg.shiptransit.departed=§aJump engaged - the ship is under way. Helm control is offline until you arrive.
 msg.shiptransit.arrived=§aArrived - the ship is back in normal space. Helm control is yours again.
+msg.shiptransit.directfailed=§cThe crossing failed - your ship is at its destination but not cleanly placed. It is safe; report this.
 msg.shiptransit.arrivalrecovered=§eThe jump completed, but not cleanly - your ship is at its arrival point rather than on course. It is safe; report this.
 msg.shiptransit.arrivalstalled=§cThe jump cannot finish right now. Your ship is not lost - it stays in transit and will arrive. Report this.
 

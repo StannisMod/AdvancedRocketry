@@ -6,7 +6,7 @@ package zmaster587.advancedRocketry.space;
  * <p>A cell's local range is finite, so a ship under sustained thrust reaches its face. Two answers
  * were possible: stop it, or carry it. This class holds the second one's arithmetic — when a pose
  * has left its cell far enough to count, and where the ship belongs in the neighbour it entered.
- * Nothing here touches Minecraft, a world or a ledger; that is {@link CellSeamController}'s work.</p>
+ * Nothing here touches Minecraft, a world or a ledger; that is {@link CellCrossingController}'s work.</p>
  *
  * <h3>Why a margin exists at all</h3>
  *

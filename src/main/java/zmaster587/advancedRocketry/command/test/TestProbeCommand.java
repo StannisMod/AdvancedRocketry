@@ -4032,6 +4032,14 @@ public class TestProbeCommand extends CommandBase {
             // the ship is the one caller that never has to guess.
             java.util.UUID pilotedShip =
                     zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(w, anchor);
+            // SETTLE the ship in this stack's own ledger, the way the entry on-ramp would have. Without
+            // it the fixture is a ship that is nowhere: production never has a craft sitting in a cell
+            // with no ledger row, and anything that asks the ledger where this ship IS - a short jump,
+            // a seam carry, a descent - correctly refuses to act on a ship it cannot place. Written on
+            // THIS stack's ledger, not the attached subsystem's: the two are different objects here.
+            if (transitDurableId != null) {
+                transitStack.ledger.settle(transitDurableId, transitOrigin);
+            }
             // Assembly is ASYNC (queued on the physics thread), so the seat + ship world pos are NOT queryable
             // yet. The caller polls `vs ship-count-all`/`load-ships`/`ship-count` for the ship, then reads the
             // post-assembly pilot-seat subspace pos + ship world pos via `vs find-seat <dim> id <shipId>`.
@@ -4041,12 +4049,19 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"durableId\":\"" + (transitDurableId == null ? "" : transitDurableId) + "\"}");
             return;
         }
-        // transit-begin <originDim> <ax> <ay> <az> [speedBlocksPerTick]: start the jump (arrival
-        // retries until the async hyperspace ship is crossable, so a large speed is fine). The
-        // optional speed lets a test SIZE the park: the setup cells sit one sector (4M blocks)
-        // apart, so the default 5M crosses in a single tick, while e.g. 100k parks the ship for
-        // ~40 probe-driven ticks — enough for a mid-transit stimulus (a relog) to land inside it.
-        if (args.length >= 5 && "transit-begin".equalsIgnoreCase(args[0])) {
+        // transit-begin <originDim> <ax> <ay> <az> <speedBlocksPerTick>: start the jump.
+        //
+        // The speed is REQUIRED, and it used to default to 5M. That default was harmless while there
+        // was one mechanism and it only sized the park; it stopped being harmless the moment the
+        // computed duration began choosing between hyperspace and a direct cell-to-cell crossing.
+        // At the setup's one-sector spacing (4M blocks) 5M crosses in a single tick, so the default
+        // silently picked the direct path for every caller that did not think about it — including
+        // every test written to exercise hyperspace. A caller now says which flight it wants.
+        //
+        // The arithmetic a caller needs: ticks = ceil(4M / speed), and a jump of at most
+        // ShipTransitManager.DIRECT_CROSSING_MAX_TICKS ticks is performed as one crossing. So
+        // speed >= 25_000 is a direct hop and speed <= 20_000 is a real flight with a park in it.
+        if (args.length >= 6 && "transit-begin".equalsIgnoreCase(args[0])) {
             if (transitTm == null) {
                 send(sender, "{\"error\":\"transit not set up\"}");
                 return;
@@ -4054,8 +4069,27 @@ public class TestProbeCommand extends CommandBase {
             int originDim = parseIntOr(args[1], Integer.MIN_VALUE);
             net.minecraft.util.math.BlockPos anchor = new net.minecraft.util.math.BlockPos(
                     parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
-            long speed = args.length >= 6
-                    ? Math.max(1L, Long.parseLong(args[5])) : 5_000_000L;
+            // The caller names the BUILD pad, which is where the ship was assembled FROM — after
+            // assembly its blocks live in a subspace shipyard and the pad is empty air. Production's
+            // caller (JumpTrigger) never has this problem: it is the flight computer, so it passes its
+            // own live position. Resolve the same thing here, by IDENTITY rather than by proximity, so
+            // a departure that reads the ship's pose off this anchor reads a real block.
+            net.minecraft.world.WorldServer originWorld =
+                    net.minecraftforge.common.DimensionManager.getWorld(originDim);
+            boolean anchorRelocated = false;
+            if (transitDurableId != null && originWorld != null) {
+                for (net.minecraft.tileentity.TileEntity te
+                        : new java.util.ArrayList<>(originWorld.loadedTileEntityList)) {
+                    if (te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                            && transitDurableId.equals(((zmaster587.advancedRocketry.tile
+                                    .TileAdvancedFlightComputer) te).shipIdOrNull())) {
+                        anchor = te.getPos();
+                        anchorRelocated = true;
+                        break;
+                    }
+                }
+            }
+            long speed = Math.max(1L, Long.parseLong(args[5]));
             // Depart under the fixture's own DURABLE id, so the crossing resolves the ship it was told
             // about instead of whatever craft is nearest an anchor every scenario here reuses. The
             // synthetic "t" remains for fixtures that assembled nothing to name.
@@ -4072,6 +4106,9 @@ public class TestProbeCommand extends CommandBase {
             // about a client in the wrong dimension.
             send(sender, "{\"ok\":true,\"began\":" + began + ",\"shipId\":\"" + departingShip
                     + "\",\"crew\":" + transitTm.crewCountOf(departingShip)
+                    + ",\"anchorRelocated\":" + anchorRelocated
+                    + ",\"anchorX\":" + anchor.getX() + ",\"anchorY\":" + anchor.getY()
+                    + ",\"anchorZ\":" + anchor.getZ()
                     + ",\"inTransit\":" + transitTm.inTransitCount() + "}");
             return;
         }
@@ -4082,7 +4119,26 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"transit not set up\"}");
                 return;
             }
-            transitTm.tick();
+            // transit-tick [count] — advance the jump `count` server ticks in ONE round trip.
+            //
+            // The count is not a convenience: a flight is only a flight if it is longer than
+            // ShipTransitManager.DIRECT_CROSSING_MAX_TICKS, so every test of the hyperspace path now
+            // has to drive at least that many ticks, and one probe call per tick makes a 200-tick
+            // flight 200 round trips. It repeats the SAME tick — it does not change what a tick does.
+            int ticksToRun = args.length >= 2 ? Math.max(1, Math.min(2000, parseIntOr(args[1], 1))) : 1;
+            for (int t = 0; t < ticksToRun; t++) {
+                transitTm.tick();
+                if (transitStack != null) {
+                    transitStack.cellCrossings.tick();
+                }
+            }
+            // Both mechanisms are advanced above. A jump short enough is performed as a single
+            // cell-to-cell crossing rather than flown, and its settle is driven by the crossing
+            // controller, not by the transit map. Ticking only one of them would make "advance the
+            // jump" mean different things depending on which mechanism the speed selected — and the
+            // arrival acceptance is meant to be SHARED between them, not written twice.
+            int crossing = transitStack != null && transitDurableId != null
+                    && transitStack.cellCrossings.isCarrying(transitDurableId) ? 1 : 0;
             int inTransit = transitTm.inTransitCount();
             int targetDim = -1;
             if (inTransit == 0 && transitMgr.isLoaded(transitTarget)) {
@@ -4125,6 +4181,11 @@ public class TestProbeCommand extends CommandBase {
             // the shared parking world. A crew-side test compares the CLIENT's dimension against these
             // rather than hardcoding an id that is minted per boot.
             send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim
+                    // Which mechanism is actually running, emitted in every state so "neither" is a
+                    // pair of zeros rather than a missing field: `inTransit` is the hyperspace flight,
+                    // `crossing` is the direct cell-to-cell settle. A test that wants to know WHICH
+                    // one its speed selected reads these instead of inferring it from timing.
+                    + ",\"crossing\":" + crossing
                     + ",\"poseX\":" + (long) pose[0] + ",\"poseY\":" + (long) pose[1]
                     + ",\"poseZ\":" + (long) pose[2]
                     + ",\"shipY\":" + shipY + ",\"poseDist\":" + poseDist
@@ -4531,8 +4592,8 @@ public class TestProbeCommand extends CommandBase {
         // real ship. The ship's LIVE pose is used, never the ledger's: past the face the ledger's copy
         // is saturated, so a lookup from it would miss the ship by the whole overshoot.
         if (args.length >= 2 && "seam-carry".equalsIgnoreCase(args[0])) {
-            zmaster587.advancedRocketry.space.CellSeamController seamCtl =
-                    zmaster587.advancedRocketry.space.SpaceSubsystem.seam();
+            zmaster587.advancedRocketry.space.CellCrossingController seamCtl =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.cellCrossings();
             zmaster587.advancedRocketry.space.ShipLedger seamLedger =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
             if (seamCtl == null || seamLedger == null) {

@@ -6,6 +6,7 @@ import org.junit.Test;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static zmaster587.advancedRocketry.test.AdvancedRocketryTestConstants.HYPERSPACE_JUMP_SPEED;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -72,13 +73,13 @@ public class VSJumpCarriesLooseBodiesE2ETest extends AbstractSharedServerTest {
         assertTrue("ARRANGEMENT: the dropped body must be ABOARD by the definition the crossing uses,"
                 + " not merely near the ship: " + dropped, dropped.contains("\"aboard\":true"));
 
-        String begin = exec("artest space transit-begin " + originDim + " 1 64 1");
+        String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + HYPERSPACE_JUMP_SPEED);
         assertTrue("the transit must begin: " + begin, begin.contains("\"began\":true"));
 
         int targetDim = -1;
         String lastTick = "";
         for (int i = 0; i < 80 && targetDim < 0; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (extractInt(lastTick, "inTransit") == 0) {
                 targetDim = extractInt(lastTick, "targetDim");
                 break;
@@ -91,7 +92,7 @@ public class VSJumpCarriesLooseBodiesE2ETest extends AbstractSharedServerTest {
         String arrived = "";
         boolean carried = false;
         for (int i = 0; i < 60 && !carried; i++) {
-            exec("artest space transit-tick");
+            exec("artest space transit-tick 10");
             arrived = exec("artest vs ship-info " + targetDim + " 0 200 0");
             if (arrived.contains("\"posX\"")) {
                 double px = extractDouble(arrived, "posX");

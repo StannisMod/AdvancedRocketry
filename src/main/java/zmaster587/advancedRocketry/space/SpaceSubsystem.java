@@ -67,7 +67,7 @@ public final class SpaceSubsystem {
     public final ShipTransitManager transit;
     public final ShipEntryController entry;
     public final DescentController descent;
-    public final CellSeamController seam;
+    public final CellCrossingController cellCrossings;
     private int gcTickCounter;
     /** Set by the pool-pressure eviction listener; consumed on the next server tick to run an extra GC. */
     private boolean pressureGcRequested;
@@ -118,8 +118,26 @@ public final class SpaceSubsystem {
                 SpaceSubsystem::launchBodyAddress, useClock);
         this.descent = new DescentController(this.manager, this.ledger, new VSShipCrossingOps(),
                 new VSDescentPasteResolver(), useClock);
-        this.seam = new CellSeamController(this.manager, this.ledger, new VSShipCrossingOps(),
+        this.cellCrossings = new CellCrossingController(this.manager, this.ledger, new VSShipCrossingOps(),
                 useClock);
+        // A jump too short to be worth a hyperspace leg is performed by the same machinery that carries
+        // a ship across a cell face — one crossing, ledger straight to the destination, no lane and no
+        // mid-flight. The transit manager decides WHICH jumps those are; this hands it the means.
+        this.transit.setDirectCrosser((shipId, origin, originSlotDim, originAnchor, target) -> {
+            // The transit manager keys ships by STRING, the ledger and the crossing by UUID. Not every
+            // string is one: a fixture may depart under a synthetic name, and a crossing cannot look
+            // that up. Refuse it here rather than throw out of a departure the pilot has paid for.
+            java.util.UUID durableId;
+            try {
+                durableId = java.util.UUID.fromString(shipId);
+            } catch (IllegalArgumentException notADurableId) {
+                AdvancedRocketry.logger.warn("[SPACE] direct crossing refused for ship '{}': it is not "
+                        + "a durable id, so nothing can resolve it in the ledger", shipId);
+                return false;
+            }
+            return this.cellCrossings.requestDirectJump(originSlotDim, originAnchor, durableId,
+                    origin, target);
+        });
     }
 
     /** The live subsystem, or {@code null} when none is attached (before server start, or on a client). */
@@ -212,9 +230,10 @@ public final class SpaceSubsystem {
         return current == null ? null : current.entry;
     }
 
-    /** The live cell-seam controller, or {@code null} when no subsystem is attached. */
-    public static CellSeamController seam() {
-        return current == null ? null : current.seam;
+    /** The live cell-to-cell crossing controller (seam carries AND short jumps), or {@code null}
+     *  when no subsystem is attached. */
+    public static CellCrossingController cellCrossings() {
+        return current == null ? null : current.cellCrossings;
     }
 
     /** The live descent controller, or {@code null} when no subsystem is attached. */
