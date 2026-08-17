@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import zmaster587.advancedRocketry.hyperdrive.DriveTier;
 import zmaster587.advancedRocketry.hyperdrive.DriveTuning;
 import zmaster587.advancedRocketry.hyperdrive.JumpSpeed;
 import zmaster587.advancedRocketry.space.CellFrames;
@@ -36,7 +37,8 @@ public class InterstellarLegDistanceTest {
 
     /** A baseline drive hauling the placeholder hull: the reference ship every band is quoted for. */
     private static final long BASELINE_SPEED =
-            JumpSpeed.blocksPerTick(DriveTuning.BASELINE_DRIVE_POWER, DriveTuning.PLACEHOLDER_SHIP_MASS);
+            JumpSpeed.blocksPerTick(DriveTuning.BASELINE_DRIVE_POWER, DriveTuning.PLACEHOLDER_SHIP_MASS,
+                    DriveTier.baseline());
 
     private static GalacticCoord cell(long sx, long sy, long sz) {
         return GalacticCoord.ofSectorLocal(sx, sy, sz, 0L, 0L, 0L);

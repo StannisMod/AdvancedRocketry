@@ -127,7 +127,8 @@ public final class ShipNavigation implements JumpGate.ShipContext {
     /** Blocks per tick this ship would fly at, given its drive and its hull. */
     public long plannedSpeed() {
         return JumpSpeed.blocksPerTick(drive().stats().drivePower(),
-                ShipMassProvider.massOf(world, flightComputerPos, shipId));
+                ShipMassProvider.massOf(world, flightComputerPos, shipId),
+                drive().stats().tier());
     }
 
     /** How long the flight to the current target would take, in ticks. Zero without a target. */

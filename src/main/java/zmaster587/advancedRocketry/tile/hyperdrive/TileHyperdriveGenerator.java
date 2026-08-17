@@ -8,6 +8,7 @@ import net.minecraft.util.math.BlockPos;
 
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.hyperdrive.ComponentScan;
+import zmaster587.advancedRocketry.hyperdrive.DriveTier;
 import zmaster587.advancedRocketry.hyperdrive.DriveTuning;
 import zmaster587.advancedRocketry.hyperdrive.ShipDriveStats;
 import zmaster587.advancedRocketry.tile.TileShipComponent;
@@ -36,8 +37,20 @@ public class TileHyperdriveGenerator extends TileShipComponent {
      * number written at assembly time eventually would.
      */
     public ShipDriveStats stats() {
-        return ShipDriveStats.ofPower(
-                DriveTuning.GENERATOR_BASE_POWER + coilCount() * DriveTuning.POWER_PER_COIL);
+        return ShipDriveStats.ofPower(DriveTuning.powerForCoils(coilCount()), tier());
+    }
+
+    /**
+     * Which generation of drive this block is.
+     *
+     * <p>One generator block, one tier, so this is a property of the BLOCK and not of the build — a
+     * later generation is a different machine a player installs, which is what puts him back at a
+     * handful of coils and makes the new tier's efficiency something he feels. Only the first
+     * generation has a block today; the seam is here so that adding the next one is a block and a
+     * recipe rather than a change to the speed law.</p>
+     */
+    public DriveTier tier() {
+        return DriveTier.baseline();
     }
 
     /** How many coils are welded to this generator. */

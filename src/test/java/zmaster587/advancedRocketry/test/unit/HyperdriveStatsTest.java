@@ -10,6 +10,7 @@ import net.minecraft.util.math.BlockPos;
 
 import zmaster587.advancedRocketry.hyperdrive.ComponentScan;
 import zmaster587.advancedRocketry.hyperdrive.DampenerField;
+import zmaster587.advancedRocketry.hyperdrive.DriveTier;
 import zmaster587.advancedRocketry.hyperdrive.DriveTuning;
 import zmaster587.advancedRocketry.hyperdrive.JumpSpeed;
 import zmaster587.advancedRocketry.hyperdrive.ShipDriveStats;
@@ -84,8 +85,8 @@ public class HyperdriveStatsTest {
 
     @Test
     public void aBiggerGeneratorIsABetterGenerator() {
-        ShipDriveStats small = ShipDriveStats.ofPower(2_000L);
-        ShipDriveStats large = ShipDriveStats.ofPower(20_000L);
+        ShipDriveStats small = ShipDriveStats.ofPower(2_000L, DriveTier.baseline());
+        ShipDriveStats large = ShipDriveStats.ofPower(20_000L, DriveTier.baseline());
 
         assertTrue("more power crosses deeper wells and crosses them faster",
                 large.drivePower() > small.drivePower());
@@ -100,12 +101,12 @@ public class HyperdriveStatsTest {
         assertFalse(ShipDriveStats.NONE.present());
         assertEquals(0L, ShipDriveStats.NONE.burstCost());
         assertFalse("a generator of zero power is the same thing as no generator",
-                ShipDriveStats.ofPower(0L).present());
+                ShipDriveStats.ofPower(0L, DriveTier.baseline()).present());
     }
 
     @Test
     public void driveStatsSurviveAnNbtRoundTrip() {
-        ShipDriveStats original = ShipDriveStats.ofPower(12_345L);
+        ShipDriveStats original = ShipDriveStats.ofPower(12_345L, DriveTier.baseline());
         NBTTagCompound nbt = new NBTTagCompound();
         original.writeToNBT(nbt);
 
@@ -120,16 +121,16 @@ public class HyperdriveStatsTest {
 
     @Test
     public void aHeavierShipOnTheSameDriveIsSlower() {
-        long light = JumpSpeed.blocksPerTick(DriveTuning.BASELINE_DRIVE_POWER, 1_000L);
-        long heavy = JumpSpeed.blocksPerTick(DriveTuning.BASELINE_DRIVE_POWER, 100_000L);
+        long light = JumpSpeed.blocksPerTick(DriveTuning.BASELINE_DRIVE_POWER, 1_000L, DriveTier.baseline());
+        long heavy = JumpSpeed.blocksPerTick(DriveTuning.BASELINE_DRIVE_POWER, 100_000L, DriveTier.baseline());
 
         assertTrue("mass is what makes a cruiser need a cruiser's drive", heavy < light);
     }
 
     @Test
     public void aStrongerDriveOnTheSameHullIsFaster() {
-        long weak = JumpSpeed.blocksPerTick(1_000L, DriveTuning.BASELINE_SHIP_MASS);
-        long strong = JumpSpeed.blocksPerTick(50_000L, DriveTuning.BASELINE_SHIP_MASS);
+        long weak = JumpSpeed.blocksPerTick(1_000L, DriveTuning.BASELINE_SHIP_MASS, DriveTier.baseline());
+        long strong = JumpSpeed.blocksPerTick(50_000L, DriveTuning.BASELINE_SHIP_MASS, DriveTier.baseline());
 
         assertTrue(strong > weak);
     }
@@ -139,14 +140,14 @@ public class HyperdriveStatsTest {
         // The transit integrator refuses a zero step, so a ship that computes to "slower than one
         // block per tick" must round up to one rather than becoming a permanent fixture of
         // hyperspace.
-        long speed = JumpSpeed.blocksPerTick(1L, Long.MAX_VALUE / 2L);
+        long speed = JumpSpeed.blocksPerTick(1L, Long.MAX_VALUE / 2L, DriveTier.baseline());
 
         assertTrue("a crawling ship is a slow ship, not a stuck one", speed >= 1L);
     }
 
     @Test
     public void aShipWithNoDriveHasNoSpeedAtAll() {
-        assertEquals("refused upstream, not flown slowly", 0L, JumpSpeed.blocksPerTick(0L, 100L));
+        assertEquals("refused upstream, not flown slowly", 0L, JumpSpeed.blocksPerTick(0L, 100L, DriveTier.baseline()));
     }
 
     @Test
