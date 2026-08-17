@@ -2689,7 +2689,7 @@ public class TestProbeCommand extends CommandBase {
 
     private void handleDrive(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length < 5) {
-            send(sender, "{\"error\":\"usage: drive build|info|charge|arm|press|hull <dim> <afcX> <afcY> <afcZ> ...\"}");
+            send(sender, "{\"error\":\"usage: drive build|info|charge|push|arm|press|hull <dim> <afcX> <afcY> <afcZ> ...\"}");
             return;
         }
         String verb = args[0];
@@ -2744,6 +2744,29 @@ public class TestProbeCommand extends CommandBase {
                 }
             }
             send(sender, "{\"ok\":true,\"charge\":" + drive.capacitorCharge() + "}");
+            return;
+        }
+        if ("push".equalsIgnoreCase(verb)) {
+            // Energy pushed in THROUGH THE FORGE ENERGY CAPABILITY, which is what an adjacent reactor,
+            // solar array or cable does. Deliberately not `fill()`: that seam sets the level directly
+            // and would leave a test unable to tell a wired bank from one that manufactures its own
+            // charge — which is the exact defect this verb exists to be able to observe.
+            long amount = args.length > 5 ? parseLongOr(args[5], 0L) : 0L;
+            long accepted = 0L;
+            int ports = 0;
+            for (zmaster587.advancedRocketry.tile.hyperdrive.TileJumpCapacitor capacitor
+                    : drive.capacitors()) {
+                net.minecraftforge.energy.IEnergyStorage port = capacitor.getCapability(
+                        net.minecraftforge.energy.CapabilityEnergy.ENERGY, null);
+                if (port == null) {
+                    continue;
+                }
+                ports++;
+                accepted += port.receiveEnergy(
+                        (int) Math.min(Integer.MAX_VALUE, Math.max(0L, amount)), false);
+            }
+            send(sender, "{\"ok\":true,\"ports\":" + ports + ",\"accepted\":" + accepted
+                    + ",\"charge\":" + drive.capacitorCharge() + "}");
             return;
         }
         if ("arm".equalsIgnoreCase(verb)) {
