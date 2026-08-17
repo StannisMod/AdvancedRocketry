@@ -1098,6 +1098,25 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                     in, thrustMag, gravity, canThrust);
         }
 
+        // ATMOSPHERE. Applied to whatever law just ran, because air does not ask which one it was.
+        // This is what bounds a craft's speed now that the law does not: the ceiling is a property of
+        // where you are, and in vacuum there is none.
+        //
+        // The STRICT lookup, deliberately: getDimensionProperties answers an unknown id with the
+        // OVERWORLD's properties, which carry a full atmosphere - so a space cell, a slot world or
+        // hyperspace would read as one-atmosphere air and quietly brake every ship flying through
+        // vacuum. A dimension that is not a registered body has no air here, which is also the
+        // physically right answer.
+        DimensionProperties atmProps = DimensionManager.getInstance()
+                .getDimensionPropertiesOrNull(this.world.provider.getDimension());
+        double atmDensity = atmProps == null ? 0.0 : atmProps.getAtmosphereDensity() / 100.0;
+        if (atmDensity > 0.0) {
+            double[] dragged = FreeFlightPhysics.atmosphericDrag(
+                    result.motionX, result.motionY, result.motionZ, atmDensity);
+            result = new FreeFlightPhysics.Step(dragged[0], dragged[1], dragged[2],
+                    result.yaw, result.pitch, result.roll, result.thrustApplied);
+        }
+
         // Engine power = magnitude of the thrust the engines applied this tick,
         // i.e. the world-frame Δv MINUS gravity (gravity is not thrust): the
         // difference between the resulting motion and where the craft would have

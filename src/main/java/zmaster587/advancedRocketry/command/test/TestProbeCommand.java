@@ -20609,11 +20609,22 @@ public class TestProbeCommand extends CommandBase {
                 catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
             }
             long end = world.getTotalWorldTime();
+            // SAY whether the clock actually moved. Measured 2026-08-17: it does not — this handler
+            // runs ON the server thread, the one thread that advances world time, so the poll above
+            // can only ever watch a stopped clock and then give up on its wall budget. Every caller
+            // that read this as "N ticks have now happened" was reading a sleep. The verb keeps
+            // working (it does burn wall time, which some callers only ever wanted) but it may not
+            // report that silently: `advanced` is the field a test must look at, and the hint says
+            // what to do instead.
+            boolean advanced = end > start;
             send(sender, "{\"ok\":true,\"dim\":" + dim
                     + ",\"startTick\":" + start
                     + ",\"endTick\":" + end
                     + ",\"elapsedTicks\":" + (end - start)
                     + ",\"requested\":" + ticksToWait
+                    + ",\"advanced\":" + advanced
+                    + (advanced ? "" : ",\"hint\":\"the clock did not move: this handler runs on the "
+                            + "server thread and cannot let it tick - poll from the test side instead\"")
                     + ",\"wallMs\":" + (System.currentTimeMillis() - wallStart) + "}");
             return;
         }

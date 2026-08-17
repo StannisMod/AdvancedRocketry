@@ -89,6 +89,34 @@ public final class FreeFlightPhysics {
     public static final double MAX_THRUST_ACCEL   = 0.5;
 
     /**
+     * The speed a craft at FULL thrust settles at in a one-atmosphere sky, in blocks/tick — the
+     * number {@link #DRAG_PER_DENSITY} is derived from, and the one to argue about if this ever
+     * feels wrong.
+     *
+     * <p>100 b/t is 2 km/s. It is deliberately generous: real hulls come apart far below it in dense
+     * air, and the point here is not to model aerodynamics but to stop an atmosphere from being a
+     * thing a craft passes through as if it were vacuum. Under the acceleration law a rocket can now
+     * arrive at a planet arbitrarily fast, and nothing charged it for that; an atmosphere charges it
+     * in the only currency this law has, which is TIME — shedding speed takes as long as building it
+     * did.</p>
+     *
+     * <p>NOT ratified as a balance number. It is derived, stated, and pinned by a test that reads it
+     * from here rather than restating it.</p>
+     */
+    public static final double ATMOSPHERIC_TERMINAL_SPEED = 100.0;
+
+    /**
+     * Quadratic drag per unit of atmospheric density, in 1/blocks: {@code Δv = -k·ρ·v·|v|}.
+     *
+     * <p>Derived, not chosen: at terminal velocity thrust equals drag, so
+     * {@code k = MAX_THRUST_ACCEL / ATMOSPHERIC_TERMINAL_SPEED²}. Both inputs are visible above, so
+     * changing either moves this the way physics says it should rather than the way a hand-tuned
+     * constant would.</p>
+     */
+    public static final double DRAG_PER_DENSITY =
+            MAX_THRUST_ACCEL / (ATMOSPHERIC_TERMINAL_SPEED * ATMOSPHERIC_TERMINAL_SPEED);
+
+    /**
      * Per-tick velocity retention used by the liftoff/hover assist to bleed
      * horizontal drift (0..1; ≈0.88 &rarr; settles in ~25–30 ticks).
      */
@@ -478,6 +506,40 @@ public final class FreeFlightPhysics {
         // and the only bound is MAX_THRUST_ACCEL. Reaching an absurd speed is the pilot's own affair
         // and costs him the time it takes to shed it again.
         return new Step(newMx, newMy, newMz, e[0], e[1], e[2], thrustApplied);
+    }
+
+    /**
+     * One tick of atmospheric drag on a world-frame velocity: {@code Δv = -k·ρ·v·|v|}, quadratic in
+     * speed and linear in density, applied along the velocity vector so it only ever slows a craft
+     * and never turns it.
+     *
+     * <p>Applies to every flight law rather than to one of them: an atmosphere does not ask whether
+     * Flight Assist is on. It is the counterpart of removing the speed cap — the cap used to be the
+     * only thing standing between "go as fast as you like" and "arrive at a planet at any speed",
+     * and a bound that comes from where you are is a better one than a bound written into the law.</p>
+     *
+     * <p><b>Never overshoots into a reversal.</b> A tick's drag is clamped to the speed itself, so a
+     * craft can be brought to rest but never pushed backwards by air — which an unclamped quadratic
+     * would do at high speed and low tick rate, and which reads as a hull bouncing off the sky.</p>
+     *
+     * @param density atmospheric density as a fraction of one Earth atmosphere; {@code <= 0} is
+     *                vacuum and returns the velocity untouched
+     * @return the new {@code {mx, my, mz}}
+     */
+    public static double[] atmosphericDrag(double mx, double my, double mz, double density) {
+        if (!(density > 0.0)) {
+            return new double[]{mx, my, mz};
+        }
+        double speed = Math.sqrt(mx * mx + my * my + mz * mz);
+        if (speed < 1e-9) {
+            return new double[]{mx, my, mz};
+        }
+        double decel = DRAG_PER_DENSITY * density * speed * speed;
+        if (decel > speed) {
+            decel = speed; // to rest, never through it
+        }
+        double scale = (speed - decel) / speed;
+        return new double[]{mx * scale, my * scale, mz * scale};
     }
 
     // -- Tier-2 ship translation command -----------------------------------

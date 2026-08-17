@@ -58,6 +58,9 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
+    /** Ledger #264 discriminator: the seat's own delivery counters, sampled across the climb. */
+    private static final Pattern RECEIVED = Pattern.compile("\"received\":(\\d+)");
+    private static final Pattern DELIVERED = Pattern.compile("\"delivered\":(\\d+)");
     private static final Pattern LEDGER = Pattern.compile("\"ledger\":(-?\\d+)");
     private static final Pattern SHIP_ID = Pattern.compile("\"id\":\"([0-9a-fA-F-]+)\"");
     private static final Pattern VEL_Y = Pattern.compile("\"velY\":(-?[0-9.E\\-]+)");
@@ -201,6 +204,7 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
         String refusalLine = null;
         double maxShipY = yRest;
         StringBuilder climb = new StringBuilder(64);
+        StringBuilder diag = new StringBuilder(64);
         bot().holdKey(Keyboard.KEY_R);
         try {
             for (int attempt = 0; attempt < budget && (yControl - yRest) < MIN_CONTROL_CLIMB; attempt++) {
@@ -233,6 +237,19 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
                     // force-loads the ship's subspace yard nor touches a chunk, so the climb it is
                     // watching gets exactly the resources it would have got unwatched.
                     String s = exec("artest vs ship-info 0 id " + shipUuid);
+                    // THE DISCRIMINATOR for ledger #264, sampled ACROSS the dying climb rather than
+                    // after it. Three candidate causes, and the climb trace alone cannot separate
+                    // them: the tile instance is being replaced under the ship (afcIdentity changes),
+                    // the computer is not ticking at all (controllerTicks flat), or the packet
+                    // arrives and is refused at the seat's pilot guard (received climbs while
+                    // delivered does not). Sampled at the same cadence as the altitude so the two
+                    // timelines line up tick for tick.
+                    if (diag.length() < 900) {
+                        String d = exec("artest vs seat-delivery");
+                        diag.append(' ').append(attempt).append(":recv=")
+                                .append(firstGroupOr(RECEIVED, d, "?"))
+                                .append("/deliv=").append(firstGroupOr(DELIVERED, d, "?"));
+                    }
                     Matcher py = POS_Y.matcher(s);
                     Matcher vy = VEL_Y.matcher(s);
                     if (py.find()) {
@@ -263,7 +280,9 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
         assertTrue("a pilot whose entry is refused (pool exhausted) must be TOLD so in his own "
                         + "chat - a silent refusal reads as a dead ship. chat="
                         + bot().reportChat(8) + " subsystem=" + exec("artest space subsystem-status")
-                        + " maxShipY=" + maxShipY + " climb(attempt:y/velY)=[" + climb.toString().trim()
+                        + " maxShipY=" + maxShipY
+                        + " delivery(attempt:recv/deliv)=[" + diag.toString().trim() + "]"
+                        + " climb(attempt:y/velY)=[" + climb.toString().trim()
                         + "] gate=" + exec("artest space entry-gate 0 " + shipUuid),
                 refusalLine != null);
 
@@ -300,6 +319,13 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
 
     private ClientBot bot() {
         return clientHarness.bot();
+    }
+
+    /** First capture group of {@code p} in {@code s}, or {@code fallback} — a missing field must read
+     *  as "not answered" and never as a number, which is how a dead probe reads as a real zero. */
+    private static String firstGroupOr(Pattern p, String s, String fallback) {
+        Matcher m = p.matcher(s);
+        return m.find() ? m.group(1) : fallback;
     }
 
     private String exec(String cmd) throws Exception {
