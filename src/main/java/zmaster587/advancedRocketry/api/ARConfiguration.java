@@ -313,6 +313,12 @@ public class ARConfiguration {
     @ConfigProperty
     public int shipHeatRadiatorClearance;
     @ConfigProperty
+    public int shipHeatChillerThroughput;
+    @ConfigProperty
+    public int shipHeatChillerCopFraction;
+    @ConfigProperty
+    public int shipHeatChillerCapacity;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -606,6 +612,9 @@ public class ARConfiguration {
         arConfig.shipHeatRadiatorCellPower = config.get(HEAT, "shipHeatRadiatorCellPower", 6000, "How much heat one radiating cell sheds each second when the loop is at the reference temperature and the surroundings are cold. This is a POINT ON THE CURVE, not the whole answer: the law is quartic, so the same cell sheds far less at a cooler loop temperature and far more at a hotter one, and that is what makes a chiller worth building.", 0, Integer.MAX_VALUE).getInt();
         arConfig.shipHeatRadiatorReferenceKelvin = config.get(HEAT, "shipHeatRadiatorReferenceKelvin", 500, "The loop temperature at which a cell sheds exactly shipHeatRadiatorCellPower, in kelvin. Move this and every cell is rescaled without the curve changing shape.", 1, 5000).getInt();
         arConfig.shipHeatRadiatorClearance = config.get(HEAT, "shipHeatRadiatorClearance", 10, "How many blocks must be empty in front of a radiating cell for it to work. Anything in the way means the heat comes back to the ship, which is deliberately not modelled — the cell simply stops working and reports where the obstruction is. Rejection is meant to be built with margin, so losing one cell is a degradation and not a failure.", 1, 64).getInt();
+        arConfig.shipHeatChillerThroughput = config.get(HEAT, "shipHeatChillerThroughput", 120000, "How much heat one chiller shifts from its cold loop to its hot loop each second. This is a SIZE, not a temperature: the chiller sets no temperature anywhere — the heat it moves piles up in the hot loop against that loop's own capacity, and the temperature follows. Build a bigger hot loop and it climbs slower; build more radiators on it and it stops climbing.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.shipHeatChillerCopFraction = config.get(HEAT, "shipHeatChillerCopFraction", 500, "What fraction of the thermodynamic ideal a real chiller manages, in thousandths. The ideal is Carnot — the efficiency falls as the gap between the two loops widens — so this number cannot buy a machine past physics, only closer to it. 500 is a real machine at half of ideal. The work it spends JOINS the hot side, so the radiators must shed the heat plus the work, and driving the hot loop further costs more for less. That is the tier's ceiling, and it appears rather than being placed.", 1, 1000).getInt();
+        arConfig.shipHeatChillerCapacity = config.get(HEAT, "shipHeatChillerCapacity", 200, "How much heat one chiller absorbs per kelvin. A chiller is a lump of metal and refrigerant bolted to its hot loop, so it counts as part of that loop's thermal mass — worth ten pipes at the defaults, which is why a hot side with a chiller on it climbs noticeably slower than its pipes alone would explain.", 0, Integer.MAX_VALUE).getInt();
         arConfig.solarGeneratorMult = config.get(ENERGY, "solarGeneratorMultiplier", 1, "Power produced per tick by the solar generator.").getInt();
         arConfig.microwaveRecieverMulitplier = (float) config.get(ENERGY, "MicrowaveRecieverMultiplier", 1f, "Multiplier for microwave receiver power output.").getDouble();
         arConfig.defaultItemTimeBlackHole = config.get(ENERGY, "defaultBurnTime", 500, "Burn time in ticks for items not listed in blackHoleTimings.").getInt();

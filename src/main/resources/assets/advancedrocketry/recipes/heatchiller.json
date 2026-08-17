@@ -1,0 +1,21 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+	"sms",
+	"cbc",
+	"sms"
+    ],
+    "key":
+    {
+        "s": { "type": "forge:ore_dict", "ore": "plateSteel" },
+        "m": { "type": "forge:ore_dict", "ore": "blockMotor" },
+        "c": { "type": "forge:ore_dict", "ore": "stickCopper" },
+        "b": { "type": "forge:ore_dict", "ore": "itemBattery" }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:heatchiller",
+        "count": 1
+    }
+}

@@ -31,8 +31,20 @@ public class HeatNetworkState extends SubsystemNetworkState {
      */
     private List<BlockPos> emitterPositions = Collections.emptyList();
     private long rejectedThisTick;
+    private long pumpedOutThisTick;
+    private long deliveredThisTick;
+    private long pumpedInThisTick;
+    private long workThisTick;
     private int exchangerCount;
     private int radiatingCells;
+    /**
+     * Heat handed to this loop by a chiller since its last tick. Written by the COLD loop's tick and
+     * read by this one, so it is an inbox rather than a statistic — a pump acts while the loop it
+     * feeds is not the one being solved.
+     */
+    private long pumpedInPending;
+    /** The chillers bolted onto this loop, worked out when it was last rebuilt. */
+    private List<BlockPos> pumpPositions = Collections.emptyList();
 
     @Override
     public SubsystemNetworkState copy() {
@@ -52,14 +64,71 @@ public class HeatNetworkState extends SubsystemNetworkState {
             heat.generationThisTick = generationThisTick;
             heat.emitterPositions = new ArrayList<>(emitterPositions);
             heat.rejectedThisTick = rejectedThisTick;
+            heat.pumpedOutThisTick = pumpedOutThisTick;
+            heat.deliveredThisTick = deliveredThisTick;
+            heat.pumpedInThisTick = pumpedInThisTick;
+            heat.workThisTick = workThisTick;
             heat.exchangerCount = exchangerCount;
             heat.radiatingCells = radiatingCells;
+            heat.pumpPositions = new ArrayList<>(pumpPositions);
         }
     }
 
-    /** Heat that left the loop for good on the last tick. */
+    /** Heat that left the LOOP on the last tick — the cold side of the exchange. */
     public long getRejectedThisTick() {
         return rejectedThisTick;
+    }
+
+    /** Heat a chiller took OFF this loop on the last tick — this loop was somebody's cold side. */
+    public long getPumpedOutThisTick() {
+        return pumpedOutThisTick;
+    }
+
+    /**
+     * What the chillers drawing on this loop HANDED to their hot sides on the last tick — the hot-side
+     * total, `Q + W`.
+     * <p>
+     * Reported by the COLD loop on purpose, beside {@link #getPumpedOutThisTick()} and
+     * {@link #getWorkThisTick()}. All three come from one tick of one component, so the clause they
+     * express — the hot side receives the heat plus the work — is checkable without depending on which
+     * of two components the solver happened to visit first.
+     */
+    public long getDeliveredThisTick() {
+        return deliveredThisTick;
+    }
+
+    /**
+     * Heat a chiller put INTO this loop on the last tick — this loop was somebody's hot side. A second,
+     * independent observation that the energy actually arrived, from the receiving end.
+     */
+    public long getPumpedInThisTick() {
+        return pumpedInThisTick;
+    }
+
+    /** Electricity the chillers drawing on this loop paid on the last tick, in heat units. */
+    public long getWorkThisTick() {
+        return workThisTick;
+    }
+
+    /** A chiller hands its hot side energy out of turn; this is the inbox it lands in. */
+    void addPumpedIn(long amount) {
+        this.pumpedInPending += Math.max(0L, amount);
+    }
+
+    /** Drain the inbox: what arrived since this loop was last solved. */
+    long takePumpedIn() {
+        long pending = pumpedInPending;
+        pumpedInPending = 0L;
+        return pending;
+    }
+
+    /** The chillers bolted onto this loop. Re-derived whenever the loop is rebuilt. */
+    public List<BlockPos> getPumpPositions() {
+        return pumpPositions;
+    }
+
+    void setPumpPositions(List<BlockPos> positions) {
+        this.pumpPositions = positions == null ? Collections.<BlockPos>emptyList() : positions;
     }
 
     /** How many machines on this loop can move heat out of it, working or not. */
@@ -76,8 +145,14 @@ public class HeatNetworkState extends SubsystemNetworkState {
         return radiatingCells;
     }
 
-    void setRejectionState(long rejectedThisTick, int exchangerCount, int radiatingCells) {
+    void setExchangeState(long rejectedThisTick, long pumpedOutThisTick, long deliveredThisTick,
+                          long pumpedInThisTick, long workThisTick, int exchangerCount,
+                          int radiatingCells) {
         this.rejectedThisTick = rejectedThisTick;
+        this.pumpedOutThisTick = pumpedOutThisTick;
+        this.deliveredThisTick = deliveredThisTick;
+        this.pumpedInThisTick = pumpedInThisTick;
+        this.workThisTick = workThisTick;
         this.exchangerCount = exchangerCount;
         this.radiatingCells = radiatingCells;
     }

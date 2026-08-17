@@ -10869,7 +10869,12 @@ public class TestProbeCommand extends CommandBase {
                     // distance to place an obstruction at, and hard-coding the default would make
                     // the assertion restate a tuned number instead of the rule it enforces.
                     "shipHeatRadiatorCellPower",
-                    "shipHeatRadiatorClearance"));
+                    "shipHeatRadiatorClearance",
+                    // The chiller's lift and its COP: a heat-pump test asserts a RELATION between
+                    // what was radiated, what left the loop and what was paid, and it needs the COP
+                    // to state that relation without restating a tuned number.
+                    "shipHeatChillerThroughput",
+                    "shipHeatChillerCopFraction"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -16689,9 +16694,17 @@ public class TestProbeCommand extends CommandBase {
         // the loop CAN shed heat, and how much working surface they actually have between them. Three
         // exchangers reporting two cells is one obstructed cell, which is a degradation and not a
         // failure — and `heat read` on the cell itself says how far away the obstruction is.
+        // `pumpedOut` and `pumpedIn` are the two ends of a chiller, deliberately reported per LOOP: a
+        // pump's defect is that the second is not larger than the first by the work it paid.
         out.append(",\"heatRejected\":").append(heatState == null ? 0L : heatState.getRejectedThisTick());
         out.append(",\"exchangers\":").append(heatState == null ? 0 : heatState.getExchangerCount());
         out.append(",\"radiatingCells\":").append(heatState == null ? 0 : heatState.getRadiatingCells());
+
+        out.append(",\"pumpedOut\":").append(heatState == null ? 0L : heatState.getPumpedOutThisTick());
+        out.append(",\"delivered\":").append(heatState == null ? 0L : heatState.getDeliveredThisTick());
+        out.append(",\"pumpedIn\":").append(heatState == null ? 0L : heatState.getPumpedInThisTick());
+        out.append(",\"heatWork\":").append(heatState == null ? 0L : heatState.getWorkThisTick());
+        out.append(",\"pumps\":").append(heatState == null ? 0 : heatState.getPumpPositions().size());
         out.append('}');
         send(sender, out.toString());
     }
@@ -16784,7 +16797,8 @@ public class TestProbeCommand extends CommandBase {
      *
      * <pre>
      * {"ok":true,"inLoop":true,"charged":8000,"ticks":1,"rejected":79,"heatStored":7921,
-     *  "heatCapacity":80,"temperatureMilliK":392012,"exchangers":1,"radiatingCells":1}
+     *  "heatCapacity":80,"temperatureMilliK":392012,"exchangers":1,"radiatingCells":1,
+     *  "pumpedOut":0,"pumpedIn":0,"work":0,"pumps":0}
      * </pre>
      */
     private void handleHeatCycle(MinecraftServer server, ICommandSender sender, String[] args) {
@@ -16836,7 +16850,12 @@ public class TestProbeCommand extends CommandBase {
                 + ",\"heatCapacity\":" + after.getHeatCapacity()
                 + ",\"temperatureMilliK\":" + Math.round(after.getTemperatureKelvin() * 1000.0D)
                 + ",\"exchangers\":" + after.getExchangerCount()
-                + ",\"radiatingCells\":" + after.getRadiatingCells() + "}");
+                + ",\"radiatingCells\":" + after.getRadiatingCells()
+                + ",\"pumpedOut\":" + after.getPumpedOutThisTick()
+                + ",\"delivered\":" + after.getDeliveredThisTick()
+                + ",\"pumpedIn\":" + after.getPumpedInThisTick()
+                + ",\"work\":" + after.getWorkThisTick()
+                + ",\"pumps\":" + after.getPumpPositions().size() + "}");
     }
 
     // Gas separator state probe ---------------------------------------

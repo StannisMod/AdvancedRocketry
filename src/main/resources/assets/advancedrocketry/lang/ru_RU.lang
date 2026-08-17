@@ -65,6 +65,7 @@ tile.jettisonPort.name=Шлюз сброса
 tile.heatPipe.name=Контур охлаждения
 tile.heatAccumulator.name=Тепловой аккумулятор
 tile.heatRadiator.name=Радиаторная секция
+tile.heatChiller.name=Холодильная машина
 tile.oxygenVent.name=Кислородный клапан
 tile.liquidHatch.name=Жидкостный люк
 tile.rocketFuelBlock.name=Ракетное топливо
