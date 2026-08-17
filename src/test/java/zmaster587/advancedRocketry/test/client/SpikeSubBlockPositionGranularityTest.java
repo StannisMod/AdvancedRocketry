@@ -4,6 +4,7 @@ import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 import com.google.gson.JsonObject;
 
 import org.junit.Test;
+import zmaster587.advancedRocketry.test.ServerTicks;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -141,7 +142,7 @@ public class SpikeSubBlockPositionGranularityTest extends AbstractClientE2ETest 
             for (double offset : OFFSETS) {
                 double target = x + 0.5d + offset;
                 exec("tp " + botName + " " + fmt(target) + " " + STAND_Y + " " + fmt(ARENA_Z + 0.5d));
-                exec("artest server wait " + OVERWORLD + " 6");
+                ServerTicks.await(serverClient(), OVERWORLD, 6);
                 bot().waitTicks(6);
 
                 double gotServer = serverX();
@@ -200,7 +201,7 @@ public class SpikeSubBlockPositionGranularityTest extends AbstractClientE2ETest 
 
     private void buildFloor(int x) throws Exception {
         exec("artest chunk forceload " + OVERWORLD + " " + (x >> 4) + " " + (ARENA_Z >> 4));
-        exec("artest server wait " + OVERWORLD + " 20");
+        ServerTicks.await(serverClient(), OVERWORLD, 20);
         exec("artest fill " + OVERWORLD + " " + (x - 4) + " " + FLOOR_Y + " " + (ARENA_Z - 4) + " "
                 + (x + 4) + " " + FLOOR_Y + " " + (ARENA_Z + 4) + " minecraft:stone");
         exec("artest fill " + OVERWORLD + " " + (x - 4) + " " + STAND_Y + " " + (ARENA_Z - 4) + " "
@@ -239,7 +240,7 @@ public class SpikeSubBlockPositionGranularityTest extends AbstractClientE2ETest 
         for (int attempt = 1; attempt <= DELIVERY_ATTEMPTS; attempt++) {
             lastReply = exec("artest player far-tp " + fmt(x + 0.5d) + " " + STAND_Y + " "
                     + fmt(ARENA_Z + 0.5d));
-            exec("artest server wait " + OVERWORLD + " 40");
+            ServerTicks.await(serverClient(), OVERWORLD, 40);
             bot().waitTicks(30);
             lastX = serverX();
             lastY = serverY();

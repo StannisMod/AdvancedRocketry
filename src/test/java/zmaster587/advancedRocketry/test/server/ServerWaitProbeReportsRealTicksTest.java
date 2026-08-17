@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.test.server;
 
 import org.junit.Test;
+import zmaster587.advancedRocketry.test.ServerTicks;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,6 +57,36 @@ public class ServerWaitProbeReportsRealTicksTest extends AbstractSharedServerTes
                 + reply, reply.contains("\"advanced\":false"));
         assertTrue("and it must name what to do instead, or the next caller repeats the mistake: "
                 + reply, reply.contains("\"hint\""));
+    }
+
+    /**
+     * The other half of the same contract: a test that asks for N ticks must be able to SEE the
+     * world's own clock move by N. The probe above cannot deliver that from the server thread, so the
+     * waiting lives in the test jvm ({@link ServerTicks}) and this is its acceptance — asked, again,
+     * of a world whose answer is not in doubt.
+     *
+     * <p>Note what is asserted and what is not: the clock advanced by at least what was asked. Not
+     * how long it took, not that it stopped there. A wall-clock pin here would be a test of this
+     * machine's load, which is the very confusion the task exists to end.</p>
+     */
+    @Test
+    public void aTestSideWaitAdvancesTheWorldsOwnClock() throws Exception {
+        // The premise, measured rather than asserted in a comment: the handler answering this runs on
+        // the thread that advances the clock. That is WHY the wait cannot live in a probe, and it was
+        // once written down here the other way round and believed for months.
+        String clock = exec("artest server tick-count 0");
+        assertTrue("a probe handler must report that it runs on the server thread — if this ever "
+                + "flips, a probe-side wait becomes possible and ServerTicks can be retired: " + clock,
+                clock.contains("\"onServerThread\":true"));
+
+        long before = ServerTicks.count(client(), 0);
+        long observed = ServerTicks.await(client(), 0, TICKS);
+        long after = ServerTicks.count(client(), 0);
+
+        assertTrue("the wait reported " + observed + " ticks but was asked for " + TICKS
+                + " — a wait may never return short", observed >= TICKS);
+        assertTrue("the overworld clock must have moved by at least " + TICKS + " ticks across the "
+                + "wait, but went " + before + " -> " + after, after - before >= TICKS);
     }
 
     private String exec(String cmd) throws Exception {

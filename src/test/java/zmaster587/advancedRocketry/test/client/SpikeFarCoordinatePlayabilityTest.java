@@ -5,6 +5,8 @@ import com.google.gson.JsonObject;
 
 import org.junit.Test;
 import org.lwjgl.input.Keyboard;
+import org.valkyrienskies.mod.common.ships.chunk_claims.ShipChunkAllocator;
+import zmaster587.advancedRocketry.test.ServerTicks;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -109,10 +111,17 @@ public class SpikeFarCoordinatePlayabilityTest extends AbstractClientE2ETest {
     /**
      * Pins the delivery wall against numbers predicted from the physics mod's own predicate, so the
      * mechanism is proven rather than inferred. {@code isChunkInShipyard(cx, cz)} is
-     * {@code cx >= CHUNK_X_START - MAX_CHUNK_RADIUS && cz >= CHUNK_Z_START - MAX_CHUNK_RADIUS}
-     * = {@code cx >= 318401 && cz >= -1599}, so the four cases below are decided before the run:
-     * one block under the X edge moves, one block over it does not, and the same X moves again once
-     * Z drops below the quadrant. A miss on ANY of the four falsifies the explanation.
+     * {@code cx >= CHUNK_X_START - MAX_CHUNK_RADIUS && cz >= CHUNK_Z_START - MAX_CHUNK_RADIUS}, so
+     * the four cases below are decided before the run: one chunk under the X edge moves, the first
+     * reserved chunk does not, and a coordinate deep inside moves again once Z drops below the
+     * quadrant. A miss on ANY of the four falsifies the explanation.
+     *
+     * <p>The edge is READ from the allocator rather than written down. It was written down once —
+     * as {@code cx >= 318401}, block X 5 094 416 — and then the constant was raised to give the
+     * cell its clearance, at which point this test went red saying the explanation had been
+     * falsified. It had not: the number had moved and the test had not been told. A test that
+     * pins a mechanism must be keyed to the mechanism's own constant, or it pins the day it was
+     * written.</p>
      */
     @Test
     public void whereExactlyDoesADeliveryStopWorking() throws Exception {
@@ -122,12 +131,18 @@ public class SpikeFarCoordinatePlayabilityTest extends AbstractClientE2ETest {
 
         List<String> report = new ArrayList<>();
         List<String> wrong = new ArrayList<>();
+        // The first reserved BLOCK X, straight out of the predicate the teleport is cancelled by.
+        final long edgeX = ((long) (ShipChunkAllocator.CHUNK_X_START
+                - ShipChunkAllocator.MAX_CHUNK_RADIUS)) << 4;
+        // Deep inside the quadrant, and derived so it stays inside whatever the edge becomes —
+        // a hard-coded 28M was inside the old quadrant and would not be inside a much later one.
+        final long deepX = edgeX + 1_000_000L;
         // {x, z, expectedToMove}
         double[][] cases = {
-                {5_094_400.5d, 0.5d, 1d},        // chunkX 318400 — one chunk under the edge
-                {5_094_416.5d, 0.5d, 0d},        // chunkX 318401 — the first reserved chunk
-                {28_000_000.5d, 0.5d, 0d},       // deep inside the quadrant
-                {28_000_000.5d, ARENA_Z + 0.5d, 1d}, // same X, Z below the quadrant's edge
+                {edgeX - 16 + 0.5d, 0.5d, 1d},   // one chunk under the edge
+                {edgeX + 0.5d, 0.5d, 0d},        // the first reserved chunk
+                {deepX + 0.5d, 0.5d, 0d},        // deep inside the quadrant
+                {deepX + 0.5d, ARENA_Z + 0.5d, 1d}, // same X, Z below the quadrant's edge
         };
         for (double[] c : cases) {
             boolean expectMove = c[2] != 0d;
@@ -145,7 +160,7 @@ public class SpikeFarCoordinatePlayabilityTest extends AbstractClientE2ETest {
             }
             // Park him back near the origin so the next case starts from a known place.
             exec("artest player far-tp 0.5 200 0.5");
-            exec("artest server wait " + OVERWORLD + " 20");
+            ServerTicks.await(serverClient(), OVERWORLD, 20);
         }
 
         StringBuilder out = new StringBuilder("[SPIKE far-coordinate delivery boundary]\n");
@@ -273,7 +288,7 @@ public class SpikeFarCoordinatePlayabilityTest extends AbstractClientE2ETest {
                 exec("artest chunk forceload " + OVERWORLD + " " + cx + " " + cz);
             }
         }
-        exec("artest server wait " + OVERWORLD + " 60");
+        ServerTicks.await(serverClient(), OVERWORLD, 60);
 
         int x1 = x - 4;
         int x2 = x + WALL_OFFSET + 4;
@@ -282,7 +297,7 @@ public class SpikeFarCoordinatePlayabilityTest extends AbstractClientE2ETest {
         // Hollow out everything up to (but not including) the wall plane at x+WALL_OFFSET.
         exec("artest fill " + OVERWORLD + " " + (x1 + 1) + " " + STAND_Y + " " + (ARENA_Z - 5) + " "
                 + (x + WALL_OFFSET - 1) + " " + (FLOOR_Y + 5) + " " + (ARENA_Z + 5) + " minecraft:air");
-        exec("artest server wait " + OVERWORLD + " 20");
+        ServerTicks.await(serverClient(), OVERWORLD, 20);
     }
 
     /**
@@ -338,7 +353,7 @@ public class SpikeFarCoordinatePlayabilityTest extends AbstractClientE2ETest {
         for (int attempt = 1; attempt <= DELIVERY_ATTEMPTS; attempt++) {
             lastReply = exec("artest player far-tp " + fmt(x + 0.5d) + " " + STAND_Y + " "
                     + fmt(ARENA_Z + 0.5d));
-            exec("artest server wait " + OVERWORLD + " 40");
+            ServerTicks.await(serverClient(), OVERWORLD, 40);
             bot().waitTicks(30);
             lastX = serverX();
             lastY = serverY();

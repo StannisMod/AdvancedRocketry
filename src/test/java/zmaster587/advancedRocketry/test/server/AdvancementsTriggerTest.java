@@ -6,6 +6,7 @@ import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
+import zmaster587.advancedRocketry.test.ServerTicks;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -99,11 +100,10 @@ public class AdvancementsTriggerTest {
         exec("artest chunk forceload " + dim + " " + (((int) x) >> 4) + " " + (((int) z) >> 4));
         assertTrue("tick-living must succeed",
                 exec("artest player tick-living " + ticks).contains("\"ok\":true"));
-        // Wait OFF the server thread: `artest server wait` runs inside a
-        // console command, i.e. ON the server thread — its sleep loop blocks
-        // ticking entirely. Sleeping in the test JVM lets the server
-        // free-run the requested ticks.
-        Thread.sleep(ticks * 50L + 500L);
+        // Wait OFF the server thread: a console command runs ON the server thread, so a probe that
+        // sleeps there blocks ticking entirely. The wait belongs in the test jvm — and it OBSERVES
+        // the world's clock rather than hoping for it, so a world that is not ticking says so.
+        ServerTicks.await(harness.client(), dim, ticks + 10);
     }
 
     private boolean isDone(String src) {

@@ -20573,16 +20573,35 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown chunk subcommand\"}");
     }
 
-    // Server tick-wait probe -------------------------------------------
+    // Server clock probes ----------------------------------------------
     //
-    // companion to the chunk-anchor probe. Once the
-    // rocket's chunk is force-loaded, we need to let the server's
-    // natural tick loop run N times so EntityRocket.onUpdate is invoked
-    // in its production context (rather than driving it synthetically
-    // via /artest rocket tick). This probe polls
-    // world.getTotalWorldTime() until the configured number of ticks
-    // has elapsed, sleeping 50ms between polls.
+    // Companion to the chunk-anchor probe. Once the rocket's chunk is force-loaded, a test needs the
+    // server's natural tick loop to run N times so EntityRocket.onUpdate is invoked in its production
+    // context (rather than driving it synthetically via /artest rocket tick).
+    //
+    // A command handler CANNOT provide that wait, and the reason is structural rather than incidental:
+    // console commands are drained on the server thread, which is the one thread that advances
+    // world time, so any handler that blocks waiting for the clock is blocking the clock. `tick-count`
+    // is therefore the instant read, and the waiting belongs to the TEST thread, which is free while
+    // the server ticks. Both verbs report `onServerThread` so the claim is measured on every call
+    // rather than asserted in a comment — an earlier comment here asserted the opposite and was
+    // believed for months.
     private void handleServer(MinecraftServer server, ICommandSender sender, String[] args) {
+        // /artest server tick-count <dim> — one instant read of the world's own clock. This is the
+        // observable a test-side wait is built from: read, sleep in the TEST jvm, read again.
+        if (args.length >= 2 && "tick-count".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim
+                    + ",\"tick\":" + world.getTotalWorldTime()
+                    + ",\"worldTime\":" + world.getWorldInfo().getWorldTime()
+                    + ",\"onServerThread\":" + server.isCallingFromMinecraftThread() + "}");
+            return;
+        }
         if (args.length >= 3 && "wait".equalsIgnoreCase(args[0])) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int ticksToWait = parseIntOr(args[2], 0);
@@ -20623,19 +20642,23 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"elapsedTicks\":" + (end - start)
                     + ",\"requested\":" + ticksToWait
                     + ",\"advanced\":" + advanced
+                    + ",\"onServerThread\":" + server.isCallingFromMinecraftThread()
                     + (advanced ? "" : ",\"hint\":\"the clock did not move: this handler runs on the "
-                            + "server thread and cannot let it tick - poll from the test side instead\"")
+                            + "server thread and cannot let it tick - use 'server tick-count <dim>' "
+                            + "and wait from the test side instead\"")
                     + ",\"wallMs\":" + (System.currentTimeMillis() - wallStart) + "}");
             return;
         }
         // Block the server's TICK LOOP for a while, the way a real overloaded server does.
         //
-        // Probe handlers do not run on the server thread (the wait verb above polls the world clock
-        // from a command thread and would deadlock otherwise), so the block has to be scheduled ONTO
-        // that thread. Vanilla then logs its own "Can't keep up! ... skipping N tick(s)" and resumes,
-        // which is the whole point: a per-tick threshold anywhere in the codebase means something
-        // different across a tick that really took three seconds, and until now nothing in the harness
-        // could produce one. Bounded to 10 s so it can never approach the harness's command timeout.
+        // The block is scheduled onto the server thread rather than run inline. That is belt and
+        // braces, not necessity: handlers ALREADY run on the server thread (measured 2026-08-17 — the
+        // wait verb above cannot see the overworld clock move), and `addScheduledTask` invoked from
+        // that thread runs its runnable immediately, so this path stalls the loop either way.
+        // Vanilla then logs its own "Can't keep up! ... skipping N tick(s)" and resumes, which is the
+        // whole point: a per-tick threshold anywhere in the codebase means something different across
+        // a tick that really took three seconds, and until now nothing in the harness could produce
+        // one. Bounded to 10 s so it can never approach the harness's command timeout.
         if (args.length >= 2 && "stall".equalsIgnoreCase(args[0])) {
             long ms = parseIntOr(args[1], 0);
             if (ms <= 0L || ms > 10_000L) {
@@ -20693,8 +20716,8 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
-        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks> | save-dimensions\"}");
-        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks> | /artest server stall <ms>\"}");
+        send(sender, "{\"error\":\"usage: /artest server tick-count <dim> | wait <dim> <ticks> "
+                + "| stall <ms> | save-dimensions\"}");
     }
 
     /** True if the {@code <slashed>.class} resource is reachable via the
