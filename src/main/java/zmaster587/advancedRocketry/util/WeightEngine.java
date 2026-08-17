@@ -349,6 +349,16 @@ public enum WeightEngine {
         return materials.size();
     }
 
+    /**
+     * The table's own fallback mass, kilograms — what a block resolves to when nothing more specific
+     * matches. Exposed for the one caller that must answer for a block with no item form and so cannot
+     * go through the registry-name chain at all; it takes this rather than some other table's default,
+     * because a second default is a second mass model.
+     */
+    public double fallbackMass() {
+        return fallback;
+    }
+
     public void save() {
         File parent = new File(file).getParentFile();
         if (parent != null) {

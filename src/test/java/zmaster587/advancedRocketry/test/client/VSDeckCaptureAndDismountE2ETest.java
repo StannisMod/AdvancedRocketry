@@ -986,32 +986,33 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
     @Test
     public void yDeckSupportSurvivesADeckThatIsFalling() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
-        final int bx = 4820, by = 64, bz = 4820;
+        // Assembled at ALTITUDE, not at ground level: this scenario needs a deck with room to fall.
+        // At y=64 the hull rests on terrain, which is what made three earlier versions of this test
+        // measure ground-collision response and call it station-keeping.
+        final int bx = 4820, by = 150, bz = 4820;
 
-        buildAndBoardShip(bx, by, bz);
+        double[] ship = buildAndBoardShip(bx, by, bz);
         bot().waitTicks(20);
 
-        dismountByRealKey();
-        // Wait for the body to SETTLE onto the deck before moving anything. Measured 2026-08-17: at 6
-        // ticks it was still descending the last third of a block of its dismount, and that settle -
-        // not the deck - was the whole of the 0.33 "relative sink" the first three runs reported. A
-        // measurement that starts mid-settle attributes the arrangement's own transient to the subject.
-        bot().waitTicks(40);
-        double restingGap = sampleSupport().clientY - sampleSupport().shipY;
+        // CLIMB FIRST, with the pilot's own Space key. Learned the hard way 2026-08-17: the earlier
+        // versions of this scenario assembled at y=64 and never left, so their "deck" was a hull
+        // resting on terrain. Nothing about a falling deck can be learned from one that is parked -
+        // and the up-then-back excursion a commanded velocity produced there was ground collision
+        // response, not station-keeping. Get airborne, then let go of everything and let gravity be
+        // the only thing moving the deck: that is what this scenario is for.
+        // Nothing lifts the ship and nothing commands it: while the pilot sits, the flight computer's
+        // own hold keeps it up, and standing up removes that. Two lifting attempts were tried and
+        // both were dead ends worth recording so they are not retried: holding Space moved the ship 0
+        // blocks in 180 ticks (vertical authority is not that keybind), and `force-vel-by-id` gained
+        // only 3.2 blocks in 80 - it is a short impulse, and it now fights a gravity of 32 blocks/s².
+        double liftedY = readShipInfoXYZ(shipInfo())[1];
 
-        // The deck must actually descend, and it has to be COMMANDED to. Measured 2026-08-17: simply
-        // standing up does NOT drop the ship on this build - the first run of this scenario read
-        // shipDrop=0.0 over all 30 ticks and its arrangement gate correctly refused to conclude
-        // anything. So the descent is driven through the addressable velocity channel, which is the
-        // same downward deck motion a fall produces and the only part the seam cares about.
-        // Re-issued EVERY sampled tick, because one command does not sustain: measured 2026-08-17, a
-        // single force-vel moved the deck for ~3 ticks and then the hold re-asserted, so the deck was
-        // static for 27 of 30 samples and the body simply settled back onto it. A seam that only
-        // exists while the deck is moving cannot be studied on a deck that stopped.
+        // Stand up: with no pilot input the flight computer commands nothing and the craft drops.
+        dismountByRealKey();
+
         SupportRow[] rows = new SupportRow[SUPPORT_SAMPLES];
         int ticksWithoutSupport = 0;
         for (int i = 0; i < SUPPORT_SAMPLES; i++) {
-            exec("artest vs force-vel-by-id 0 " + scenarioShipId + " 0.0 -2.0 0.0");
             bot().waitTicks(1);
             rows[i] = sampleSupport();
             if (rows[i].standing == 0) {
@@ -1021,10 +1022,16 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         String tr = supportTrace(rows);
         double shipDrop = rows[0].shipY - rows[SUPPORT_SAMPLES - 1].shipY;
         double sink = relativeSink(rows[0], rows[SUPPORT_SAMPLES - 1]);
-        System.out.println("[decksupport] falling restingGap=" + restingGap + " shipDrop=" + shipDrop
-                + " relativeSink=" + sink
+        System.out.println("[decksupport] falling liftedTo=" + liftedY + " (base " + ship[1] + ")"
+                + " shipDrop=" + shipDrop + " relativeSink=" + sink
                 + " ticksWithoutSupport=" + ticksWithoutSupport + "/" + SUPPORT_SAMPLES);
         System.out.println("[decksupport] falling trace=" + tr);
+
+        // Altitude is part of the arrangement, so it is gated: a hull sitting on terrain cannot fall,
+        // and mistaking a grounded hull for a falling one is the error this scenario made three times.
+        Assume.assumeTrue("the deck was not high enough to fall (started at " + liftedY
+                + ", sea level is 63), so nothing here is about a falling deck. trace=" + tr,
+                liftedY > 100.0);
 
         // Arrangement gate FIRST, and it has to demand a SUSTAINED descent, not merely that the deck
         // moved at some point. Measured 2026-08-17 across three attempts: `force-vel-by-id` loses to
@@ -1088,6 +1095,43 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
                 + "deck that did not move, so relative sink is not explained by the deck's fall and "
                 + "the falling arm proves nothing about gravity. trace=" + tr,
                 Math.abs(sink) <= 0.1);
+    }
+
+    private static final Pattern MASS_KG = Pattern.compile("\"massKg\":(-?[0-9.E\\-]+)");
+
+    /** 25 iron deck blocks at AR's 5000 kg each. Everything else on the fixture only adds. */
+    private static final double IRON_DECK_KG = 25 * 5000.0;
+
+    @Test
+    public void wAnAssembledShipWeighsWhatArsBlockTableSays() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        // Lives on this tier because the ship arrangement here WORKS. The same assertion was attempted
+        // on the shared server tier first and skipped three times on its own arrangement gate: the
+        // fixture assembled, but with nobody near it the ship's chunks never loaded and the positional
+        // query answered `managed:false` about a craft that really existed. Rebuilding an arrangement
+        // that already exists one tier up is not worth a run each time.
+        final int bx = 5220, by = 64, bz = 5220;
+        buildShip(bx, by, bz);
+        bot().waitTicks(20);
+
+        String info = shipInfo();
+        // ARRANGEMENT first: without the mass on the probe surface there is nothing to measure, and a
+        // missing field must not read as a passing bound.
+        assertTrue("the probe must report the ship's mass: " + info, MASS_KG.matcher(info).find());
+        double massKg = readDouble(info, MASS_KG);
+
+        // The witness the whole server suite could not provide. That suite stayed green - 616 tests,
+        // unchanged - across the change that replaced how EVERY block's mass is decided, because
+        // nothing in it ever asked a ship what it weighed.
+        //
+        // The bound is one-sided on purpose: the fixture carries a 5x5 iron deck, which AR's table
+        // denominates at 5000 kg a block, and the physics engine's own flat default cannot reach that
+        // figure with the whole fixture. So this separates the two models without pinning the table's
+        // exact numbers, which are balance and may be tuned.
+        assertTrue("this ship's recorded mass is " + massKg + " kg, below the " + IRON_DECK_KG
+                + " kg of iron deck it carries. A mass that low is the physics engine's flat per-block "
+                + "default, which means the block table AR owns is not the one deciding ship mass: "
+                + info, massKg >= IRON_DECK_KG);
     }
 
     private int readInt(String json, Pattern p) {

@@ -114,8 +114,21 @@ public class BlockPhysicsDetails {
     /**
      * Get block mass, in kg.
      */
+    /**
+     * Mass of one block, kilograms. Answered from AR's own per-block table rather than this class's
+     * flat one: AR's is keyed by registry name with a material fallback, is denominated in kilograms,
+     * and is the same table the rocket tier has always massed hulls with. Two tables would be two mass
+     * models, and every craft is meant to have one.
+     *
+     * <p>The accumulation around this call — {@code BasicCenterOfMassProvider}'s smearing and its
+     * parallel-axis bookkeeping — is untouched and stays this mod's. Only the number is ours.</p>
+     *
+     * <p>{@link #getMassOfBlock} and the tables it reads are kept: they are still this class's answer
+     * for anything that asks by block rather than by state, and deleting them would widen this change
+     * from one lookup to a rewrite.</p>
+     */
     public static double getMassFromState(IBlockState state) {
-        return getMassOfBlock(state.getBlock());
+        return zmaster587.advancedRocketry.integration.vs.ArBlockMass.of(state);
     }
 
     private static double getMassOfMaterial(Material material) {

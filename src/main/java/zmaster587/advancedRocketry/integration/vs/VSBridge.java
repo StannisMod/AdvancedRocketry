@@ -181,6 +181,47 @@ final class VSBridge {
     }
 
     /**
+     * The same identity lookup, for the one collaborator inside this package that needs the physics
+     * record itself rather than a copy of some field from it: {@link ShipInertiaWriter}. Package-
+     * private on purpose — a physics-engine type must not travel further than this package, which is
+     * the whole point of keeping the boundary here.
+     */
+    static ShipData shipDataByUuid(World world, UUID uuid) {
+        return world == null ? null : shipByUuid(world, uuid);
+    }
+
+    /**
+     * The physics record of the ship NAMED by {@code uuid}, as
+     * {@code [mass, comX, comY, comZ]} in the ship's own frame, or {@code null} when this world holds
+     * no such ship.
+     *
+     * <p>Exists so a test can see the number the mass model wrote. Without it the substitution of AR's
+     * per-block table for the engine's flat one is invisible to every tier: the whole server suite went
+     * green before and after that change, because nothing in it ever asked a ship what it weighed.</p>
+     */
+    static double[] shipInertiaById(World world, String shipId) {
+        if (world == null || shipId == null) {
+            return null;
+        }
+        UUID uuid;
+        try {
+            uuid = UUID.fromString(shipId);
+        } catch (IllegalArgumentException notAUuid) {
+            return null;
+        }
+        ShipData ship = shipByUuid(world, uuid);
+        if (ship == null) {
+            return null;
+        }
+        return new double[] {
+                ship.getInertiaData().getGameTickMass(),
+                ship.getInertiaData().getGameTickCenterOfMass().x(),
+                ship.getInertiaData().getGameTickCenterOfMass().y(),
+                ship.getInertiaData().getGameTickCenterOfMass().z()
+        };
+    }
+
+    /**
      * The subspace shipyard box of the ship NAMED by {@code uuid}, or {@code null} when this world
      * holds no such ship. The identity-keyed twin of {@link #shipyardBoundsAt}: same box, but it
      * cannot answer for a neighbour's craft.

@@ -2250,6 +2250,21 @@ public class TestProbeCommand extends CommandBase {
         m.put("omegaZ", omega == null ? 0.0 : omega[2]);
         m.put("omega", omega == null ? 0.0
                 : Math.sqrt(omega[0] * omega[0] + omega[1] * omega[1] + omega[2] * omega[2]));
+        // The physics record's own mass and centre of mass. Reported because the whole server suite
+        // stayed green through a change that replaced how EVERY block's mass is decided: nothing in it
+        // asked a ship what it weighed, so nothing could have noticed.
+        // Dim 0, because this helper is handed a state array and not a world, and every caller works
+        // in the overworld. A ship elsewhere simply omits these fields rather than reporting a wrong
+        // number - absent is readable, a mass from the wrong dimension would not be.
+        double[] inertia = shipId == null ? null
+                : zmaster587.advancedRocketry.integration.vs.VSIntegration.shipInertiaById(
+                        net.minecraftforge.common.DimensionManager.getWorld(0), shipId);
+        if (inertia != null) {
+            m.put("massKg", inertia[0]);
+            m.put("comX", inertia[1]);
+            m.put("comY", inertia[2]);
+            m.put("comZ", inertia[3]);
+        }
         return m;
     }
 

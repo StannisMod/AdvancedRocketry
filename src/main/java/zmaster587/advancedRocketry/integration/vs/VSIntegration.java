@@ -1306,6 +1306,21 @@ public final class VSIntegration {
      * {@link #nearestShipState(World, double, double, double)}, or {@code null} when VS is absent or
      * that ship is not loaded here. Position-independent.
      */
+    /**
+     * The physics record of the ship NAMED by {@code shipId}, as {@code [mass, comX, comY, comZ]} in
+     * its own frame, or {@code null} when this world holds no such ship or the physics mod is absent.
+     *
+     * <p>Exists so a test can see the number the mass model wrote: the whole server suite stayed green
+     * through the change that replaced how every block's mass is decided, because nothing in it ever
+     * asked a ship what it weighed.</p>
+     */
+    public static double[] shipInertiaById(World world, String shipId) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipInertiaById(world, shipId);
+    }
+
     public static double[] shipStateById(World world, String shipId) {
         if (!isAvailable()) {
             return null;
