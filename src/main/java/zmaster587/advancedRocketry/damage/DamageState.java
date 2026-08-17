@@ -43,6 +43,26 @@ public final class DamageState {
     }
 
     /**
+     * How far gone the block at {@code pos} is, on 0..1 — pristine to destroyed.
+     *
+     * <p>The one number a SUBSYSTEM should read. A machine that degrades with condition does not
+     * care how many stages this particular block happens to have, and two blocks with different
+     * stage counts must degrade comparably; asking in stages would put that arithmetic in every
+     * consumer and let them disagree.</p>
+     *
+     * <p>It says nothing about what did the damage, deliberately: there is ONE stage axis, so a
+     * shell and a thousand hours of use are the same fact by the time they reach here.</p>
+     */
+    public static double getDamageFraction(World world, BlockPos pos) {
+        int max = getMaxStage(world, pos);
+        if (max <= 0) {
+            return 0.0D;
+        }
+        double fraction = (double) getStage(world, pos) / (double) max;
+        return fraction < 0.0D ? 0.0D : (fraction > 1.0D ? 1.0D : fraction);
+    }
+
+    /**
      * Write a stage back to whichever home owns it. Server side only — the client is told about damage
      * through the block's own sync, never by writing a stage of its own.
      */

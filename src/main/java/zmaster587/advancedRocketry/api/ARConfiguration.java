@@ -464,6 +464,18 @@ public class ARConfiguration {
      */
     @ConfigProperty(needsSync = true)
     public boolean fireControlSensorAcquireHostilesOnly = true;
+    /**
+     * How far gone a turret's own block must be, 0..1, before its traverse slows and then seizes.
+     * The ORDER of the two rungs is the mechanic and is not configurable; where they sit is balance.
+     *
+     * <p>Note what is deliberately absent: no flag disables this. Damage and wear advance the same
+     * stage counter, so a switch here would be a switch that makes ships unkillable — and the
+     * parts-wear flag gates wear where wear ACCRUES, never where a consequence is read.</p>
+     */
+    @ConfigProperty(needsSync = true)
+    public double turretDerateDamageFraction = 0.25;
+    @ConfigProperty(needsSync = true)
+    public double turretJamDamageFraction = 0.75;
     @ConfigProperty(needsSync = true)
     public double wearTankLeakChanceMax = 0.5;
     @ConfigProperty(needsSync = true)
@@ -723,6 +735,8 @@ public class ARConfiguration {
         arConfig.fireControlSensorActiveLockQuality = config.get(WEAPONS, "fireControlSensorActiveLockQuality", 0.95, "Lock quality an active sensor holds a contact at inside its envelope, 0..1 — what illuminating buys over listening", 0.0, 1.0).getDouble();
         arConfig.fireControlSensorLockQualityToFire = config.get(WEAPONS, "fireControlSensorLockQualityToFire", 0.25, "How well a contact must be resolved, 0..1, before a gun fires at it. Below it the battery tracks without shooting", 0.0, 1.0).getDouble();
         arConfig.fireControlSensorAcquireHostilesOnly = config.get(WEAPONS, "fireControlSensorAcquireHostilesOnly", true, "Whether acquisition is limited to hostile mobs and players. Off, a battery engages whatever wanders into range").getBoolean();
+        arConfig.turretDerateDamageFraction = config.get(WEAPONS, "turretDerateDamageFraction", 0.25, "How far gone a turret's own block must be, 0..1, before its traverse slows down. The order of the rungs is the mechanic; where they sit is balance", 0.0, 1.0).getDouble();
+        arConfig.turretJamDamageFraction = config.get(WEAPONS, "turretJamDamageFraction", 0.75, "How far gone a turret's own block must be, 0..1, before its traverse seizes entirely. A seized mount still fires down the bearing it stopped at", 0.0, 1.0).getDouble();
         arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enable rocket part wear and exploding chance.").getBoolean();
         arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Chance for each part to gain wear on launch.").getDouble();
 

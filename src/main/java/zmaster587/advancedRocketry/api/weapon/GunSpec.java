@@ -169,56 +169,79 @@ public final class GunSpec {
         private ImpactKind kind = ImpactKind.KINETIC;
         private int partCount;
         private final java.util.EnumSet<GunInput> inputs = java.util.EnumSet.noneOf(GunInput.class);
+        private double contributionScale = 1.0D;
+
+        /**
+         * How much of the NEXT part's contribution counts, 0..1 — a part in poor condition gives
+         * less of whatever it gives.
+         *
+         * <p>Applied to what a part ADDS, never to what it declares or sets: a battered barrel
+         * still fires the same kind of round, it just does not add the same speed to it. It scales
+         * a negative contribution too, and that is the point — a barrel exists to tighten spread,
+         * so a ruined one tightens it less rather than tightening it as though nothing happened.</p>
+         */
+        public Builder withContributionScale(double scale) {
+            this.contributionScale = scale < 0.0D ? 0.0D : (scale > 1.0D ? 1.0D : scale);
+            return this;
+        }
+
+        private double scaled(double value) {
+            return value * contributionScale;
+        }
+
+        private int scaled(int value) {
+            return (int) Math.round(value * contributionScale);
+        }
 
         public Builder addMuzzleSpeed(double blocksPerTick) {
-            this.muzzleSpeed += Math.max(0.0D, blocksPerTick);
+            this.muzzleSpeed += scaled(Math.max(0.0D, blocksPerTick));
             return this;
         }
 
         public Builder addImpactEnergy(int energy) {
-            this.impactEnergy += Math.max(0, energy);
+            this.impactEnergy += scaled(Math.max(0, energy));
             return this;
         }
 
         /** Faster feed = shorter interval. Floored at one tick, which is the physical limit. */
         public Builder speedUpFireIntervalBy(int ticks) {
-            this.fireIntervalTicks = Math.max(1, this.fireIntervalTicks - Math.max(0, ticks));
+            this.fireIntervalTicks = Math.max(1, this.fireIntervalTicks - scaled(Math.max(0, ticks)));
             return this;
         }
 
         public Builder addEnergyPerShot(int fe) {
-            this.energyPerShot += Math.max(0, fe);
+            this.energyPerShot += scaled(Math.max(0, fe));
             return this;
         }
 
         public Builder addHeatPerShot(int heat) {
-            this.heatPerShot += Math.max(0, heat);
+            this.heatPerShot += scaled(Math.max(0, heat));
             return this;
         }
 
         public Builder addHeatCapacity(int heat) {
-            this.heatCapacity += Math.max(0, heat);
+            this.heatCapacity += scaled(Math.max(0, heat));
             return this;
         }
 
         public Builder addCoolingPerTick(int heat) {
-            this.coolingPerTick += Math.max(0, heat);
+            this.coolingPerTick += scaled(Math.max(0, heat));
             return this;
         }
 
         /** Negative tightens the cone; the result never goes below a true barrel. */
         public Builder addSpreadDegrees(double degrees) {
-            this.spreadDegrees = Math.max(0.0D, this.spreadDegrees + degrees);
+            this.spreadDegrees = Math.max(0.0D, this.spreadDegrees + scaled(degrees));
             return this;
         }
 
         public Builder addTraverseDegreesPerTick(double degrees) {
-            this.traverseDegreesPerTick = Math.max(0.0D, this.traverseDegreesPerTick + degrees);
+            this.traverseDegreesPerTick = Math.max(0.0D, this.traverseDegreesPerTick + scaled(degrees));
             return this;
         }
 
         public Builder addLifetimeTicks(int ticks) {
-            this.lifetimeTicks = Math.max(1, this.lifetimeTicks + ticks);
+            this.lifetimeTicks = Math.max(1, this.lifetimeTicks + scaled(ticks));
             return this;
         }
 

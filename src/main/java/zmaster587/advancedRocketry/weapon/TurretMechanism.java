@@ -42,6 +42,7 @@ public class TurretMechanism {
     private boolean commanded;
     private boolean saturated;
     private TurretDriveState driveState = TurretDriveState.WORKING;
+    private TurretDriveState damageDriveState = TurretDriveState.WORKING;
 
     private final double minPitch;
     private final double maxPitch;
@@ -95,13 +96,14 @@ public class TurretMechanism {
      * derated by the drive state. Answers whether the mount is now pointing where it was told.
      */
     public boolean tick(double ratePerTick) {
-        if (driveState == TurretDriveState.FREEWHEELING) {
+        TurretDriveState drive = getDriveState();
+        if (drive == TurretDriveState.FREEWHEELING) {
             // No brake: it turns because nothing is holding it, not because anybody asked.
             yaw = wrapDegrees(yaw + FREEWHEEL_DRIFT_DEGREES);
             saturated = false;
             return false;
         }
-        if (!commanded || !driveState.isDrivable()) {
+        if (!commanded || !drive.isDrivable()) {
             return commanded && isOnTarget();
         }
 
@@ -111,7 +113,7 @@ public class TurretMechanism {
         // lies once per engagement.
         saturated = Math.abs(reachablePitch - commandedPitch) > 1.0E-6D;
 
-        double step = Math.max(0.0D, ratePerTick) * driveState.getRateFactor();
+        double step = Math.max(0.0D, ratePerTick) * drive.getRateFactor();
         if (step <= 0.0D) {
             return false;
         }
@@ -164,7 +166,31 @@ public class TurretMechanism {
         return saturated;
     }
 
+    /**
+     * What the drive is actually doing: whatever it was explicitly put into, or failing that what
+     * its condition allows.
+     *
+     * <h3>Why two fields and not one</h3>
+     * <p>An explicit state is a DECISION or a fault from somewhere else — a player locking the
+     * mount, a probe killing the drive, whatever wave adds a power failure later. Condition is a
+     * fact re-read from the block every tick. Writing the second into the first would mean a
+     * repaired gun could never get its lock back, and a locked gun would silently unlock the moment
+     * it was scratched. So the explicit state wins while it says anything at all, and condition
+     * speaks only for a drive nobody has said anything about — which is the normal case.</p>
+     */
     public TurretDriveState getDriveState() {
+        return driveState == TurretDriveState.WORKING ? damageDriveState : driveState;
+    }
+
+    /** What this mount's own condition allows, re-read from the block rather than remembered. */
+    public void setDamageDriveState(TurretDriveState state) {
+        if (state != null) {
+            this.damageDriveState = state;
+        }
+    }
+
+    /** What the mount was explicitly put into, ignoring its condition. Diagnostics and the probe. */
+    public TurretDriveState getCommandedDriveState() {
         return driveState;
     }
 

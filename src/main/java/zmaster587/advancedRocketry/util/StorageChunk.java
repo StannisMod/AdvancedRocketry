@@ -962,14 +962,17 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     /**
-     * Thrust multiplier for a motor at the given position based on its wear
-     * stage: 1.0 when pristine, (1 - wearThrustPenaltyMax) when fully worn.
-     * Returns 1.0 when the wear system is off or the block has no wear state.
+     * Thrust multiplier for a motor at the given position based on its condition: 1.0 when pristine,
+     * (1 - wearThrustPenaltyMax) when fully gone. Returns 1.0 when the block has no stage.
+     *
+     * <p>Deliberately NOT gated on {@code partsWearSystem}. There is one stage axis — a stage put
+     * there by a thousand hours of flying and one put there by a shell are the same number, and this
+     * method cannot tell them apart nor should it. The flag gates where wear ACCRUES
+     * ({@link #damageParts}); reading it here as well would mean a modpack that turned wear off got
+     * motors that shrug off battle damage, which is a different and much larger decision than the one
+     * the flag advertises.</p>
      */
     private float wearThrustFactor(BlockPos pos) {
-        if (!ARConfiguration.getCurrentConfig().partsWearSystem) {
-            return 1f;
-        }
         double maxPenalty = ARConfiguration.getCurrentConfig().wearThrustPenaltyMax;
         if (maxPenalty <= 0) {
             return 1f;

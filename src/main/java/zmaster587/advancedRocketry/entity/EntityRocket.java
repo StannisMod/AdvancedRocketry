@@ -2683,10 +2683,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             }
         }
 
-        if (ARConfiguration.getCurrentConfig().partsWearSystem) {
+        // Condition consequences, unconditionally. There is ONE stage axis: what put a stage on a
+        // seat or a tank — a long career or a shell — is not knowable here and must not change the
+        // answer. `partsWearSystem` gates where wear ACCRUES; a rocket shot up on the pad has to
+        // fly like a rocket shot up on the pad whatever that flag says.
+        {
             ARConfiguration cfg = ARConfiguration.getCurrentConfig();
 
-            // A worn seat is unsafe: refuse a CREWED launch (automated rockets fly).
+            // A damaged seat is unsafe: refuse a CREWED launch (automated rockets fly).
             if (!this.getPassengers().isEmpty() && storage.hasCriticallyWornSeat(cfg.wearSeatBlockStageFraction)) {
                 setError("error.rocket.seatWorn");
                 return;

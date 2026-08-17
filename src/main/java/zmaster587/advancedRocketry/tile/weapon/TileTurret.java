@@ -21,6 +21,7 @@ import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.sensor.TargetTrack;
 import zmaster587.advancedRocketry.api.weapon.GunSpec;
 import zmaster587.advancedRocketry.api.weapon.TurretDriveState;
+import zmaster587.advancedRocketry.damage.DamageState;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemSink;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
@@ -78,6 +79,8 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
     private int fireCooldown;
     private int heat;
     private boolean registered;
+    /** The condition this gun last saw itself in, so a change can re-walk the build exactly once. */
+    private double lastConditionFraction;
 
     private Vec3d localTarget;
     private UUID localTargetEntity;
@@ -124,6 +127,8 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
             assemblyDirty = true;
         }
 
+        readOwnCondition();
+
         if (assemblyDirty) {
             GunAssembly assembly = GunAssembly.scan(world, pos);
             spec = assembly.getSpec();
@@ -167,6 +172,30 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         }
 
         launch(shipId);
+    }
+
+    /**
+     * Read this mount's own condition and let it drive the traverse.
+     *
+     * <p>PULLED, not pushed: nothing tells a gun it was hit. The stage of the block it lives in is a
+     * fact sitting in the world, and one lookup a tick is cheaper than a subscription — it also
+     * survives a save, a chunk reload and the ship being reassembled for free, because the stage
+     * does. Nothing about damage appears in this class beyond the two lines below; nothing about
+     * guns appears in the damage engine at all.</p>
+     *
+     * <p>A change in the controller's own condition also re-walks the build, because the parts'
+     * conditions are read during that walk and a shell that reached the controller has almost
+     * certainly been through some of them.</p>
+     */
+    private void readOwnCondition() {
+        double fraction = DamageState.getDamageFraction(world, pos);
+        if (Math.abs(fraction - lastConditionFraction) > 1.0E-6D) {
+            lastConditionFraction = fraction;
+            assemblyDirty = true;
+        }
+        ARConfiguration config = ARConfiguration.getCurrentConfig();
+        mechanism.setDamageDriveState(TurretDriveState.fromDamage(fraction,
+                config.turretDerateDamageFraction, config.turretJamDamageFraction));
     }
 
     /**

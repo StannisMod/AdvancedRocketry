@@ -8,6 +8,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.weapon.GunSpec;
 import zmaster587.advancedRocketry.api.weapon.IGunPart;
+import zmaster587.advancedRocketry.damage.DamageState;
 import zmaster587.advancedRocketry.tile.weapon.TileTurret;
 
 import java.util.ArrayDeque;
@@ -93,7 +94,13 @@ public final class GunAssembly {
                 continue;
             }
             IGunPart part = (IGunPart) block;
+            // A part in poor condition gives less of what it gives. Read here rather than pushed
+            // from the damage engine: the stage is a fact in the world, and the walk is already
+            // standing on the block. A part damaged to nothing still COUNTS — it is bolted on, it
+            // is in the way, and it is something to repair; it simply contributes almost nothing.
+            builder.withContributionScale(1.0D - DamageState.getDamageFraction(world, pos));
             part.contributeTo(builder, world, pos, state);
+            builder.withContributionScale(1.0D);
             builder.countPart();
             counted++;
             reach = Math.max(reach, axisDistance(origin, pos));

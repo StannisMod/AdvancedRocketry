@@ -37,6 +37,33 @@ public enum TurretDriveState {
     /** No drive at all. The mount does not aim and the gun does not fire. */
     DEAD(false, 0.0D);
 
+    /**
+     * What condition alone does to a drive: a ladder, deterministic, in this order.
+     *
+     * <p>Not a scalar, because a scalar can only ever produce {@link #DERATED} and would silently
+     * delete {@link #JAMMED} — a mount that has seized and still fires down the bearing it stopped
+     * at, which is a whole class of desperate defence. Not a roll on the hit either: a random
+     * failure has nothing behind it a player can see, and nothing to repair but luck. This way the
+     * next rung is visible in advance in the block's own damage, and walking back down it is what
+     * repairing the block means.</p>
+     *
+     * <p>Destruction is absent on purpose — a destroyed controller is not a gun in a bad state, it
+     * is not a gun.</p>
+     *
+     * @param damageFraction how far gone the mount's own block is, 0..1
+     * @param derateAt       the fraction at which it starts turning slowly
+     * @param jamAt          the fraction at which it stops turning at all
+     */
+    public static TurretDriveState fromDamage(double damageFraction, double derateAt, double jamAt) {
+        if (damageFraction >= Math.max(derateAt, jamAt)) {
+            return JAMMED;
+        }
+        if (damageFraction >= Math.min(derateAt, jamAt)) {
+            return DERATED;
+        }
+        return WORKING;
+    }
+
     private final boolean drivable;
     private final double rateFactor;
 
