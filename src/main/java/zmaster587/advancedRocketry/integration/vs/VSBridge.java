@@ -581,6 +581,19 @@ final class VSBridge {
     }
 
     /**
+     * Whether {@code pos} lies in the region Valkyrien Skies reserves for ship blocks.
+     *
+     * <p>Pure arithmetic on the chunk allocator's own constants, so it answers correctly whether or
+     * not VS is running — which is the case that matters. A world that once had ships still has
+     * their blocks out there, and their tiles still tick; code that asks "am I on a ship" and gets
+     * "no" because VS is absent must not conclude "then I am in the ordinary world".</p>
+     */
+    static boolean isBlockInShipyard(BlockPos pos) {
+        return pos != null && org.valkyrienskies.mod.common.ships.chunk_claims.ShipChunkAllocator
+                .isBlockInShipyard(pos);
+    }
+
+    /**
      * The uuid of the registered ship whose SHIPYARD claim owns the blocks at world point
      * {@code (x,y,z)}... which is not a question the claim can answer, so this asks the one that is
      * both answerable and right for a PARKED ship: which registered ship's transform sits within

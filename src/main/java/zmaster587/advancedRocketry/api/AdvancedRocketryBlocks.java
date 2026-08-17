@@ -39,6 +39,15 @@ public class AdvancedRocketryBlocks {
     public static Block blockGuidanceComputer;
     public static Block blockAdvancedFlightComputer;
     public static Block blockNavigationComputer;
+    /**
+     * The gun family: a controller, and the parts a gun's numbers are derived from. A turret is
+     * whatever was built around the controller, so these are placed rather than crafted into a
+     * fixed shape.
+     */
+    public static Block blockTurret;
+    public static Block blockGunBarrel;
+    public static Block blockGunAmmoFeed;
+    public static Block blockGunCooling;
     /** The hyperdrive family: the machines that make a jump possible. */
     public static Block blockHyperdriveGenerator;
     public static Block blockHyperdriveCoil;

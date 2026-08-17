@@ -244,6 +244,9 @@ public class TestProbeCommand extends CommandBase {
                 case "shot":
                     handleShot(server, sender, tail(args));
                     break;
+                case "turret":
+                    handleTurret(server, sender, tail(args));
+                    break;
                 case "sound":
                     handleSound(server, sender, tail(args));
                     break;
@@ -345,6 +348,98 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         send(sender, "{\"error\":\"unknown shot subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    /**
+     * {@code /artest turret ...} — build a gun, point it, and read what it thinks it is.
+     * <ul>
+     *   <li>{@code read <dim> <x> <y> <z>} — the derived spec, the mount's bearing and drive state,
+     *       heat, buffered energy and how many rounds this gun has fired;</li>
+     *   <li>{@code target <dim> <x> <y> <z> <tx> <ty> <tz>} — give the gun ITSELF a target, the way a
+     *       linker does. Deliberately not routed through a network: the no-network path is the one
+     *       that has to work;</li>
+     *   <li>{@code cleartarget <dim> <x> <y> <z>};</li>
+     *   <li>{@code charge <dim> <x> <y> <z>} — fill the buffer, for a scenario that is about firing
+     *       rather than about wiring;</li>
+     *   <li>{@code drive <dim> <x> <y> <z> <state>} — set the traverse drive to one of the failure
+     *       states, so a killed drive can be observed without breaking blocks.</li>
+     * </ul>
+     */
+    private void handleTurret(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: /artest turret read|target|cleartarget|charge|drive <dim> <x> <y> <z> ...\"}");
+            return;
+        }
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        net.minecraft.tileentity.TileEntity tile = world.getTileEntity(pos);
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.weapon.TileTurret)) {
+            send(sender, "{\"error\":\"no turret there\",\"x\":" + pos.getX() + ",\"y\":" + pos.getY()
+                    + ",\"z\":" + pos.getZ() + "}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.weapon.TileTurret turret =
+                (zmaster587.advancedRocketry.tile.weapon.TileTurret) tile;
+
+        if ("target".equals(sub) && args.length >= 8) {
+            turret.setTarget(new net.minecraft.util.math.Vec3d(parseDoubleOr(args[5], 0),
+                    parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0)));
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("cleartarget".equals(sub)) {
+            turret.setTarget(null);
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("charge".equals(sub)) {
+            turret.chargeFully();
+            send(sender, "{\"ok\":true,\"energy\":" + turret.getEnergyStored() + "}");
+            return;
+        }
+        if ("drive".equals(sub) && args.length >= 6) {
+            turret.setDriveState(zmaster587.advancedRocketry.api.weapon.TurretDriveState
+                    .valueOf(args[5].toUpperCase(java.util.Locale.ROOT)));
+            send(sender, "{\"ok\":true,\"drive\":\"" + turret.getMechanism().getDriveState().name() + "\"}");
+            return;
+        }
+        if ("read".equals(sub)) {
+            zmaster587.advancedRocketry.api.weapon.GunSpec spec = turret.getSpec();
+            zmaster587.advancedRocketry.weapon.TurretMechanism mount = turret.getMechanism();
+            net.minecraft.util.math.Vec3d target = turret.getEffectiveTarget();
+            send(sender, "{\"ok\":true"
+                    + ",\"operable\":" + spec.isOperable()
+                    + ",\"parts\":" + spec.getPartCount()
+                    + ",\"muzzleSpeed\":" + spec.getMuzzleSpeed()
+                    + ",\"impactEnergy\":" + spec.getImpactEnergy()
+                    + ",\"fireInterval\":" + spec.getFireIntervalTicks()
+                    + ",\"energyPerShot\":" + spec.getEnergyPerShot()
+                    + ",\"spread\":" + spec.getSpreadDegrees()
+                    + ",\"traverseRate\":" + spec.getTraverseDegreesPerTick()
+                    + ",\"heat\":" + turret.getHeat()
+                    + ",\"heatCapacity\":" + spec.getHeatCapacity()
+                    + ",\"energy\":" + turret.getEnergyStored()
+                    + ",\"yaw\":" + mount.getYaw()
+                    + ",\"pitch\":" + mount.getPitch()
+                    + ",\"saturated\":" + mount.isSaturated()
+                    + ",\"onTarget\":" + mount.isOnTarget()
+                    + ",\"drive\":\"" + mount.getDriveState().name() + "\""
+                    + ",\"shots\":" + turret.getShotsFired()
+                    + ",\"lastShot\":" + turret.getLastShotId()
+                    + ",\"hasTarget\":" + (target != null)
+                    + (target == null ? "" : ",\"targetX\":" + target.x + ",\"targetY\":" + target.y
+                            + ",\"targetZ\":" + target.z)
+                    + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown turret subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
     }
 
     private static String shotJson(zmaster587.advancedRocketry.projectile.Shot shot) {

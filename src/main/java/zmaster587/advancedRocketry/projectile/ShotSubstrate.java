@@ -71,7 +71,11 @@ public final class ShotSubstrate {
                 || !ARConfiguration.getCurrentConfig().enableProjectileSubstrate) {
             return -1L;
         }
-        return ShotRegistry.get(world).add(spec, ARConfiguration.getCurrentConfig().maxShotsPerWorld);
+        long id = ShotRegistry.get(world).add(spec, ARConfiguration.getCurrentConfig().maxShotsPerWorld);
+        if (id >= 0L) {
+            ShotReplication.announceSpawn(world, id, spec);
+        }
+        return id;
     }
 
     /** Advance every shot in this world by one tick. Driven by {@link ShotSubstrateEvents}. */
@@ -92,6 +96,7 @@ public final class ShotSubstrate {
                 // it to the crossing point before returning, so there is one place that decides
                 // where a round stopped rather than two that could disagree.
                 registry.end(shot.getId(), end, shot.getPosition());
+                ShotReplication.announceEnd(world, shot.getId(), shot.getPosition(), end);
             }
         }
         registry.markDirty();

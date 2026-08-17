@@ -1,0 +1,22 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        " i ",
+        "iri",
+        " i "
+    ],
+    "key": {
+        "i": {
+            "type": "forge:ore_dict",
+            "ore": "ingotIron"
+        },
+        "r": {
+            "type": "forge:ore_dict",
+            "ore": "blockRedstone"
+        }
+    },
+    "result": {
+        "item": "advancedrocketry:gunAmmoFeed",
+        "count": 1
+    }
+}

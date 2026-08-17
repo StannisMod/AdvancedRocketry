@@ -772,6 +772,38 @@ public final class VSIntegration {
                 ? null : VSBridge.shipIdManagingBlock(world, pos);
     }
 
+    /**
+     * Whether this block sits in the shipyard and NO ship claims it — the window in which a machine
+     * aboard a ship must do nothing at all.
+     *
+     * <h3>Why the window exists</h3>
+     * <p>A ship's chunks and its ship object do not arrive together. The manager queues a background
+     * load and the chunks come into memory before the {@code PhysicsObject} exists, and a shipyard
+     * chunk can also be pulled in by anything that force-loads a region. In that window the blocks
+     * are there, their tiles tick, and every coordinate they hold is a SHIPYARD address — millions
+     * of blocks from where the ship actually is. A machine that acts on those numbers is acting on a
+     * position no player can reach.</p>
+     *
+     * <h3>The rule</h3>
+     * <p>Nothing aboard a ship runs until the ship is named. Not "runs carefully", not "runs with a
+     * fallback": a subsystem that cannot say where it is has nothing correct to do, and the cheapest
+     * correct behaviour is to wait. This is the one question it has to ask to know that.</p>
+     */
+    public static boolean isOnUnnamedShip(World world, BlockPos pos) {
+        return isBlockInShipyard(pos) && registeredShipIdManagingBlock(world, pos) == null;
+    }
+
+    /**
+     * Whether {@code pos} is inside the shipyard region — the far-off block range VS keeps ship
+     * blocks in. Answered from the allocator's constants, so unlike every other method here it is
+     * NOT gated on {@link #isAvailable()}: a world whose ships exist while VS is switched off still
+     * has those blocks, and a caller that needs to know "are these coordinates really world
+     * coordinates" needs a true answer in exactly that case.
+     */
+    public static boolean isBlockInShipyard(BlockPos pos) {
+        return VSBridge.isBlockInShipyard(pos);
+    }
+
     /** UUID string of the ship whose subspace claim manages {@code pos} as the REGISTRY knows it —
      *  answered whether or not that ship is currently simulated. Use this for questions about a
      *  ship's IDENTITY; {@link #shipIdManagingBlock} answers about its live physics and is null for

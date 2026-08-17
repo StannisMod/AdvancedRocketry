@@ -407,6 +407,15 @@ public class ARConfiguration {
      */
     @ConfigProperty(needsSync = true)
     public int maxShotsPerWorld = 256;
+    /**
+     * How near a player's eye a round's PATH must pass before that player is told about it, in
+     * blocks. A shot is a server record, so being told is the only way a client can draw one; sending
+     * every round to everybody in the world would put a battery's whole rate of fire on every
+     * player's connection, including the ones on the far side of a planet. Zero switches the
+     * replication off: the mechanic still works and nothing is drawn.
+     */
+    @ConfigProperty(needsSync = true)
+    public int shotVisibilityRadius = 256;
     @ConfigProperty(needsSync = true)
     public double wearTankLeakChanceMax = 0.5;
     @ConfigProperty(needsSync = true)
@@ -657,6 +666,7 @@ public class ARConfiguration {
         arConfig.enableProjectileSubstrate = config.get(WEAPONS, "enableProjectileSubstrate", true, "Track fired shots as server-side records that fly across loaded and unloaded space alike. Turn off to disable long-range fire entirely: nothing is admitted and nothing in flight is stepped").getBoolean();
         arConfig.shotReflectionSpeedFloor = config.get(WEAPONS, "shotReflectionSpeedFloor", 0.05, "Speed in blocks per tick below which a shot deflected by a shield is ended at the shell instead of continuing. Prevents near-motionless rounds loitering against a shield", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.maxShotsPerWorld = config.get(WEAPONS, "maxShotsPerWorld", 256, "How many shots one world may have in flight at once. Further fire is refused until some land; nothing already in flight is ever dropped to make room", 1, Integer.MAX_VALUE).getInt();
+        arConfig.shotVisibilityRadius = config.get(WEAPONS, "shotVisibilityRadius", 256, "How near a player the path of a fired round must pass before that player is told about it and can see it drawn, in blocks. 0 disables shot replication entirely — the mechanic still works, nothing is drawn", 0, Integer.MAX_VALUE).getInt();
         arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enable rocket part wear and exploding chance.").getBoolean();
         arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Chance for each part to gain wear on launch.").getDouble();
 

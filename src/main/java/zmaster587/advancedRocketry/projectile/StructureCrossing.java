@@ -33,7 +33,7 @@ import java.util.Map;
  * untouched. Closing it is stage 2's conservative occupancy summary, and until that lands this
  * limitation is the reason a ground battery is not yet a shipped feature.</p>
  */
-final class StructureCrossing {
+public final class StructureCrossing {
 
     /**
      * How many voxels one segment may be examined over in one tick, per frame searched. A bound on
@@ -62,6 +62,18 @@ final class StructureCrossing {
     }
 
     private StructureCrossing() {
+    }
+
+    /**
+     * Whether anything solid stands between two WORLD points — the question a weapon asks about its
+     * own line of fire before it commits a round to it.
+     *
+     * <p>Exposed rather than re-derived because a second implementation of "is there structure here"
+     * is a second answer: a gun that cleared a path the substrate then found blocked would fire into
+     * its own hull for reasons nobody could reproduce.</p>
+     */
+    public static boolean isBlocked(World world, Vec3d from, Vec3d to) {
+        return firstAlong(world, from, to) != null;
     }
 
     /** The first structure the segment {@code from -> to} meets, or null when it meets none. */
