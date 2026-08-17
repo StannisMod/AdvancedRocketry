@@ -247,6 +247,9 @@ public class TestProbeCommand extends CommandBase {
                 case "turret":
                     handleTurret(server, sender, tail(args));
                     break;
+                case "weaponconsole":
+                    handleWeaponConsole(server, sender, tail(args));
+                    break;
                 case "sound":
                     handleSound(server, sender, tail(args));
                     break;
@@ -440,6 +443,73 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         send(sender, "{\"error\":\"unknown turret subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    /**
+     * {@code /artest weaponconsole ...} — drive the one thing the weapons network adds.
+     * <ul>
+     *   <li>{@code read <dim> <x> <y> <z>} — the network as this console sees it: status, how many
+     *       guns it is commanding, the shared target, hold-fire;</li>
+     *   <li>{@code target <dim> <x> <y> <z> <tx> <ty> <tz>} — point every gun on the network;</li>
+     *   <li>{@code cleartarget <dim> <x> <y> <z>};</li>
+     *   <li>{@code holdfire <dim> <x> <y> <z> <true|false>} — track without shooting.</li>
+     * </ul>
+     * Each command answers {@code applied:false} when the console is on no network — which is a real
+     * answer (a console alone commands nothing), not an error.
+     */
+    private void handleWeaponConsole(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: /artest weaponconsole read|target|cleartarget|holdfire <dim> <x> <y> <z> ...\"}");
+            return;
+        }
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        net.minecraft.tileentity.TileEntity tile = world.getTileEntity(pos);
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole)) {
+            send(sender, "{\"error\":\"no weapon console there\",\"x\":" + pos.getX() + ",\"y\":"
+                    + pos.getY() + ",\"z\":" + pos.getZ() + "}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole console =
+                (zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole) tile;
+
+        if ("target".equals(sub) && args.length >= 8) {
+            boolean applied = console.assignTarget(new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0)));
+            send(sender, "{\"ok\":true,\"applied\":" + applied + "}");
+            return;
+        }
+        if ("cleartarget".equals(sub)) {
+            send(sender, "{\"ok\":true,\"applied\":" + console.clearTarget() + "}");
+            return;
+        }
+        if ("holdfire".equals(sub) && args.length >= 6) {
+            boolean applied = console.setHoldFire(Boolean.parseBoolean(args[5]));
+            send(sender, "{\"ok\":true,\"applied\":" + applied + ",\"holdFire\":"
+                    + console.isHoldFire() + "}");
+            return;
+        }
+        if ("read".equals(sub)) {
+            net.minecraft.util.math.Vec3d target = console.getTarget();
+            send(sender, "{\"ok\":true"
+                    + ",\"network\":" + (console.network() != null)
+                    + ",\"status\":\"" + escapeJson(console.getNetworkStatusText()) + "\""
+                    + ",\"guns\":" + console.getGunCount()
+                    + ",\"holdFire\":" + console.isHoldFire()
+                    + ",\"hasTarget\":" + (target != null)
+                    + (target == null ? "" : ",\"targetX\":" + target.x + ",\"targetY\":" + target.y
+                            + ",\"targetZ\":" + target.z)
+                    + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown weaponconsole subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
     }
 
     private static String shotJson(zmaster587.advancedRocketry.projectile.Shot shot) {

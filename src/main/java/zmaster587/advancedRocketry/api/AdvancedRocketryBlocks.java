@@ -48,6 +48,8 @@ public class AdvancedRocketryBlocks {
     public static Block blockGunBarrel;
     public static Block blockGunAmmoFeed;
     public static Block blockGunCooling;
+    /** The one thing the weapons network adds: a place to point every gun at once. */
+    public static Block blockWeaponConsole;
     /** The hyperdrive family: the machines that make a jump possible. */
     public static Block blockHyperdriveGenerator;
     public static Block blockHyperdriveCoil;

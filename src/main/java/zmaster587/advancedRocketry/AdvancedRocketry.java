@@ -457,6 +457,8 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileOrbitalRegistry.class, new ResourceLocation(Constants.modId, "orbitalRegistry"));
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.weapon.TileTurret.class,
                 new ResourceLocation(Constants.modId, "ARturret"));
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole.class,
+                new ResourceLocation(Constants.modId, "ARweaponConsole"));
 
         if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().enableGravityController)
             GameRegistry.registerTileEntity(TileAreaGravityController.class, "ARGravityMachine");
@@ -745,6 +747,9 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockGunCooling = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
                 builder -> builder.addHeatCapacity(40).addCoolingPerTick(2).addTraverseDegreesPerTick(0.5D))
                 .setUnlocalizedName("gunCooling").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockWeaponConsole = new BlockTile(zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole.class,
+                GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("weaponConsole")
+                .setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockGuidanceComputer = new BlockTile(TileGuidanceComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("guidanceComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockAdvancedFlightComputer = new zmaster587.advancedRocketry.block.BlockAdvancedFlightComputer(GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("advancedFlightComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         // MODULARNOINV, not MODULAR: the console needs the whole panel for its own controls, and a
@@ -936,6 +941,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNuclearFuelTank.setRegistryName("nuclearfueltank"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNuclearCore.setRegistryName("nuclearcore"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTurret.setRegistryName("turret"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockWeaponConsole.setRegistryName("weaponConsole"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunBarrel.setRegistryName("gunBarrel"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunAmmoFeed.setRegistryName("gunAmmoFeed"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunCooling.setRegistryName("gunCooling"));
