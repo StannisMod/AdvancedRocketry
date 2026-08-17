@@ -4,6 +4,8 @@ import org.junit.Test;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -17,6 +19,7 @@ import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyField;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.LightYearVector;
+import zmaster587.advancedRocketry.universe.StarSystem;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -177,7 +180,11 @@ public class GalaxyFieldTest {
                     if (!g.isPresent() || GalaxyField.isHomeCell(gx, gy, gz)) {
                         continue;
                     }
-                    long reach = UniverseScale.cellsForLightYears(g.get().radiusLy());
+                    // The whole RETINUE's reach, not the primary's radius: satellites are children
+                    // inside this cube, and one seated outside it is a galaxy the index would hand to
+                    // a neighbouring cell.
+                    long reach = UniverseScale.cellsForLightYears(
+                            UniverseScale.retinueReachLy(g.get().radiusLy()));
                     assertInsideCell("x", g.get().centre().sectorX(), gx, s, reach);
                     assertInsideCell("y", g.get().centre().sectorY(), gy, s, reach);
                     assertInsideCell("z", g.get().centre().sectorZ(), gz, s, reach);
@@ -259,7 +266,11 @@ public class GalaxyFieldTest {
         // remember to apply.
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(1.0d));
         Galaxy home = gen.galaxies().home(77L);
-        long beyond = UniverseScale.cellsForLightYears(home.radiusLy() * 3d);
+        // Past the whole RETINUE, not just past the primary: a satellite sits one to three diameters
+        // out, so probing at three radii would be probing inside a galaxy and this test would be
+        // asserting that a galaxy is empty. The void starts where the group ends.
+        long beyond = UniverseScale.cellsForLightYears(
+                UniverseScale.retinueReachLy(home.radiusLy()) * 1.5d);
         long spacing = GalaxyGenConfig.DEFAULT_MIN_SPACING;
         for (long i = 0; i < 40; i++) {
             GalacticCoord probe = GalacticCoord.ofSectorLocal(beyond + i * spacing, 0L, 0L, 0L, 0L, 0L);
@@ -366,7 +377,7 @@ public class GalaxyFieldTest {
 
     /** A spiral at exactly the reference radius: the galaxy the whole layer is quoted against. */
     private static Galaxy referenceSpiral() {
-        return new Galaxy(0L, 0L, 0L, GalacticCoord.ORIGIN,
+        return new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN,
                 typeNamed(GalaxyGenConfig.defaults(), "Spiral"),
                 UniverseScale.REFERENCE_GALAXY_RADIUS_LY,
                 0d, 0d, Math.toRadians(20d), 0d, LightYearVector.ZERO);
@@ -417,6 +428,252 @@ public class GalaxyFieldTest {
             assertTrue("seed " + seed + "'s home galaxy holds " + String.format("%.3e", systems)
                     + " systems, past the largest galaxy a catalogue has (~10^14 stars)",
                     systems < 3e14d);
+        }
+    }
+
+    // ─── The retinue: satellite galaxies ───────────────────────────────────────
+
+    /** The separation in the primary's DIAMETERS — the unit the satellite band is stated in. */
+    private static double diametersApart(Galaxy primary, Galaxy satellite) {
+        double dx = UniverseScale.lightYearsForCells(
+                (double) (satellite.centre().sectorX() - primary.centre().sectorX()));
+        double dy = UniverseScale.lightYearsForCells(
+                (double) (satellite.centre().sectorY() - primary.centre().sectorY()));
+        double dz = UniverseScale.lightYearsForCells(
+                (double) (satellite.centre().sectorZ() - primary.centre().sectorZ()));
+        return Math.sqrt(dx * dx + dy * dy + dz * dz) / (2d * primary.radiusLy());
+    }
+
+    @Test
+    public void aGiantKeepsARetinueAndADwarfKeepsNone() {
+        // The whole point of the feature: on the lattice alone the nearest galaxy is always 25
+        // diameters away, because a cube holds one. A dwarf keeps none — it IS somebody's satellite.
+        GalaxyField f = field(1.0d);
+        int giantsWithRetinue = 0;
+        int checked = 0;
+        for (long gx = -6L; gx <= 6L; gx++) {
+            for (long gy = -3L; gy <= 3L; gy++) {
+                Optional<Galaxy> g = f.galaxyAtIndex(31337L, gx, gy, 0L);
+                if (!g.isPresent()) {
+                    continue;
+                }
+                Galaxy primary = g.get();
+                int count = f.satellitesOf(31337L, primary).size();
+                checked++;
+                if (primary.type().maxSatellites == 0) {
+                    assertEquals(primary + " keeps no satellites", 0, count);
+                } else {
+                    assertTrue(primary + " kept " + count + " satellites, outside its type's band ["
+                                    + primary.type().minSatellites + ", "
+                                    + primary.type().maxSatellites + "]",
+                            count >= primary.type().minSatellites
+                                    && count <= primary.type().maxSatellites);
+                    giantsWithRetinue++;
+                }
+            }
+        }
+        assertTrue("the sweep must find galaxies", checked > 10);
+        assertTrue("the sweep must find at least one galaxy that HAS a retinue, or this proves"
+                + " nothing about satellites at all", giantsWithRetinue > 0);
+    }
+
+    @Test
+    public void aRetinueIsAPureFunctionOfSeedAndCell() {
+        // Same rule as the primary: nothing is stored, so two queries about the same group must never
+        // disagree — including across two GalaxyField instances, which is what a reload really is.
+        GalaxyField a = field(1.0d);
+        GalaxyField b = field(1.0d);
+        Galaxy primary = a.home(0xBEEFL);
+        List<Galaxy> first = a.satellitesOf(0xBEEFL, primary);
+        List<Galaxy> second = b.satellitesOf(0xBEEFL, b.home(0xBEEFL));
+
+        assertEquals("the retinue must have the same size on a fresh field", first.size(),
+                second.size());
+        for (int i = 0; i < first.size(); i++) {
+            assertEquals(first.get(i).toString(), second.get(i).toString());
+        }
+    }
+
+    @Test
+    public void noTwoGalaxiesInACubeOverlap() {
+        // The single-answer invariant. Two overlapping spheres would make "which galaxy is this point
+        // in" a question with two answers, and every frame, profile and cluster read rests on it
+        // having one. It is geometry rather than a tie-break: a satellite is at least one full
+        // DIAMETER out and at most a fraction of the primary's radius across.
+        GalaxyField f = field(1.0d);
+        int pairs = 0;
+        for (long seed = 1L; seed <= 40L; seed++) {
+            Galaxy primary = f.home(seed);
+            List<Galaxy> retinue = f.satellitesOf(seed, primary);
+            for (int i = 0; i < retinue.size(); i++) {
+                Galaxy s = retinue.get(i);
+                assertTrue(s + " is not smaller than its primary " + primary,
+                        s.radiusLy() <= UniverseScale.MAX_SATELLITE_RADIUS_FRACTION
+                                * primary.radiusLy());
+                double d = diametersApart(primary, s);
+                assertTrue(s + " sits " + String.format("%.2f", d) + " diameters out, outside the band",
+                        d >= UniverseScale.MIN_SATELLITE_DISTANCE_IN_DIAMETERS * 0.99d
+                                && d <= UniverseScale.MAX_SATELLITE_DISTANCE_IN_DIAMETERS * 1.01d);
+                assertTrue(s + " overlaps its primary " + primary,
+                        d * 2d * primary.radiusLy() > primary.radiusLy() + s.radiusLy());
+                for (int j = i + 1; j < retinue.size(); j++) {
+                    Galaxy other = retinue.get(j);
+                    double sep = separationLy(s, other);
+                    assertTrue(s + " overlaps " + other + " (" + (long) sep + " ly apart)",
+                            sep > s.radiusLy() + other.radiusLy());
+                    pairs++;
+                }
+            }
+        }
+        assertTrue("the sweep must compare at least one PAIR of satellites, or the overlap check"
+                + " between two of them never executed", pairs > 0);
+    }
+
+    private static double separationLy(Galaxy a, Galaxy b) {
+        double dx = UniverseScale.lightYearsForCells(
+                (double) (a.centre().sectorX() - b.centre().sectorX()));
+        double dy = UniverseScale.lightYearsForCells(
+                (double) (a.centre().sectorY() - b.centre().sectorY()));
+        double dz = UniverseScale.lightYearsForCells(
+                (double) (a.centre().sectorZ() - b.centre().sectorZ()));
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    @Test
+    public void aSatelliteIsCloserThanTheNEARESTGIANT() {
+        // The measurement the feature exists for, stated as the comparison rather than as a number:
+        // the lattice spacing is the giant-to-giant distance and stays real, and the retinue fills in
+        // what was missing beneath it.
+        GalaxyField f = field(1.0d);
+        double lattice = UniverseScale.GALAXY_SEPARATION_IN_DIAMETERS;
+        int measured = 0;
+        double nearest = Double.MAX_VALUE;
+        for (long seed = 1L; seed <= 40L; seed++) {
+            Galaxy primary = f.home(seed);
+            for (Galaxy s : f.satellitesOf(seed, primary)) {
+                nearest = Math.min(nearest, diametersApart(primary, s));
+                measured++;
+            }
+        }
+        assertTrue("no seed produced a satellite to measure", measured > 0);
+        System.out.println(String.format(
+                "nearest satellite over 40 seeds: %.2f diameters, against a lattice spacing of %.0f",
+                nearest, lattice));
+        assertTrue("a satellite at " + String.format("%.2f", nearest) + " diameters is no closer than"
+                + " the lattice already put the nearest giant", nearest < lattice);
+    }
+
+    @Test
+    public void aSatelliteIsNamedAPARTfromItsPrimary() {
+        // A satellite is a destination with an address. Two galaxies in one cube sharing a name would
+        // be two places a player could neither tell apart nor write down.
+        GalaxyField f = field(1.0d);
+        Galaxy primary = f.home(0xC0FFEEL);
+        List<Galaxy> retinue = f.satellitesOf(0xC0FFEEL, primary);
+        assertTrue("the fixture needs a home galaxy WITH a retinue", !retinue.isEmpty());
+
+        Set<String> names = new HashSet<>();
+        assertTrue(names.add(primary.name()));
+        assertFalse("a primary must not report itself a satellite", primary.isSatellite());
+        for (Galaxy s : retinue) {
+            assertTrue("two galaxies in one cube share the name " + s.name(), names.add(s.name()));
+            assertTrue(s + " must report itself a satellite", s.isSatellite());
+            assertTrue("a satellite's name must be derived from its primary's: " + s.name(),
+                    s.name().startsWith(primary.name() + "-S"));
+        }
+        assertEquals("a satellite keeps no retinue of its own — the group is one level deep",
+                0, f.satellitesOf(0xC0FFEEL, retinue.get(0)).size());
+    }
+
+    @Test
+    public void aSatelliteIsAPLACE_withStarsOfItsOwn() {
+        // THE assumption the retinue was designed around, and the one nobody had checked: that the star
+        // field can be generated at an offset inside a parent's cube. It can — placement reads the
+        // profile of the galaxy CONTAINING a point, so a satellite is populated by the same generator
+        // that populates its primary. Had the profile been read off the cube's OWNER instead, every
+        // satellite would be named, addressable and completely empty, which is what this catches.
+        GalaxyGenConfig config = cfg(1.0d);
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
+        GalaxyField f = gen.galaxies();
+
+        long seed = 0xC0FFEEL;
+        Galaxy primary = f.home(seed);
+        List<Galaxy> retinue = f.satellitesOf(seed, primary);
+        assertTrue("the fixture needs a home galaxy WITH a retinue", !retinue.isEmpty());
+        Galaxy satellite = retinue.get(0);
+
+        // Its centre is inside it, and the profile there is the SATELLITE's, not zero.
+        GalacticCoord core = satellite.centre();
+        assertEquals("the cell at a satellite's centre must resolve to the satellite",
+                satellite.toString(),
+                f.galaxyContaining(seed, core).get().toString());
+        assertTrue("a satellite's own profile at its centre must be positive",
+                satellite.densityAtSector(core.sectorX(), core.sectorY(), core.sectorZ()) > 0d);
+        assertEquals("and the cube's PRIMARY must read zero there — that is why the containing galaxy"
+                        + " is the one to ask", 0d,
+                primary.densityAtSector(core.sectorX(), core.sectorY(), core.sectorZ()), 0d);
+
+        // And the generator actually seats systems in it.
+        long stride = config.minSpacing;
+        Map<GalacticCoord, StarSystem> found = gen.systemsInRegion(seed,
+                GalacticCoord.ofSectorLocal(core.sectorX() - 3L * stride,
+                        core.sectorY() - 3L * stride, core.sectorZ() - 3L * stride, 0L, 0L, 0L),
+                GalacticCoord.ofSectorLocal(core.sectorX() + 3L * stride,
+                        core.sectorY() + 3L * stride, core.sectorZ() + 3L * stride, 0L, 0L, 0L));
+        System.out.println("satellite " + satellite + " holds " + found.size()
+                + " systems in the 7x7x7 territories around its core");
+        assertFalse("a satellite with no systems in it is not a place anybody can go to",
+                found.isEmpty());
+    }
+
+    @Test
+    public void aCellInsideASatelliteIsBOUNDtoTheSATELLITE() {
+        // The frame decides both rotation and expansion, so getting this wrong does not make a
+        // satellite slightly wrong — it makes its interior comove with a void it is not in, while the
+        // primary it orbits turns.
+        GalaxyField f = field(1.0d);
+        long seed = 0xC0FFEEL;
+        Galaxy primary = f.home(seed);
+        List<Galaxy> retinue = f.satellitesOf(seed, primary);
+        assertTrue("the fixture needs a home galaxy WITH a retinue", !retinue.isEmpty());
+        Galaxy satellite = retinue.get(0);
+        GalacticCoord core = satellite.centre();
+
+        assertEquals("a cell inside a satellite is bound, not comoving", GalacticFrame.GALACTIC,
+                f.frameAt(seed, core));
+        assertEquals("and its position is the SATELLITE's bound law",
+                satellite.boundPositionOfCellAt(core, 5_000L).toString(),
+                f.positionAt(seed, core, 5_000L).toString());
+
+        // The control: a point in the same cube but in no galaxy is still comoving.
+        long past = UniverseScale.cellsForLightYears(
+                UniverseScale.retinueReachLy(primary.radiusLy()) * 1.5d);
+        GalacticCoord voidCell = GalacticCoord.ofSectorLocal(primary.centre().sectorX() + past,
+                primary.centre().sectorY(), primary.centre().sectorZ(), 0L, 0L, 0L);
+        assertEquals("past the whole group, a cell is comoving again", GalacticFrame.COMOVING,
+                f.frameAt(seed, voidCell));
+    }
+
+    @Test
+    public void aSatelliteCarriesItsPrimarysMotionSoTheGroupTravelsTogether() {
+        // A group is bound: if a satellite drew its own peculiar velocity it would drift away from the
+        // galaxy it orbits over the drift horizon. The home galaxy's retinue must stand as still as
+        // the home galaxy does, or authored content's neighbours would leave it behind.
+        GalaxyField f = field(1.0d);
+        for (long seed : new long[] {1L, 7L, 0xC0FFEEL}) {
+            Galaxy home = f.home(seed);
+            for (Galaxy s : f.satellitesOf(seed, home)) {
+                assertEquals("the home galaxy's satellites must not drift either", 0d,
+                        s.peculiarVelocity().length(), 0d);
+            }
+            Optional<Galaxy> mover = f.galaxyAtIndex(seed, 3L, 1L, -2L);
+            if (mover.isPresent()) {
+                for (Galaxy s : f.satellitesOf(seed, mover.get())) {
+                    assertEquals("a satellite travels with its primary",
+                            mover.get().peculiarVelocity().toString(),
+                            s.peculiarVelocity().toString());
+                }
+            }
         }
     }
 

@@ -72,16 +72,43 @@ public final class ClusterField {
         if (galaxy == null) {
             return Optional.empty();
         }
-        double u = CellHash.norm(CellHash.of(seed, galaxy.cellX(), galaxy.cellY(), galaxy.cellZ(),
-                SALT_NUCLEUS_RADIUS));
+        // Keyed on the galaxy's own CENTRE, not on its lattice index: a cube holds a primary and its
+        // satellites, and they share that index — so keying on it would give every galaxy in a group the
+        // same nucleus, and a satellite's core would be sized by its primary's draw.
+        double u = CellHash.norm(CellHash.of(seed, galaxy.centre().sectorX(),
+                galaxy.centre().sectorY(), galaxy.centre().sectorZ(), SALT_NUCLEUS_RADIUS));
         GalaxyGenConfig.ClusterType type = GalaxyGenConfig.NUCLEUS;
         double radiusLy = type.minRadiusLy + u * (type.maxRadiusLy - type.minRadiusLy);
         long s = config.minSpacing;
-        return Optional.of(new StarCluster(type,
+        return Optional.of(new StarCluster(type, nucleusSubdivisionFor(galaxy),
                 Math.floorDiv(galaxy.centre().sectorX(), s),
                 Math.floorDiv(galaxy.centre().sectorY(), s),
                 Math.floorDiv(galaxy.centre().sectorZ(), s),
                 superCellsForLightYears(radiusLy, config.minSpacing)));
+    }
+
+    /**
+     * How finely a galaxy's NUCLEUS divides the lattice &mdash; scaled to the galaxy it is the centre of,
+     * never taken flat from the table.
+     *
+     * <p>Every other cluster's contrast is measured against the FIELD, whose density is real and the same
+     * everywhere; a nucleus's is a statement about its own galaxy's POPULATION, so it cannot be one
+     * number. The table's {@code k} is the real figure for a reference-sized galaxy (10⁷&times; the field
+     * at 10¹¹ stars), and a galaxy's population goes as its radius cubed, so {@code k} goes as the
+     * radius: {@code k = k_ref &middot; R / R_ref}. That holds the nucleus at a constant FRACTION of
+     * whatever it is the centre of.</p>
+     *
+     * <p>Measured, and the reason this is derived at all: the flat {@code k = 215} put ~4&middot;10⁷ stars
+     * inside a 6-light-year core of a 921-light-year dwarf that holds ~10⁷ altogether &mdash; a nucleus
+     * four times its own galaxy. It is the same error the table's {@code k} was once held down to avoid,
+     * one level lower, and it became reachable the moment satellite galaxies made small galaxies common.
+     * A dwarf's nucleus comes out at {@code k = 4}, i.e. barely a concentration, which is what a real
+     * dwarf spheroidal has.</p>
+     */
+    private static int nucleusSubdivisionFor(Galaxy galaxy) {
+        double scaled = GalaxyGenConfig.NUCLEUS.subdivision
+                * galaxy.radiusLy() / UniverseScale.REFERENCE_GALAXY_RADIUS_LY;
+        return (int) Math.max(1L, Math.min(GalaxyGenConfig.NUCLEUS.subdivision, Math.round(scaled)));
     }
 
     /**
@@ -118,7 +145,9 @@ public final class ClusterField {
         long ox = margin + Math.floorMod(CellHash.of(seed, cx, cy, cz, SALT_CLUSTER_OX), band);
         long oy = margin + Math.floorMod(CellHash.of(seed, cx, cy, cz, SALT_CLUSTER_OY), band);
         long oz = margin + Math.floorMod(CellHash.of(seed, cx, cy, cz, SALT_CLUSTER_OZ), band);
-        return Optional.of(new StarCluster(type, cx * spacingSuperCells + ox,
+        // The type's own k: an open cluster's and a globular's contrast is measured against the FIELD,
+        // whose density is real and uniform, so it needs no scaling to the galaxy it sits in.
+        return Optional.of(new StarCluster(type, type.subdivision, cx * spacingSuperCells + ox,
                 cy * spacingSuperCells + oy, cz * spacingSuperCells + oz, radius));
     }
 

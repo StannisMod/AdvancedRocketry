@@ -56,6 +56,7 @@ public final class Galaxy {
     private final long cellX;
     private final long cellY;
     private final long cellZ;
+    private final int satelliteIndex;
     private final GalacticCoord centre;
     private final LightYearVector seat;
     private final LightYearVector peculiarVelocity;
@@ -79,6 +80,10 @@ public final class Galaxy {
 
     /**
      * @param cellX      the galaxy-lattice index this galaxy is seated in
+     * @param satelliteIndex {@code 0} for the cube's PRIMARY galaxy, {@code 1..n} for a satellite of
+     *                   it. A cube holds one primary and its retinue, so the lattice index alone no
+     *                   longer identifies a galaxy — this is what distinguishes them, in the name and
+     *                   in every draw made per galaxy rather than per cell
      * @param centre     its centre, as a cell name
      * @param radiusLy   its declared radius in light years — drawn inside {@code type}'s band
      * @param tilt       the angle its pole makes with the static +Y axis, in radians
@@ -86,14 +91,16 @@ public final class Galaxy {
      * @param armPitch   the arms' pitch angle in radians (ignored when the type has no arms)
      * @param armPhase   where arm zero starts, in radians
      * @param peculiarVelocity its comoving velocity in light years per tick — its own motion through
-     *                   the expanding universe, on top of the expansion
+     *                   the expanding universe, on top of the expansion. A satellite carries its
+     *                   PRIMARY's, so a group travels together
      */
-    public Galaxy(long cellX, long cellY, long cellZ, GalacticCoord centre,
+    public Galaxy(long cellX, long cellY, long cellZ, int satelliteIndex, GalacticCoord centre,
                   GalaxyGenConfig.GalaxyType type, double radiusLy, double tilt, double node,
                   double armPitch, double armPhase, LightYearVector peculiarVelocity) {
         this.cellX = cellX;
         this.cellY = cellY;
         this.cellZ = cellZ;
+        this.satelliteIndex = Math.max(0, satelliteIndex);
         this.centre = centre;
         this.seat = LightYearVector.ofCell(centre);
         this.peculiarVelocity = (peculiarVelocity == null) ? LightYearVector.ZERO : peculiarVelocity;
@@ -186,9 +193,29 @@ public final class Galaxy {
         return armPhase;
     }
 
-    /** This galaxy's designation — procedurally-generated galaxy, named for the cell it is seated in. */
+    /**
+     * {@code 0} for the cube's primary galaxy, {@code 1..n} for one of its satellites. A cube holds a
+     * primary AND its retinue, so this is the second half of a galaxy's identity.
+     */
+    public int satelliteIndex() {
+        return satelliteIndex;
+    }
+
+    /** Whether this galaxy is a satellite of the primary seated in the same cube. */
+    public boolean isSatellite() {
+        return satelliteIndex > 0;
+    }
+
+    /**
+     * This galaxy's designation — procedurally-generated galaxy, named for the cell it is seated in,
+     * and for its place in that cube's retinue when it is not the primary.
+     *
+     * <p>The suffix is not decoration: a satellite is a destination with an address, and two galaxies in
+     * one cube sharing a name would be two places a player could neither tell apart nor write down.</p>
+     */
     public String name() {
-        return "PGG-" + cellX + "." + cellY + "." + cellZ;
+        String cell = "PGG-" + cellX + "." + cellY + "." + cellZ;
+        return isSatellite() ? cell + "-S" + satelliteIndex : cell;
     }
 
     // ─── Membership and profile ────────────────────────────────────────────────

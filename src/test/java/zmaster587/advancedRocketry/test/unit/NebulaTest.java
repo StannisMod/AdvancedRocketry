@@ -39,7 +39,7 @@ public class NebulaTest {
     }
 
     private static StarCluster clusterOfType(GalaxyGenConfig.ClusterType type) {
-        return new StarCluster(type, 100L, 0L, 0L, 2L);
+        return new StarCluster(type, type.subdivision, 100L, 0L, 0L, 2L);
     }
 
     private static GalaxyGenConfig.ClusterType typeWithGas(double gas) {

@@ -145,6 +145,59 @@ public final class UniverseScale {
      */
     public static final double MIN_AUTHORED_GALAXY_RADIUS_LY = 15_000d;
 
+    // ─── A galaxy's retinue ────────────────────────────────────────────────────
+    // The lattice holds at most one galaxy per cube and the cube is 25 diameters across, so on the
+    // lattice alone the nearest galaxy is always 25 diameters away. That is the distance to the nearest
+    // equal GIANT — Milky Way to Andromeda — and it was standing in for the distance to the nearest
+    // galaxy of any kind. Real giants keep company far closer: the Large Magellanic Cloud is 1.6
+    // diameters out, the Sagittarius dwarf is inside the halo.
+    //
+    // So a galaxy draws SATELLITES as children inside its own cube, exactly as a system draws moons
+    // inside its primary's cell. Nothing about the representation moves: the cube keeps its size, the
+    // sector space is untouched, and a satellite is a Galaxy value produced from (seed, cell) like any
+    // other.
+
+    /**
+     * How far a satellite is seated from its primary, in the primary's DIAMETERS. The band real
+     * companions occupy: the LMC sits at about 1.6, and the more distant members of a group run to a
+     * few.
+     *
+     * <p>Its floor is what keeps a satellite OUTSIDE its primary — a satellite is at least one whole
+     * diameter out, so even the largest one clears the primary's edge by a comfortable margin, and two
+     * galaxies never overlap. That is not cosmetic: overlapping spheres would make "which galaxy is
+     * this point in" a question with two answers, and the whole layer is built on it having one.</p>
+     */
+    public static final double MIN_SATELLITE_DISTANCE_IN_DIAMETERS = 1d;
+    public static final double MAX_SATELLITE_DISTANCE_IN_DIAMETERS = 3d;
+
+    /**
+     * How large a satellite may be, as a fraction of its primary's radius. A satellite is drawn from
+     * the galaxy types whose whole band fits under this, so "smaller than what it orbits" is a property
+     * of the DRAW rather than a clamp applied to its result — the same shape as the authored-content
+     * floor above.
+     *
+     * <p>Measured against the real pair it is named for: the LMC is 0.14 of the Milky Way's radius and
+     * the SMC 0.07, and M32 is about 0.1 of Andromeda. The bound is loose enough to admit a dwarf
+     * irregular around a large spiral and tight enough to exclude a second giant.</p>
+     */
+    public static final double MAX_SATELLITE_RADIUS_FRACTION = 0.3d;
+
+    /**
+     * How far a galaxy's whole RETINUE reaches from its centre, in light years — the primary's own
+     * radius, its farthest satellite seat, and that satellite's own radius.
+     *
+     * <p>This, and not the primary's radius, is what a galaxy must be seated clear of its cube's faces
+     * by. A margin sized to the primary alone would let a galaxy seated near a face keep satellites
+     * OUTSIDE the cube, and a galaxy outside its own lattice cell is one the index attributes to a
+     * neighbour — the single-answer invariant, broken by a number that was right before satellites
+     * existed.</p>
+     */
+    public static double retinueReachLy(double primaryRadiusLy) {
+        double radius = Math.max(0d, primaryRadiusLy);
+        double farthestSeat = MAX_SATELLITE_DISTANCE_IN_DIAMETERS * 2d * radius;
+        return farthestSeat + MAX_SATELLITE_RADIUS_FRACTION * radius;
+    }
+
     /**
      * Where the universe ORIGIN sits inside the home galaxy, as a fraction of its radius — and it is
      * emphatically not the centre.

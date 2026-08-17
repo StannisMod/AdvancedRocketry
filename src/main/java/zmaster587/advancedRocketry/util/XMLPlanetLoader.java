@@ -74,6 +74,8 @@ public class XMLPlanetLoader {
     private static final String ATTR_ARMS = "arms";
     private static final String ATTR_ROTATIONSPEED = "rotationSpeed";
     private static final String ATTR_COREFRACTION = "coreFraction";
+    private static final String ATTR_MINSATELLITES = "minSatellites";
+    private static final String ATTR_MAXSATELLITES = "maxSatellites";
     // A planet TYPE preset: the named region of parameter space a world can land in, plus everything
     // that follows from being that kind of world. Present -> replaces the whole stock table.
     private static final String ELEMENT_PLANETTYPE = "planetType";
@@ -330,7 +332,8 @@ public class XMLPlanetLoader {
      *
      * <pre>{@code
      * <galaxyType name="Spiral" profile="DISC" minRadius="15000" maxRadius="60000"
-     *             thickness="0.02" arms="2" rotationSpeed="220" coreFraction="0.08" weight="7"/>
+     *             thickness="0.02" arms="2" rotationSpeed="220" coreFraction="0.08"
+     *             minSatellites="1" maxSatellites="3" weight="7"/>
      * }</pre>
      *
      * <p>Every SHAPE attribute defaults to the stock spiral's value, so a pack that wants to change
@@ -362,6 +365,8 @@ public class XMLPlanetLoader {
                 attrInt(node, ATTR_ARMS, stock.armCount),
                 attrDouble(node, ATTR_ROTATIONSPEED, stock.rotationSpeedKmS),
                 attrDouble(node, ATTR_COREFRACTION, stock.coreRadiusFraction),
+                attrInt(node, ATTR_MINSATELLITES, stock.minSatellites),
+                attrInt(node, ATTR_MAXSATELLITES, stock.maxSatellites),
                 attrInt(node, ATTR_WEIGHT, 1));
     }
 
@@ -594,6 +599,8 @@ public class XMLPlanetLoader {
             gt.setAttribute(ATTR_ARMS, Integer.toString(t.armCount));
             gt.setAttribute(ATTR_ROTATIONSPEED, Double.toString(t.rotationSpeedKmS));
             gt.setAttribute(ATTR_COREFRACTION, Double.toString(t.coreRadiusFraction));
+            gt.setAttribute(ATTR_MINSATELLITES, Integer.toString(t.minSatellites));
+            gt.setAttribute(ATTR_MAXSATELLITES, Integer.toString(t.maxSatellites));
             gt.setAttribute(ATTR_WEIGHT, Integer.toString(t.weight));
             e.appendChild(gt);
         }

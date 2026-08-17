@@ -46,7 +46,7 @@ public class StarClusterTest {
         // which is exactly the cost a graded spacing was rejected for.
         for (int k : new int[] {2, 3, 4, 7, 14, 25, 215}) {
             for (long coarseEdge : new long[] {1_000L, 40_018_890L, 999_983L}) {
-                StarCluster c = new StarCluster(type(k), 0L, 0L, 0L, 3L);
+                StarCluster c = new StarCluster(type(k), k, 0L, 0L, 0L, 3L);
                 long covered = 0L;
                 long previousHigh = 0L;
                 for (long i = 0; i < k; i++) {
@@ -69,7 +69,7 @@ public class StarClusterTest {
         // be the one whose bounds contain it. A mismatch here is a system addressed by a cell it does
         // not sit in.
         long coarseEdge = 40_018_890L;
-        StarCluster c = new StarCluster(type(25), 0L, 0L, 0L, 3L);
+        StarCluster c = new StarCluster(type(25), 25, 0L, 0L, 0L, 3L);
         for (long offset : new long[] {0L, 1L, coarseEdge / 3L, coarseEdge / 2L, coarseEdge - 1L}) {
             long i = c.subCellIndex(offset, coarseEdge);
             assertTrue("index " + i + " out of range for offset " + offset, i >= 0 && i < 25);
@@ -84,7 +84,7 @@ public class StarClusterTest {
         // Snapped to coarse cell faces, which is what makes the fine lattice tile and what keeps
         // "which lattice does this coordinate live on" an O(1) question with one answer. The shape
         // stays a ball, because the test is on the super-cell INDEX rather than on a box.
-        StarCluster c = new StarCluster(type(4), 10L, 10L, 10L, 3L);
+        StarCluster c = new StarCluster(type(4), 4, 10L, 10L, 10L, 3L);
         assertTrue(c.containsSuperCell(10L, 10L, 10L));
         assertTrue(c.containsSuperCell(13L, 10L, 10L));
         assertFalse(c.containsSuperCell(14L, 10L, 10L));
@@ -102,7 +102,6 @@ public class StarClusterTest {
         Galaxy home = gen.galaxies().home(SEED);
         Optional<StarCluster> nucleus = clusters.nucleusOf(SEED, home);
         assertTrue(nucleus.isPresent());
-        assertEquals(GalaxyGenConfig.NUCLEUS.subdivision, nucleus.get().subdivision());
 
         long s = cfg().minSpacing;
         assertTrue("the nucleus must cover the galaxy's own centre",
@@ -111,6 +110,55 @@ public class StarClusterTest {
                         Math.floorDiv(home.centre().sectorZ(), s)));
         assertTrue("and it must be the richest cluster there is",
                 nucleus.get().subdivision() > cfg().clusterTypes.get(0).subdivision);
+    }
+
+    @Test
+    public void aNUCLEUSscalesToItsOwnGalaxyWhileTheOtherClustersDoNot() {
+        // The distinction the table cannot hold in one number. An open cluster's and a globular's
+        // contrast is measured against the FIELD, whose density is real and the same everywhere — so it
+        // is a constant. A NUCLEUS's contrast is a statement about its own galaxy's POPULATION, and the
+        // table's figure is the real one for a REFERENCE-sized galaxy.
+        //
+        // Measured failure it replaces: at a flat k = 215 a 921-light-year dwarf — the size satellite
+        // galaxies routinely are — got ~4·10^7 stars inside a six-light-year core while holding ~10^7
+        // altogether. A nucleus four times its own galaxy. Population goes as radius cubed and k cubed,
+        // so k has to go as the radius.
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg());
+        ClusterField clusters = gen.clusters();
+
+        int atReference = clusters.nucleusOf(SEED, galaxyOfRadius(
+                UniverseScale.REFERENCE_GALAXY_RADIUS_LY)).get().subdivision();
+        assertEquals("a reference-sized galaxy must get the table's own figure",
+                GalaxyGenConfig.NUCLEUS.subdivision, atReference);
+
+        int atTenth = clusters.nucleusOf(SEED, galaxyOfRadius(
+                UniverseScale.REFERENCE_GALAXY_RADIUS_LY / 10d)).get().subdivision();
+        assertTrue("a galaxy a tenth the size must get a proportionally thinner core, not the same one:"
+                        + " " + atTenth + " vs " + atReference,
+                atTenth < atReference);
+        assertTrue("and never below one — a nucleus that refines nothing is still a place",
+                atTenth >= 1);
+
+        // The bound that matters, said in the units of the defect: a nucleus may not hold more stars
+        // than the galaxy it is the centre of. Both counts are k^3 x volume against the same field, so
+        // the comparison needs no population model — just the two volumes.
+        double dwarfRadius = 921d;
+        Galaxy dwarf = galaxyOfRadius(dwarfRadius);
+        int k = clusters.nucleusOf(SEED, dwarf).get().subdivision();
+        double coreLy = GalaxyGenConfig.NUCLEUS.maxRadiusLy;
+        double coreShare = Math.pow((double) k, 3d) * Math.pow(coreLy / dwarfRadius, 3d);
+        System.out.println(String.format(
+                "a %.0f ly galaxy gets nucleus k=%d; its core holds %.4f of the galaxy's own stars",
+                dwarfRadius, k, coreShare));
+        assertTrue("a dwarf's nucleus holds " + String.format("%.2f", coreShare)
+                        + " of its whole galaxy", coreShare < 0.5d);
+    }
+
+    /** A galaxy of a stated radius, at the origin — the subject when the SIZE is what is under test. */
+    private static Galaxy galaxyOfRadius(double radiusLy) {
+        return new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN, cfg().galaxyTypes.get(0), radiusLy,
+                0d, 0d, Math.toRadians(20d), 0d,
+                zmaster587.advancedRocketry.universe.LightYearVector.ZERO);
     }
 
     @Test

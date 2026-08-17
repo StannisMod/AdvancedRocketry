@@ -32,14 +32,23 @@ package zmaster587.advancedRocketry.universe;
 public final class StarCluster {
 
     private final GalaxyGenConfig.ClusterType type;
+    private final int subdivision;
     private final long centreSuperX;
     private final long centreSuperY;
     private final long centreSuperZ;
     private final long radiusSuperCells;
 
-    public StarCluster(GalaxyGenConfig.ClusterType type, long centreSuperX, long centreSuperY,
-                       long centreSuperZ, long radiusSuperCells) {
+    /**
+     * @param subdivision how many parts each coarse super-cell inside this cluster is divided into,
+     *                    per axis. Stated rather than read off {@code type}, because a NUCLEUS's
+     *                    contrast is a statement about its own GALAXY's population and every other
+     *                    cluster's is a statement about the field &mdash; the two cannot both be a
+     *                    constant in one table
+     */
+    public StarCluster(GalaxyGenConfig.ClusterType type, int subdivision, long centreSuperX,
+                       long centreSuperY, long centreSuperZ, long radiusSuperCells) {
         this.type = type;
+        this.subdivision = Math.max(1, subdivision);
         this.centreSuperX = centreSuperX;
         this.centreSuperY = centreSuperY;
         this.centreSuperZ = centreSuperZ;
@@ -52,7 +61,7 @@ public final class StarCluster {
 
     /** How many parts each coarse super-cell inside this cluster is divided into, per axis. */
     public int subdivision() {
-        return type.subdivision;
+        return subdivision;
     }
 
     /** Its radius, in COARSE super-cells — the unit its boundary is snapped to. */

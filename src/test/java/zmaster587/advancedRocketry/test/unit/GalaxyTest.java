@@ -29,28 +29,28 @@ public class GalaxyTest {
 
     private static GalaxyGenConfig.GalaxyType spiral() {
         return new GalaxyGenConfig.GalaxyType("Spiral", GalaxyGenConfig.GalaxyProfile.DISC,
-                900d, 2200d, 0.02d, 2, 220d, 0.08d, 7);
+                900d, 2200d, 0.02d, 2, 220d, 0.08d, 1, 3, 7);
     }
 
     private static GalaxyGenConfig.GalaxyType smoothDisc() {
         return new GalaxyGenConfig.GalaxyType("Smooth", GalaxyGenConfig.GalaxyProfile.DISC,
-                900d, 2200d, 0.02d, 0, 220d, 0.08d, 7);
+                900d, 2200d, 0.02d, 0, 220d, 0.08d, 1, 3, 7);
     }
 
     private static GalaxyGenConfig.GalaxyType dwarf() {
         return new GalaxyGenConfig.GalaxyType("Dwarf", GalaxyGenConfig.GalaxyProfile.SPHEROID,
-                120d, 500d, 0.70d, 0, 20d, 0.90d, 700);
+                120d, 500d, 0.70d, 0, 20d, 0.90d, 0, 0, 700);
     }
 
     /** A galaxy with its plane on the world's XZ plane, so a test can reason in plain coordinates. */
     private static Galaxy flat(GalaxyGenConfig.GalaxyType type) {
-        return new Galaxy(0L, 0L, 0L, GalacticCoord.ORIGIN, type, RADIUS, 0d, 0d,
+        return new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN, type, RADIUS, 0d, 0d,
                 Math.toRadians(20d), 0d, LightYearVector.ZERO);
     }
 
     /** The same galaxy, seated away from the origin and moving — the subject of the R3 laws. */
     private static Galaxy adrift(GalacticCoord seat, LightYearVector velocity) {
-        return new Galaxy(1L, 0L, 0L, seat, smoothDisc(), RADIUS, 0d, 0d, Math.toRadians(20d), 0d,
+        return new Galaxy(1L, 0L, 0L, 0, seat, smoothDisc(), RADIUS, 0d, 0d, Math.toRadians(20d), 0d,
                 velocity);
     }
 
@@ -130,9 +130,9 @@ public class GalaxyTest {
     public void orientationRotatesTheDiscWithoutChangingItsShape() {
         // Two galaxies alike but for their orientation must be the same object seen from elsewhere:
         // the density a point sees depends on where it is IN THE GALAXY, never on the world axes.
-        Galaxy flat = new Galaxy(0L, 0L, 0L, GalacticCoord.ORIGIN, smoothDisc(), RADIUS, 0d, 0d,
+        Galaxy flat = new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN, smoothDisc(), RADIUS, 0d, 0d,
                 Math.toRadians(20d), 0d, LightYearVector.ZERO);
-        Galaxy tilted = new Galaxy(0L, 0L, 0L, GalacticCoord.ORIGIN, smoothDisc(), RADIUS,
+        Galaxy tilted = new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN, smoothDisc(), RADIUS,
                 Math.toRadians(90d), 0d, Math.toRadians(20d), 0d, LightYearVector.ZERO);
         // The tilted galaxy's pole is +X, so ITS plane is the world's YZ plane.
         double r = RADIUS * 0.3d;

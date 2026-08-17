@@ -105,11 +105,25 @@ public final class GalaxyGenConfig {
          * (strong shear, and arms that wind up).
          */
         public final double coreRadiusFraction;
+        /**
+         * How many SATELLITE galaxies a galaxy of this type keeps, as a band — the same shape as the
+         * radius band above, and stated as two numbers for the same reason: a single maximum would hide
+         * the decision of whether a giant may have none at all.
+         *
+         * <p>Real giants essentially all keep company, so the floor is non-zero for them; a dwarf keeps
+         * none, and {@code 0..0} is how that is said. It is deliberately a handful and not the dozens a
+         * real catalogue lists: a satellite is a full galaxy resolved on the placement path, so the
+         * count is a cost per query, and the ultra-faint dwarfs beyond a handful are not destinations
+         * anybody would fly to.</p>
+         */
+        public final int minSatellites;
+        public final int maxSatellites;
         public final int weight;
 
         public GalaxyType(String name, GalaxyProfile profile, double minRadiusLy, double maxRadiusLy,
                           double scaleHeightRatio, int armCount, double rotationSpeedKmS,
-                          double coreRadiusFraction, int weight) {
+                          double coreRadiusFraction, int minSatellites, int maxSatellites,
+                          int weight) {
             this.name = (name == null || name.isEmpty()) ? "GALAXY" : name;
             this.profile = (profile == null) ? GalaxyProfile.DISC : profile;
             this.minRadiusLy = Math.max(1d, minRadiusLy);
@@ -118,6 +132,8 @@ public final class GalaxyGenConfig {
             this.armCount = Math.max(0, armCount);
             this.rotationSpeedKmS = Math.max(0d, rotationSpeedKmS);
             this.coreRadiusFraction = Math.min(1d, Math.max(0.001d, coreRadiusFraction));
+            this.minSatellites = Math.max(0, minSatellites);
+            this.maxSatellites = Math.max(this.minSatellites, maxSatellites);
             this.weight = Math.max(1, weight);
         }
     }
@@ -287,13 +303,15 @@ public final class GalaxyGenConfig {
         // scaleHeightRatio is a FRACTION of the radius, so it needs no re-derivation and the heights
         // it now produces are the real ones: a spiral's 0.02 is 1 000 ly at 50 000 ly of radius,
         // which is the disc thickness that makes a galaxy's population come out at 10^11.
+        // Satellites: a dwarf keeps none — it IS somebody's satellite — and a giant keeps a handful,
+        // never the dozens a real catalogue lists (see minSatellites for why the count is small).
         List<GalaxyType> l = new ArrayList<>();
-        //                      name              profile                  radius band (ly)  flatten arms  km/s  core  weight
-        l.add(new GalaxyType("Dwarf Spheroidal", GalaxyProfile.SPHEROID, 500d, 3_000d, 0.70d, 0, 20d, 0.90d, 700));
-        l.add(new GalaxyType("Dwarf Irregular", GalaxyProfile.DISC, 2_000d, 10_000d, 0.30d, 0, 50d, 0.60d, 290));
-        l.add(new GalaxyType("Spiral", GalaxyProfile.DISC, 15_000d, 60_000d, 0.02d, 2, 220d, 0.08d, 7));
-        l.add(new GalaxyType("Barred Spiral", GalaxyProfile.DISC, 20_000d, 75_000d, 0.02d, 4, 210d, 0.10d, 2));
-        l.add(new GalaxyType("Elliptical", GalaxyProfile.SPHEROID, 30_000d, 150_000d, 0.60d, 0, 40d, 0.50d, 1));
+        //                      name              profile                  radius band (ly)  flatten arms  km/s  core  sats  weight
+        l.add(new GalaxyType("Dwarf Spheroidal", GalaxyProfile.SPHEROID, 500d, 3_000d, 0.70d, 0, 20d, 0.90d, 0, 0, 700));
+        l.add(new GalaxyType("Dwarf Irregular", GalaxyProfile.DISC, 2_000d, 10_000d, 0.30d, 0, 50d, 0.60d, 0, 0, 290));
+        l.add(new GalaxyType("Spiral", GalaxyProfile.DISC, 15_000d, 60_000d, 0.02d, 2, 220d, 0.08d, 1, 3, 7));
+        l.add(new GalaxyType("Barred Spiral", GalaxyProfile.DISC, 20_000d, 75_000d, 0.02d, 4, 210d, 0.10d, 1, 4, 2));
+        l.add(new GalaxyType("Elliptical", GalaxyProfile.SPHEROID, 30_000d, 150_000d, 0.60d, 0, 40d, 0.50d, 2, 5, 1));
         return Collections.unmodifiableList(l);
     }
 

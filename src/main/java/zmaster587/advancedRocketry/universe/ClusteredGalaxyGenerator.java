@@ -642,7 +642,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             return Collections.emptyList();
         }
         GalacticCoord c = cell.cellCentre();
-        Optional<Galaxy> galaxy = galaxies.galaxyOwningSector(seed, c.sectorX(), c.sectorY(),
+        // The galaxy the observer is INSIDE, so a cell in a satellite sees the satellite's clouds.
+        Optional<Galaxy> galaxy = galaxies.galaxyContainingSector(seed, c.sectorX(), c.sectorY(),
                 c.sectorZ());
         if (!galaxy.isPresent()) {
             return Collections.emptyList();
@@ -669,7 +670,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             return 0d;
         }
         GalacticCoord a = from.cellCentre();
-        Optional<Galaxy> galaxy = galaxies.galaxyOwningSector(seed, a.sectorX(), a.sectorY(),
+        Optional<Galaxy> galaxy = galaxies.galaxyContainingSector(seed, a.sectorX(), a.sectorY(),
                 a.sectorZ());
         return galaxy.isPresent() ? nebulae.columnDensityBetween(seed, galaxy.get(), from, to) : 0d;
     }
@@ -844,7 +845,9 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      */
     private int subdivisionAt(long seed, long supX, long supY, long supZ) {
         long s = config.minSpacing;
-        Optional<Galaxy> galaxy = galaxies.galaxyOwningSector(seed, supX * s + s / 2L,
+        // The CONTAINING galaxy: a cluster inside a satellite belongs to the satellite, and its nucleus
+        // sits at the satellite's own centre.
+        Optional<Galaxy> galaxy = galaxies.galaxyContainingSector(seed, supX * s + s / 2L,
                 supY * s + s / 2L, supZ * s + s / 2L);
         if (!galaxy.isPresent()) {
             return 1;
@@ -894,14 +897,19 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     }
 
     /**
-     * How dense the owning galaxy is at this sector triple, in {@code [0, 1]} — zero in the void and
-     * zero past a galaxy's declared edge.
+     * How dense the CONTAINING galaxy is at this sector triple, in {@code [0, 1]} — zero in the void and
+     * zero past every galaxy's declared edge.
      *
      * <p>The galaxy cell is a coarse reading of the sector, so this is O(1) and needs no stored index:
-     * every point belongs to exactly one galaxy cell, and that cell either holds a galaxy or is void.</p>
+     * every point belongs to exactly one galaxy cell, and that cell holds a primary galaxy, its
+     * satellites, or nothing.</p>
+     *
+     * <p><b>The containing galaxy, not the cube's owner.</b> A cube holds a primary and its retinue, so
+     * reading the owner's profile at a point inside a satellite would answer zero — and the satellites
+     * would be named, addressable and completely empty of stars.</p>
      */
     private double galaxyProfileAt(long seed, long sectorX, long sectorY, long sectorZ) {
-        Optional<Galaxy> galaxy = galaxies.galaxyOwningSector(seed, sectorX, sectorY, sectorZ);
+        Optional<Galaxy> galaxy = galaxies.galaxyContainingSector(seed, sectorX, sectorY, sectorZ);
         if (!galaxy.isPresent()) {
             return 0d;
         }
