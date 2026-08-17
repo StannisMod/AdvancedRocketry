@@ -14,7 +14,7 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.SkyNebulaeProducer;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.Nebula;
-import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -42,12 +42,12 @@ public class SkyNebulaeProducerTest {
     private static IGalaxyGenerator generatorOf(final List<Nebula> clouds) {
         return new IGalaxyGenerator() {
             @Override
-            public Optional<StarSystem> systemAt(long seed, GalacticCoord coord) {
+            public Optional<PlanetarySystem> systemAt(long seed, GalacticCoord coord) {
                 return Optional.empty();
             }
 
             @Override
-            public Map<GalacticCoord, StarSystem> systemsInRegion(long seed, GalacticCoord min,
+            public Map<GalacticCoord, PlanetarySystem> systemsInRegion(long seed, GalacticCoord min,
                                                                   GalacticCoord max) {
                 return Collections.emptyMap();
             }

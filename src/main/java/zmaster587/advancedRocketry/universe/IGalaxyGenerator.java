@@ -28,14 +28,14 @@ public interface IGalaxyGenerator {
      * @param coord an absolute galactic coordinate; implementations should treat it at cell granularity
      * @return the procedural system at {@code coord}'s cell, or empty for void space
      */
-    Optional<StarSystem> systemAt(long seed, GalacticCoord coord);
+    Optional<PlanetarySystem> systemAt(long seed, GalacticCoord coord);
 
     /**
      * Enumerate every procedural system whose cell falls within the inclusive sector box {@code [min, max]}.
      *
      * @return a map from each occupied cell-centre coordinate to its system (empty when the region is void)
      */
-    Map<GalacticCoord, StarSystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max);
+    Map<GalacticCoord, PlanetarySystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max);
 
     /**
      * The procedural CONTENT of the system at {@code systemCoord}'s cell — its star plus planets/moons/POIs

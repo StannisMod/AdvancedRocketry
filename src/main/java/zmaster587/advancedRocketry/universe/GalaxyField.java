@@ -216,6 +216,81 @@ public final class GalaxyField {
     }
 
     /**
+     * How much stellar material stands at one sector triple, split into the part that is BOUND to a
+     * galaxy and the part that is not.
+     *
+     * <p>The two are asked together because they are answered by the same walk over the cube, and that
+     * walk is the expensive thing on the placement path — it runs once per lattice cell of every
+     * placement query, so resolving the cube twice would double the cost of every star in the game.</p>
+     */
+    public static final class Material {
+
+        /** Nothing here: the cube is empty, or a point too far from anything in it. */
+        public static final Material NONE = new Material(0d, 0d);
+
+        /**
+         * The density of the galaxy this point is INSIDE, on {@link Galaxy#densityAt}'s scale, or zero
+         * out in the void. What decides where stars form.
+         */
+        public final double bound;
+        /**
+         * The density of the cube's galaxies' ejecta at this point — what they have thrown out and no
+         * longer hold. It is the void's whole population, and it is zero inside a galaxy, where the
+         * bound profile already accounts for every body standing there.
+         */
+        public final double unbound;
+
+        Material(double bound, double unbound) {
+            this.bound = bound > 0d ? bound : 0d;
+            this.unbound = unbound > 0d ? unbound : 0d;
+        }
+
+        /** Everything at this point, bound or not — what a population that does not need a star sees. */
+        public double total() {
+            return bound + unbound;
+        }
+    }
+
+    /**
+     * The bound and unbound material at a sector triple, resolved in ONE pass over the cube's galaxies.
+     *
+     * <p>Supersedes reading the profile alone. A caller that only wants to place a STAR reads
+     * {@link Material#bound} and gets exactly what it got before; the void's own population reads
+     * {@link Material#total()}, which is what makes the intergalactic content a consequence of the
+     * galaxies rather than a second field seated by its own rule.</p>
+     */
+    public Material materialAtSector(long seed, long sectorX, long sectorY, long sectorZ) {
+        Optional<Galaxy> owner = galaxyOwningSector(seed, sectorX, sectorY, sectorZ);
+        if (!owner.isPresent()) {
+            // A cube with no galaxy has thrown nothing out: the deepest void, and genuinely empty.
+            return Material.NONE;
+        }
+        Galaxy primary = owner.get();
+        if (primary.containsSector(sectorX, sectorY, sectorZ)) {
+            // Inside the primary, and the retinue is never drawn here. A satellite is at most 0.3 R
+            // across and sits one to three DIAMETERS out, so the strongest halo one can cast anywhere
+            // inside its primary is a couple of percent of what the primary's own disc reads there —
+            // and this is the hottest path in the layer, taken for every cell of the shipped galaxy.
+            return new Material(primary.densityAtSector(sectorX, sectorY, sectorZ), 0d);
+        }
+        double unbound = primary.ejectaDensityAtSector(sectorX, sectorY, sectorZ);
+        if (!withinRetinueReach(primary, sectorX, sectorY, sectorZ)) {
+            return new Material(0d, unbound); // past the retinue: only the primary's own halo reaches
+        }
+        for (Galaxy satellite : satellitesOf(seed, primary)) {
+            if (satellite.containsSector(sectorX, sectorY, sectorZ)) {
+                return new Material(satellite.densityAtSector(sectorX, sectorY, sectorZ), unbound);
+            }
+            // The strongest halo, never the sum: two overlapping haloes are one region of thrown-out
+            // material counted twice, and adding them would make the gap between two dwarfs read
+            // denser than either dwarf's own edge.
+            unbound = Math.max(unbound,
+                    satellite.ejectaDensityAtSector(sectorX, sectorY, sectorZ));
+        }
+        return new Material(0d, unbound);
+    }
+
+    /**
      * The satellites of {@code primary} — drawn from {@code (seed, its cell, ordinal)}, stored nowhere,
      * exactly as the primary itself is. Empty for a type that keeps none, and for a satellite: the
      * retinue is one level deep, because a satellite of a satellite is not a thing a real group has and

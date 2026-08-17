@@ -122,6 +122,16 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private static final long SALT_MOONANG = 0x17L;
     private static final long SALT_MOONRAD = 0x18L;
 
+    // The UNBOUND draw: a second, independent roll on the same lattice cell, so a cube the star draw
+    // passed over may still hold something. Its own salts, so the two rolls cannot correlate — a shared
+    // stream would make "no star here" and "a rogue here" the same coin toss read twice.
+    private static final long SALT_ROGUE_OCC = 0x19L;
+    private static final long SALT_ROGUE_TYPE = 0x1AL;
+    private static final long SALT_ROGUE_ID = 0x1BL;
+    private static final long SALT_ROGUE_MOONCOUNT = 0x1CL;
+    private static final long SALT_ROGUE_MOONANG = 0x1DL;
+    private static final long SALT_ROGUE_MOONRAD = 0x1EL;
+
     // ─── The retinue: how many bodies a system has, and where they sit ─────────
     // Every number here is a balance knob. What is NOT a knob is the shape: a long tail, a mandatory
     // outer belt, and moons on the bodies big enough to hold them.
@@ -182,17 +192,25 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private final ClusterField clusters;
     private final NebulaField nebulae;
     private final long totalStarWeight;
+    private final List<GalaxyGenConfig.RogueType> rogueTypes;
+    private final long totalRogueWeight;
 
     public ClusteredGalaxyGenerator(GalaxyGenConfig config) {
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
         this.galaxies = new GalaxyField(this.config);
-        this.clusters = new ClusterField(this.config);
+        this.clusters = new ClusterField(this.config, this.galaxies);
         this.nebulae = new NebulaField(this.config, this.clusters);
         long w = 0L; // accumulate in long so a few near-Integer.MAX weights cannot overflow the sum
         for (GalaxyGenConfig.StarType t : this.config.starTypes) {
             w += t.weight;
         }
         this.totalStarWeight = Math.max(1L, w);
+        this.rogueTypes = GalaxyGenConfig.defaultRogueTypes();
+        long rw = 0L;
+        for (GalaxyGenConfig.RogueType t : this.rogueTypes) {
+            rw += t.weight;
+        }
+        this.totalRogueWeight = Math.max(1L, rw);
     }
 
     public GalaxyGenConfig config() {
@@ -219,7 +237,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     }
 
     @Override
-    public Optional<StarSystem> systemAt(long seed, GalacticCoord coord) {
+    public Optional<PlanetarySystem> systemAt(long seed, GalacticCoord coord) {
         Optional<Generated> g = systemForLattice(seed,
                 latticeAt(seed, coord.sectorX(), coord.sectorY(), coord.sectorZ()));
         if (g.isPresent() && g.get().cell.sameCell(coord)) {
@@ -241,7 +259,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * outcome worse than a slow scan.</p>
      */
     @Override
-    public Map<GalacticCoord, StarSystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
+    public Map<GalacticCoord, PlanetarySystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
         long s = config.minSpacing;
         long loX = Math.min(min.sectorX(), max.sectorX());
         long hiX = Math.max(min.sectorX(), max.sectorX());
@@ -250,12 +268,13 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         long loZ = Math.min(min.sectorZ(), max.sectorZ());
         long hiZ = Math.max(min.sectorZ(), max.sectorZ());
 
-        Map<GalacticCoord, StarSystem> out = new HashMap<>();
+        Map<GalacticCoord, PlanetarySystem> out = new HashMap<>();
         boolean capped = false;
         for (long supX = Math.floorDiv(loX, s); supX <= Math.floorDiv(hiX, s) && !capped; supX++) {
             for (long supY = Math.floorDiv(loY, s); supY <= Math.floorDiv(hiY, s) && !capped; supY++) {
                 for (long supZ = Math.floorDiv(loZ, s); supZ <= Math.floorDiv(hiZ, s) && !capped; supZ++) {
-                    int k = subdivisionAt(seed, supX, supY, supZ);
+                    LocalField local = localFieldAt(seed, supX, supY, supZ);
+                    int k = local.subdivision;
                     // Only the sub-cells the query box actually reaches. A system seated in a
                     // sub-cell is placed INSIDE it, so this is exactly the same answer as walking all
                     // k³ and filtering — and it is the difference between a bounded query and a
@@ -270,7 +289,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                         for (long j = jLo; j <= jHi && !capped; j++) {
                             for (long m = mLo; m <= mHi && !capped; m++) {
                                 Optional<Generated> g = systemForLattice(seed,
-                                        Lattice.of(supX, supY, supZ, i, j, m, k, s));
+                                        Lattice.of(supX, supY, supZ, i, j, m, k, s, local.ownField));
                                 if (!g.isPresent()) {
                                     continue;
                                 }
@@ -303,16 +322,22 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             return Collections.emptyList();
         }
         GalacticCoord cell = anchorOpt.get();
-        Optional<StarSystem> sys = systemAt(seed, cell);
+        Optional<PlanetarySystem> sys = systemAt(seed, cell);
         if (!sys.isPresent()) {
             return Collections.emptyList();
         }
-        int starId = sys.get().starId();
-        StellarBody star = sys.get().star();
+        int systemId = sys.get().systemId();
+        if (!sys.get().star().isPresent()) {
+            // A system whose primary is not a star: no companions, no zone, no orbits — the whole
+            // second half of the retinue law is about distances FROM a star. What it can still have is
+            // moons, so that is what it gets.
+            return rogueBodiesFor(seed, cell, systemId);
+        }
+        StellarBody star = sys.get().star().get();
         List<SystemBody> bodies = new ArrayList<>();
         // The star sits at the anchor cell's centre.
         // A star does not move inside its own system: its frame IS the system's anchor.
-        bodies.add(SystemBody.fixedAt(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
+        bodies.add(SystemBody.fixedAt(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, systemId));
 
         // A body sits where its ORBIT puts it — one law, one constant, the same one an authored system
         // uses. What the neighbourhood decides is not how far a body goes but how many bodies there is
@@ -357,8 +382,53 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                     .withRadius(AstronomicalBodyHelper.starRadiusEarths(companion)));
         }
 
-        appendRetinue(bodies, seed, cell, star, starId, lattice, taken, outerBound,
+        appendRetinue(bodies, seed, cell, star, systemId, lattice, taken, outerBound,
                 retinueSize(seed, cell));
+        return bodies;
+    }
+
+    /**
+     * The bodies of a system anchored on a STARLESS world — the rogue itself, and whatever it kept.
+     *
+     * <p>It is a short list on purpose. There is no belt, because an unbound world carries no disc: a
+     * belt is material that never accreted in a star's own gravity well, and this world left that well
+     * behind. There is no orbit and no zone, so nothing here is placed by distance from anything.</p>
+     *
+     * <p><b>Moons it may keep, and few.</b> Whatever unbound a planet from its star pulled far harder
+     * on the loosely-held satellites than on the tight ones, so a rogue arrives out here with the
+     * inner few and nothing else — the same ceiling a rocky world has, applied whatever its bulk,
+     * rather than the ceiling its mass would otherwise buy it.</p>
+     */
+    private static List<SystemBody> rogueBodiesFor(long seed, GalacticCoord cell, int systemId) {
+        List<SystemBody> bodies = new ArrayList<>();
+        BodyProfile profile = PlanetDerivation.deriveRogue(seed, cell, 0);
+        // It does not move inside its own system: it IS the system, so its frame is the anchor's.
+        bodies.add(SystemBody.fixedAt(cell, SystemBodyKind.ROGUE_PLANET, Constants.INVALID_PLANET,
+                systemId).withRadius(profile.radiusEarths()));
+
+        double u = CellHash.norm(CellHash.ofCell(seed, cell, SALT_ROGUE_MOONCOUNT));
+        int moons = (int) (Math.pow(u, MOON_COUNT_BIAS) * (MAX_MOONS_ROCKY + 1));
+        if (moons > MAX_MOONS_ROCKY) {
+            moons = MAX_MOONS_ROCKY;
+        }
+        CellFrame frame = CellFrame.staticAt(cell);
+        for (int j = 1; j <= moons; j++) {
+            int moonOrbit = MOON_MIN_ORBIT + (int) (CellHash.norm(
+                    CellHash.ofBody(seed, cell, j, SALT_ROGUE_MOONRAD)) * MOON_ORBIT_SPAN);
+            double theta = CellHash.norm(CellHash.ofBody(seed, cell, j, SALT_ROGUE_MOONANG))
+                    * 2d * Math.PI;
+            double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
+                    * AstronomicalBodyHelper.getMoonOrbitalPeriod(moonOrbit,
+                            (float) Math.max(0.05d, profile.massEarths()));
+            BodyEphemeris law = BodyEphemeris.orbit(moonOrbit, theta, 0d, false, periodTicks,
+                    SystemContent.MOON_UNIT_BLOCKS);
+            // A moon of a rogue is starless too, so it is derived the same way its parent was, one
+            // variant along — never through the star-lit law with a star that is not there.
+            BodyProfile moonProfile = PlanetDerivation.deriveRogue(seed, cell, j);
+            bodies.add(new SystemBody(cell, frame, law, SystemBodyKind.MOON,
+                    Constants.INVALID_PLANET, systemId, SystemBody.ORBIT_UNKNOWN)
+                    .withRadius(moonProfile.radiusEarths()));
+        }
         return bodies;
     }
 
@@ -625,6 +695,12 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      */
     public BodyProfile profileOf(long seed, GalacticCoord anchor, SystemBody body, StellarBody star,
                                  int variant) {
+        if (star == null) {
+            // Nothing lights this system, so nothing about the body follows from a distance: it is the
+            // starless derivation or it is a body whose physics would be read off a star that is not
+            // there. A moon of a rogue takes the same branch, which is right — it is starless too.
+            return PlanetDerivation.deriveRogue(seed, body.name(), variant);
+        }
         return PlanetDerivation.derive(seed, anchor.cellCentre(), body.name(), variant, star,
                 body.kind() == SystemBodyKind.MOON, body.orbitalDistance());
     }
@@ -735,15 +811,26 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // the probability a cube is occupied cannot depend on where its seat would have landed. And
         // evaluated at t = 0 and never again: a time-dependent occupancy would pop systems in and out
         // of existence. Systems drift afterwards at their galaxy's own omega(r), which is the shear.
-        double profile = galaxyProfileAt(seed, lattice.lowX + lattice.edgeX / 2L,
-                lattice.lowY + lattice.edgeY / 2L, lattice.lowZ + lattice.edgeZ / 2L);
-        if (!(profile > 0d)) {
-            return Optional.empty(); // intergalactic void, or past this galaxy's edge
-        }
+        GalaxyField.Material material = galaxies.materialAtSector(seed,
+                lattice.lowX + lattice.edgeX / 2L, lattice.lowY + lattice.edgeY / 2L,
+                lattice.lowZ + lattice.edgeZ / 2L);
+        // A cluster out in the void supplies its own field, because k³ times the halo is still nothing
+        // and an intergalactic globular has to be a globular. Inside a galaxy ownField is zero and the
+        // profile speaks, so this is the same number it always was everywhere anything already exists.
+        double bound = Math.max(material.bound, lattice.ownField);
         // Keyed by the cell's LOW CORNER, which is globally unique whatever lattice it belongs to —
         // a coarse index would collide with a fine one wherever a cluster refines the field.
-        if (CellHash.norm(lattice.hash(seed, SALT_OCC)) >= Math.min(1d, config.density * profile)) {
-            return Optional.empty();
+        boolean star = bound > 0d
+                && CellHash.norm(lattice.hash(seed, SALT_OCC)) < Math.min(1d, config.density * bound);
+        if (!star) {
+            // THE SECOND DRAW, on the cube the first one passed over. Stars need a galaxy to form in;
+            // an unbound world does not, so out in the void this is the only roll there is, and inside
+            // a galaxy it is what makes free-floating worlds as numerous as the sky says they are.
+            //
+            // It reads material.total(), which is the bound profile inside a galaxy and the ejecta halo
+            // outside it — so the void's population is what the galaxies have thrown out, on one
+            // continuous function, rather than a second rule with a density of its own.
+            return rogueForLattice(seed, lattice, Math.max(material.total(), lattice.ownField));
         }
         // Seat the anchor anywhere in its cube except a declared margin at the faces. That margin is
         // the system's own CLEAR SPACE, not a fraction of the cube: it is what guarantees two stars
@@ -758,11 +845,86 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // It is read off the LOCAL edge, so inside a cluster the floor shrinks with the lattice: stars
         // in a globular core really do stand closer than a wide binary, and a system there loses outer
         // bodies by the same rule that has always applied.
-        GalacticCoord cell = GalacticCoord.ofSectorLocal(
+        return Optional.of(new Generated(seatIn(seed, lattice), fabricate(seed, lattice)));
+    }
+
+    /**
+     * What an UNBOUND seat holds, or empty when this cube holds nothing at all.
+     *
+     * <p>A weighted draw over {@link GalaxyGenConfig#defaultRogueTypes()}, so relative abundance lives
+     * in a table exactly as it does for star types, galaxy types and cluster types. Two outcomes
+     * today: a starless world, which is what the void is mostly made of, and a whole STAR SYSTEM that
+     * was thrown out of its galaxy — rare enough that meeting one out here is an event.</p>
+     *
+     * <p>A rogue star is fabricated by {@link #fabricate}, unchanged, and it is not marked as anything:
+     * rogue-ness is a statement about WHERE a star stands and not about what it is, so a system out in
+     * the void is an ordinary system with an ordinary retinue, and the only thing that makes it a find
+     * is its address.</p>
+     *
+     * @param profile the material at this cell — the galaxy's own where there is one, its ejecta where
+     *                there is not
+     */
+    private Optional<Generated> rogueForLattice(long seed, Lattice lattice, double profile) {
+        if (!(profile > 0d)) {
+            return Optional.empty(); // a galaxy cell with no galaxy in it: the deepest void, and empty
+        }
+        double occupancy = Math.min(1d, config.density * GalaxyGenConfig.ROGUE_ABUNDANCE * profile);
+        if (CellHash.norm(lattice.hash(seed, SALT_ROGUE_OCC)) >= occupancy) {
+            return Optional.empty();
+        }
+        GalaxyGenConfig.RogueType type = pickRogueType(lattice.hash(seed, SALT_ROGUE_TYPE));
+        if (type.primaryKind == SystemBodyKind.STAR) {
+            return Optional.of(new Generated(seatIn(seed, lattice), fabricate(seed, lattice)));
+        }
+        return Optional.of(new Generated(seatIn(seed, lattice), fabricateRogue(seed, lattice)));
+    }
+
+    /**
+     * Where this lattice cell's system sits: anywhere in its cube except a declared margin at the
+     * faces.
+     *
+     * <p>That margin is the system's own CLEAR SPACE, not a fraction of the cube: it is what guarantees
+     * two systems never stand closer than the separation floor, and what keeps one system's named
+     * bodies from reaching into the next cube, so member-cell attribution stays exact.</p>
+     *
+     * <p>It used to be the middle quarter per axis, which confined the seat to 1.6 % of the cube's
+     * volume — a lattice of tight clumps with guaranteed-empty walls between them, visible in any
+     * rendered star field. The margin now costs a couple of percent per face instead, because it is
+     * sized by what a system actually needs rather than by the distance to the next star.</p>
+     *
+     * <p>It is read off the LOCAL edge, so inside a cluster the floor shrinks with the lattice: stars
+     * in a globular core really do stand closer than a wide binary, and a system there loses outer
+     * bodies by the same rule that has always applied.</p>
+     */
+    private static GalacticCoord seatIn(long seed, Lattice lattice) {
+        return GalacticCoord.ofSectorLocal(
                 lattice.lowX + seatOffset(seed, lattice, SALT_OX, lattice.edgeX),
                 lattice.lowY + seatOffset(seed, lattice, SALT_OY, lattice.edgeY),
                 lattice.lowZ + seatOffset(seed, lattice, SALT_OZ, lattice.edgeZ), 0L, 0L, 0L);
-        return Optional.of(new Generated(cell, fabricate(seed, lattice)));
+    }
+
+    /**
+     * A system anchored on a starless world. Its id comes from the same synthetic negative range a
+     * procedural star's does, through a stream of its own — the id space names systems and does not
+     * care what kind of thing stands at one.
+     */
+    private static PlanetarySystem fabricateRogue(long seed, Lattice lattice) {
+        int id = syntheticId(seed, lattice.lowX, lattice.lowY, lattice.lowZ, SALT_ROGUE_ID);
+        return PlanetarySystem.ofRogue(id,
+                "PGR-" + lattice.lowX + "." + lattice.lowY + "." + lattice.lowZ); // rogue
+    }
+
+    private GalaxyGenConfig.RogueType pickRogueType(long h) {
+        long r = Math.floorMod(h, totalRogueWeight);
+        GalaxyGenConfig.RogueType last = null;
+        for (GalaxyGenConfig.RogueType t : rogueTypes) {
+            last = t;
+            if (r < t.weight) {
+                return t;
+            }
+            r -= t.weight;
+        }
+        return last; // the table is never empty
     }
 
     /** Where the seat sits on one axis of its lattice cell, clear of the faces by the local margin. */
@@ -788,17 +950,23 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         final long edgeY;
         final long edgeZ;
 
-        private Lattice(long lowX, long lowY, long lowZ, long edgeX, long edgeY, long edgeZ) {
+        /** See {@link LocalField#ownField} — what a cluster out in the void brings with it. */
+        final double ownField;
+
+        private Lattice(long lowX, long lowY, long lowZ, long edgeX, long edgeY, long edgeZ,
+                        double ownField) {
             this.lowX = lowX;
             this.lowY = lowY;
             this.lowZ = lowZ;
             this.edgeX = edgeX;
             this.edgeY = edgeY;
             this.edgeZ = edgeZ;
+            this.ownField = ownField;
         }
 
         /** Sub-cell {@code (i, j, m)} of coarse super-cell {@code (supX, supY, supZ)}, at {@code k}. */
-        static Lattice of(long supX, long supY, long supZ, long i, long j, long m, int k, long s) {
+        static Lattice of(long supX, long supY, long supZ, long i, long j, long m, int k, long s,
+                          double ownField) {
             long baseX = supX * s;
             long baseY = supY * s;
             long baseZ = supZ * s;
@@ -808,7 +976,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             return new Lattice(baseX + loI, baseY + loJ, baseZ + loM,
                     Math.max(1L, Math.floorDiv((i + 1L) * s, (long) k) - loI),
                     Math.max(1L, Math.floorDiv((j + 1L) * s, (long) k) - loJ),
-                    Math.max(1L, Math.floorDiv((m + 1L) * s, (long) k) - loM));
+                    Math.max(1L, Math.floorDiv((m + 1L) * s, (long) k) - loM), ownField);
         }
 
         /** Its draw for one field, keyed by the low corner — globally unique at any subdivision. */
@@ -837,31 +1005,63 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     }
 
     /**
-     * How finely the lattice is divided at this coarse super-cell: {@code 1} in the ordinary field,
-     * and the cluster's {@code k} where one covers it.
+     * What the star lattice looks like at one coarse super-cell: how finely it is divided, and what
+     * field it is divided AGAINST.
      *
-     * <p>Membership is a property of the COARSE cell, which is what keeps this an O(1) question with
-     * one answer — and what makes the fine lattice tile the coarse cells it replaces exactly.</p>
+     * <p>Membership of a cluster is a property of the COARSE cell, which is what keeps this an O(1)
+     * question with one answer — and what makes the fine lattice tile the coarse cells it replaces
+     * exactly.</p>
      */
-    private int subdivisionAt(long seed, long supX, long supY, long supZ) {
+    private static final class LocalField {
+
+        static final LocalField PLAIN = new LocalField(1, 0d);
+
+        /** {@code 1} in the ordinary field, and the covering cluster's {@code k} where there is one. */
+        final int subdivision;
+        /**
+         * The field a cluster BRINGS with it, or zero where the surrounding profile already speaks.
+         *
+         * <p>A cluster's density is expressed as a contrast — {@code k³} times whatever is around it —
+         * and inside a galaxy that is exactly right, because what is around it is the real solar
+         * neighbourhood. Out in the void it is a contrast against nearly nothing, and {@code k³} times
+         * nearly nothing is still nothing: an intergalactic globular would be named, addressable and
+         * empty. A globular does not gather the field it sits in; it arrived carrying its own.</p>
+         */
+        final double ownField;
+
+        LocalField(int subdivision, double ownField) {
+            this.subdivision = subdivision;
+            this.ownField = ownField;
+        }
+    }
+
+    /**
+     * The field a cluster outside every galaxy supplies, on {@link Galaxy#densityAt}'s scale.
+     *
+     * <p>One, and derived rather than picked: that profile is normalised at the sun-like galactic
+     * radius, so {@code 1} IS the density of an ordinary stellar neighbourhood. A globular thrown clear
+     * of its galaxy therefore holds what a globular inside one holds, which is the whole content of
+     * "it brought its own stars".</p>
+     */
+    private static final double INTERGALACTIC_CLUSTER_FIELD = 1d;
+
+    private LocalField localFieldAt(long seed, long supX, long supY, long supZ) {
         long s = config.minSpacing;
         // The CONTAINING galaxy: a cluster inside a satellite belongs to the satellite, and its nucleus
-        // sits at the satellite's own centre.
+        // sits at the satellite's own centre. Absent out in the void, where a cluster may still sit.
         Optional<Galaxy> galaxy = galaxies.galaxyContainingSector(seed, supX * s + s / 2L,
                 supY * s + s / 2L, supZ * s + s / 2L);
-        if (!galaxy.isPresent()) {
-            return 1;
-        }
-        Optional<StarCluster> cluster = clusters.clusterAt(seed, galaxy.get(), supX, supY, supZ);
+        Optional<StarCluster> cluster = clusters.clusterAt(seed, galaxy.orElse(null), supX, supY, supZ);
         if (!cluster.isPresent()) {
-            return 1;
+            return LocalField.PLAIN;
         }
         // A cluster cannot conjure room its coarse cell never had. Refining below the smallest cell a
         // system can be more than a lone star in would not make a dense cluster — it would make a
         // field of bare stars, which is the opposite of the thing. A spacing too tight to refine is a
         // degenerate galaxy rather than an error, exactly as too tight a spacing already is.
         long ceiling = Math.max(1L, s / UniverseScale.MIN_LATTICE_EDGE_CELLS);
-        return (int) Math.max(1L, Math.min(cluster.get().subdivision(), ceiling));
+        int k = (int) Math.max(1L, Math.min(cluster.get().subdivision(), ceiling));
+        return new LocalField(k, galaxy.isPresent() ? 0d : INTERGALACTIC_CLUSTER_FIELD);
     }
 
     /** The lattice cell a sector triple falls in. */
@@ -870,14 +1070,15 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         long supX = Math.floorDiv(sectorX, s);
         long supY = Math.floorDiv(sectorY, s);
         long supZ = Math.floorDiv(sectorZ, s);
-        int k = subdivisionAt(seed, supX, supY, supZ);
+        LocalField local = localFieldAt(seed, supX, supY, supZ);
+        int k = local.subdivision;
         if (k <= 1) {
-            return Lattice.of(supX, supY, supZ, 0L, 0L, 0L, 1, s);
+            return Lattice.of(supX, supY, supZ, 0L, 0L, 0L, 1, s, local.ownField);
         }
         return Lattice.of(supX, supY, supZ,
                 subIndex(Math.floorMod(sectorX, s), s, k),
                 subIndex(Math.floorMod(sectorY, s), s, k),
-                subIndex(Math.floorMod(sectorZ, s), s, k), k, s);
+                subIndex(Math.floorMod(sectorZ, s), s, k), k, s, local.ownField);
     }
 
     /**
@@ -896,27 +1097,12 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         return Math.min((long) k - 1L, Math.max(0L, index));
     }
 
-    /**
-     * How dense the CONTAINING galaxy is at this sector triple, in {@code [0, 1]} — zero in the void and
-     * zero past every galaxy's declared edge.
-     *
-     * <p>The galaxy cell is a coarse reading of the sector, so this is O(1) and needs no stored index:
-     * every point belongs to exactly one galaxy cell, and that cell holds a primary galaxy, its
-     * satellites, or nothing.</p>
-     *
-     * <p><b>The containing galaxy, not the cube's owner.</b> A cube holds a primary and its retinue, so
-     * reading the owner's profile at a point inside a satellite would answer zero — and the satellites
-     * would be named, addressable and completely empty of stars.</p>
-     */
-    private double galaxyProfileAt(long seed, long sectorX, long sectorY, long sectorZ) {
-        Optional<Galaxy> galaxy = galaxies.galaxyContainingSector(seed, sectorX, sectorY, sectorZ);
-        if (!galaxy.isPresent()) {
-            return 0d;
-        }
-        return galaxy.get().densityAtSector(sectorX, sectorY, sectorZ);
-    }
+    // galaxyProfileAt — the CONTAINING galaxy's density at a sector triple — moved into
+    // GalaxyField.materialAtSector, which answers it together with the ejecta halo out in the void.
+    // The two are one walk over the cube, and that walk runs once per lattice cell of every placement
+    // query, so leaving this here would have meant resolving the cube twice for every star in the game.
 
-    private StarSystem fabricate(long seed, Lattice lattice) {
+    private PlanetarySystem fabricate(long seed, Lattice lattice) {
         long supX = lattice.lowX;
         long supY = lattice.lowY;
         long supZ = lattice.lowZ;
@@ -926,11 +1112,11 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         StellarBody star = new StellarBody();
         star.setTemperature(type.temperature);
         star.setSize((float) (type.minSize + sizeFrac * (type.maxSize - type.minSize)));
-        int primaryId = syntheticId(seed, supX, supY, supZ);
+        int primaryId = syntheticId(seed, supX, supY, supZ, SALT_ID);
         star.setId(primaryId);
         star.setName("PGS-" + supX + "." + supY + "." + supZ); // procedurally-generated system
         addCompanions(seed, supX, supY, supZ, star, primaryId);
-        return new StarSystem(star);
+        return PlanetarySystem.ofStar(star);
     }
 
     /**
@@ -1039,18 +1225,22 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * The primary's synthetic id: negative, so it can never collide with a catalogued star id
      * ({@code 0..N}) or a dim id, and spaced {@link #ID_SLOTS_PER_SYSTEM} apart so a system's
      * companions have ids of their own below it that belong to no other system.
+     *
+     * @param salt which population is being named. A rogue system draws from the SAME space as a star
+     *             through a different stream, so its id is as distinct from a star's as two stars' ids
+     *             are from each other — no more and no less
      */
-    private static int syntheticId(long seed, long supX, long supY, long supZ) {
-        long slot = Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_ID),
+    private static int syntheticId(long seed, long supX, long supY, long supZ, long salt) {
+        long slot = Math.floorMod(CellHash.of(seed, supX, supY, supZ, salt),
                 SYNTHETIC_ID_RANGE / ID_SLOTS_PER_SYSTEM);
         return -(1 + (int) (slot * ID_SLOTS_PER_SYSTEM));
     }
 
     private static final class Generated {
         final GalacticCoord cell;
-        final StarSystem system;
+        final PlanetarySystem system;
 
-        Generated(GalacticCoord cell, StarSystem system) {
+        Generated(GalacticCoord cell, PlanetarySystem system) {
             this.cell = cell;
             this.system = system;
         }

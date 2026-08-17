@@ -6,7 +6,7 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  * One galaxy: a seated object with a centre, a type, a size, an orientation and a density profile.
  *
  * <p>It is a VALUE, produced on demand from {@code (seed, galaxy cell)} and stored nowhere — exactly
- * as a {@link StarSystem} is. Nothing here is persisted and no coordinate carries a galaxy index; the
+ * as a {@link PlanetarySystem} is. Nothing here is persisted and no coordinate carries a galaxy index; the
  * index is {@code sector / galaxySpacing}, a derived grouping of the sector space that already
  * exists (see {@link GalaxyField#galaxyIndex}).</p>
  *
@@ -52,6 +52,28 @@ public final class Galaxy {
      */
     private static final double REFERENCE_LEVEL =
             Math.exp(-UniverseScale.HOME_GALAXY_ORIGIN_FRACTION / DISC_SCALE_FRACTION);
+
+    /**
+     * What {@link #densityAt} reads at a galaxy's own EDGE, in its plane. Derived from the profile
+     * rather than written down, and scale-free for the same reason every other length here is: the
+     * exponentials are in units of the radius, so this is one number for a galaxy of any size and of
+     * either profile.
+     *
+     * <p>It is the anchor the {@linkplain #ejectaDensityAt ejecta halo} hangs from, which is what makes
+     * the void's population a statement about the galaxies that threw it out rather than a second
+     * field with its own normalisation.</p>
+     */
+    public static final double EDGE_LEVEL = Math.exp(-1d / DISC_SCALE_FRACTION) / REFERENCE_LEVEL;
+
+    /**
+     * How steeply a galaxy's ejecta thins outside it, as a power of the distance in radii.
+     *
+     * <p>Three, because that is what a population thrown out over a Hubble time and spread through a
+     * growing volume comes to — the same slope the outer parts of a real stellar halo and the
+     * intracluster light are measured at. It is not the disc's exponential: an exponential in units of
+     * the radius is dead within a few of them, and the void is twenty-five across.</p>
+     */
+    private static final double EJECTA_FALLOFF = 3d;
 
     private final long cellX;
     private final long cellY;
@@ -279,6 +301,36 @@ public final class Galaxy {
     /** The profile read at a cell name — the form the generator asks in. */
     public double densityAtSector(long sectorX, long sectorY, long sectorZ) {
         return densityAt(offsetLy(sectorX, centre.sectorX()),
+                offsetLy(sectorY, centre.sectorY()),
+                offsetLy(sectorZ, centre.sectorZ()));
+    }
+
+    /**
+     * How dense this galaxy's UNBOUND material is at a point {@code (dx, dy, dz)} light years from its
+     * centre — the planets and stars it has thrown out — on the same scale as {@link #densityAt}.
+     *
+     * <p>Zero INSIDE the radius, and that is a division of labour rather than a claim that a galaxy
+     * ejects nothing into itself: inside its own sphere the bound profile is what says how much
+     * material is at a point, and adding a second term there would double-count the same stars.</p>
+     *
+     * <p>Outside, it falls as {@code (R/r)³} from {@link #EDGE_LEVEL} — anchored at the edge, so a big
+     * galaxy fills far more of the void than a dwarf and neither needs a normalisation of its own. It
+     * is ISOTROPIC while the disc is not: ejection randomises a direction long before a body has
+     * crossed the void, so a spiral's poles are not a dead cone. The step at the radius is therefore
+     * real, and it is at the one surface this layer already declares as a boundary — the surface where
+     * the frame flips and where the star field stops dead.</p>
+     */
+    public double ejectaDensityAt(double dxLy, double dyLy, double dzLy) {
+        double r = Math.sqrt(dxLy * dxLy + dyLy * dyLy + dzLy * dzLy);
+        if (r <= radiusLy) {
+            return 0d;
+        }
+        return EDGE_LEVEL * Math.pow(radiusLy / r, EJECTA_FALLOFF);
+    }
+
+    /** The ejecta halo read at a cell name — the form the generator asks in. */
+    public double ejectaDensityAtSector(long sectorX, long sectorY, long sectorZ) {
+        return ejectaDensityAt(offsetLy(sectorX, centre.sectorX()),
                 offsetLy(sectorY, centre.sectorY()),
                 offsetLy(sectorZ, centre.sectorZ()));
     }

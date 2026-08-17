@@ -167,15 +167,27 @@ public final class GalaxyGenConfig {
          * cluster and its cloud are one object at two ages.</p>
          */
         public final double nebulaFraction;
+        /**
+         * Whether a cluster of this type holds itself together well enough to survive OUTSIDE a
+         * galaxy. Only these are seated in the intergalactic void.
+         *
+         * <p>It is not a gameplay switch but the property that decides the question: a globular is
+         * bound tightly enough to have outlived its own galaxy's mergers and is routinely found far
+         * out in a halo, while an open cluster disperses in a few hundred million years and a
+         * molecular cloud never was bound at all. Something thrown clear of a galaxy has the whole
+         * crossing to fall apart in, so only the bound one arrives.</p>
+         */
+        public final boolean selfBound;
         public final int weight;
 
         public ClusterType(String name, int subdivision, double minRadiusLy, double maxRadiusLy,
-                           double nebulaFraction, int weight) {
+                           double nebulaFraction, boolean selfBound, int weight) {
             this.name = (name == null || name.isEmpty()) ? "CLUSTER" : name;
             this.subdivision = Math.max(1, subdivision);
             this.minRadiusLy = Math.max(0.01d, minRadiusLy);
             this.maxRadiusLy = Math.max(this.minRadiusLy, maxRadiusLy);
             this.nebulaFraction = Math.min(1d, Math.max(0d, nebulaFraction));
+            this.selfBound = selfBound;
             this.weight = Math.max(1, weight);
         }
     }
@@ -334,13 +346,13 @@ public final class GalaxyGenConfig {
      */
     private static List<ClusterType> defaultClusterTypes() {
         List<ClusterType> l = new ArrayList<>();
-        //                    name                  k   radius band (ly)  gas   weight
+        //                    name                  k   radius band (ly)  gas  bound  weight
         // A molecular cloud is a cluster whose stars have not formed: it refines nothing (k = 1) and
         // is all gas. That it drops out of the SAME table as the others is the point — a cloud, a
         // young cluster and an ancient one are one sequence, not three features.
-        l.add(new ClusterType("Molecular Cloud", 1, 10d, 30d, 1.0d, 60));
-        l.add(new ClusterType("Open Cluster", 4, 5d, 15d, 0.55d, 80));
-        l.add(new ClusterType("Globular Cluster", 14, 20d, 40d, 0d, 20));
+        l.add(new ClusterType("Molecular Cloud", 1, 10d, 30d, 1.0d, false, 60));
+        l.add(new ClusterType("Open Cluster", 4, 5d, 15d, 0.55d, false, 80));
+        l.add(new ClusterType("Globular Cluster", 14, 20d, 40d, 0d, true, 20));
         return Collections.unmodifiableList(l);
     }
 
@@ -348,13 +360,72 @@ public final class GalaxyGenConfig {
      * The cluster every galaxy has at its own centre — the richest one, and no special case: it is a
      * cluster like the others, drawn at the galaxy's centre instead of on the cluster lattice.
      */
-    public static final ClusterType NUCLEUS = new ClusterType("Nucleus", 215, 4d, 8d, 0.4d, 1);
+    public static final ClusterType NUCLEUS = new ClusterType("Nucleus", 215, 4d, 8d, 0.4d, true, 1);
 
     /** Edge of the cube that holds at most one cluster, in light years. */
     public static final double CLUSTER_SPACING_LY = 300d;
 
     /** Fraction of those cubes that hold a cluster, before the galaxy's own profile scales it. */
     public static final double CLUSTER_DENSITY = 0.35d;
+
+    // ─── The unbound population ────────────────────────────────────────────────
+    // What a lattice cube holds when no star was seated in it. Stated as constants beside the cluster
+    // tier's and for the same reason: it is a whole tier's worth of numbers, none of them yet ratified,
+    // and neither tier is authorable from <galaxyGen> today.
+
+    /**
+     * A weighted ROGUE archetype — what an unbound seat turns out to hold. The fourth table of the
+     * shape {@link StarType} / {@link GalaxyType} / {@link ClusterType} use, and it exists for the
+     * same reason they do: <b>relative abundance is a WEIGHT</b>, so "by falling abundance" is a
+     * property of the table rather than a rule somewhere in the generator, and adding a kind of
+     * unbound object later is one row instead of a fourth occupancy knob.
+     */
+    public static final class RogueType {
+        public final String name;
+        /** What is actually seated — the {@link SystemBodyKind} the anchor's primary body carries. */
+        public final SystemBodyKind primaryKind;
+        public final int weight;
+
+        public RogueType(String name, SystemBodyKind primaryKind, int weight) {
+            this.name = (name == null || name.isEmpty()) ? "ROGUE" : name;
+            this.primaryKind = (primaryKind == null) ? SystemBodyKind.ROGUE_PLANET : primaryKind;
+            this.weight = Math.max(1, weight);
+        }
+    }
+
+    /**
+     * How many unbound seats the lattice draws for each STAR it draws, at the same point.
+     *
+     * <p>It multiplies the same {@link #density} against the same profile, which is what makes it an
+     * occupancy FACTOR rather than a density of its own: everything already built — the super-cell
+     * partition, member-cell attribution, the survey's stride, the seat margins — keeps working
+     * untouched, and "more numerous than stars" is one number.</p>
+     *
+     * <p>Above one because free-floating worlds really do outnumber stars; at the LOW end of the
+     * observed band, which runs from comparable to some tens of times, because a lattice cube is a
+     * STAR's territory and seating a rogue in one claims rogues partition space the way stars do.
+     * <b>Measured at the stock density</b>: in a sun-like neighbourhood this seats about as many rogue
+     * worlds as stars, because a cube the star draw already took is not offered twice.</p>
+     */
+    public static final double ROGUE_ABUNDANCE = 1.5d;
+
+    /**
+     * The stock rogue table. A thrown-out WORLD is the ordinary case and a thrown-out STAR is the
+     * find: ejecting a star takes an encounter violent enough to unbind the heaviest thing in a
+     * system, while a planet is unbound by the ordinary jostling of the system it formed in.
+     *
+     * <p>A rogue star is a {@link SystemBodyKind#STAR} and nothing else — rogue-ness is a statement
+     * about WHERE it stands, not about what it is, so it is seated as an ordinary system and gets an
+     * ordinary retinue. That is why finding one out here is an event: it is a whole system, in a place
+     * where a system has no business being.</p>
+     */
+    public static List<RogueType> defaultRogueTypes() {
+        List<RogueType> l = new ArrayList<>();
+        //                     name            what is seated                weight
+        l.add(new RogueType("Rogue Planet", SystemBodyKind.ROGUE_PLANET, 200));
+        l.add(new RogueType("Rogue Star", SystemBodyKind.STAR, 3));
+        return Collections.unmodifiableList(l);
+    }
 
     private static double clamp01(double v) {
         if (Double.isNaN(v) || v < 0d) {

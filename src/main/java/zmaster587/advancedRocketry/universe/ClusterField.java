@@ -29,30 +29,36 @@ public final class ClusterField {
     private static final long SALT_NUCLEUS_RADIUS = 0x207L;
 
     private final GalaxyGenConfig config;
+    private final GalaxyField galaxies;
     private final long spacingSuperCells;
-    private final long totalClusterWeight;
 
-    public ClusterField(GalaxyGenConfig config) {
+    /**
+     * @param galaxies the tier above — what a cluster cell's occupancy is scaled by. A cluster inside a
+     *                 galaxy is scaled by that galaxy's profile; one out in the void is scaled by the
+     *                 ejecta halo, which is how a globular can be intergalactic without a second rule
+     */
+    public ClusterField(GalaxyGenConfig config, GalaxyField galaxies) {
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
+        this.galaxies = (galaxies == null) ? new GalaxyField(this.config) : galaxies;
         this.spacingSuperCells = Math.max(1L,
                 superCellsForLightYears(GalaxyGenConfig.CLUSTER_SPACING_LY, this.config.minSpacing));
-        long w = 0L;
-        for (GalaxyGenConfig.ClusterType t : this.config.clusterTypes) {
-            w += t.weight;
-        }
-        this.totalClusterWeight = Math.max(1L, w);
     }
 
     /**
      * The cluster this coarse super-cell belongs to, or empty when it is ordinary field.
      *
-     * <p>{@code galaxy} is the galaxy that owns the super-cell; a cluster outside a galaxy is not a
-     * thing this generator makes, because there would be no stars to gather.</p>
+     * <p>{@code galaxy} is the galaxy the super-cell is INSIDE, and it may be {@code null}: a cluster
+     * out in the intergalactic void is a real object — a globular thrown clear of the galaxy it
+     * formed around, still bound to itself. It used to be refused by construction here, on the
+     * reasoning that there would be no stars out there to gather; what that missed is that a cluster
+     * does not gather the field, it BRINGS its own. Its occupancy is scaled by the material at its own
+     * cell, which out there is the ejecta halo — so intergalactic globulars thin out with the void and
+     * cluster near the galaxies that threw them, on the same one function that places everything else.</p>
+     *
+     * <p>A galaxy-less cluster has no NUCLEUS, and that is not a special case either: a nucleus is the
+     * cluster at a galaxy's own centre, and there is no galaxy here to have one.</p>
      */
     public Optional<StarCluster> clusterAt(long seed, Galaxy galaxy, long supX, long supY, long supZ) {
-        if (galaxy == null) {
-            return Optional.empty();
-        }
         Optional<StarCluster> nucleus = nucleusOf(seed, galaxy);
         if (nucleus.isPresent() && nucleus.get().containsSuperCell(supX, supY, supZ)) {
             return nucleus;
@@ -114,8 +120,9 @@ public final class ClusterField {
     /**
      * The cluster seated in cluster cell {@code (cx, cy, cz)}, or empty.
      *
-     * <p>Occupancy is scaled by the galaxy's own density profile at the cell, so clusters live where
-     * stars live and stop where the galaxy stops — one function, not a second rule.</p>
+     * <p>Occupancy is scaled by the material at the cell, so clusters live where material lives: the
+     * galaxy's own profile inside one, and the ejecta halo outside — one function, not a second rule.
+     * {@code galaxy} may be {@code null} for a cluster cell out in the void.</p>
      */
     public Optional<StarCluster> clusterAtIndex(long seed, Galaxy galaxy, long cx, long cy, long cz) {
         long s = config.minSpacing;
@@ -124,7 +131,11 @@ public final class ClusterField {
         long sectorX = (cx * spacingSuperCells + centreSuper) * s;
         long sectorY = (cy * spacingSuperCells + centreSuper) * s;
         long sectorZ = (cz * spacingSuperCells + centreSuper) * s;
-        double profile = galaxy.densityAtSector(sectorX, sectorY, sectorZ);
+        // Inside a galaxy the caller has already resolved which one, so read it directly rather than
+        // walking the cube again; out in the void there is nothing resolved and the halo is the answer.
+        double profile = galaxy != null
+                ? galaxy.densityAtSector(sectorX, sectorY, sectorZ)
+                : galaxies.materialAtSector(seed, sectorX, sectorY, sectorZ).total();
         if (!(profile > 0d)) {
             return Optional.empty();
         }
@@ -133,7 +144,16 @@ public final class ClusterField {
             return Optional.empty();
         }
 
-        GalaxyGenConfig.ClusterType type = pickType(CellHash.of(seed, cx, cy, cz, SALT_CLUSTER_TYPE));
+        // Out in the void only a SELF-BOUND cluster is seated: an open cluster disperses in a few
+        // hundred million years and a molecular cloud never was bound, so neither survives the
+        // crossing it would have had to make to be out here. Expressed as a constraint on the DRAW
+        // rather than a clamp on its result, which is the same shape the satellite-size and
+        // authored-galaxy floors use.
+        GalaxyGenConfig.ClusterType type = pickType(CellHash.of(seed, cx, cy, cz, SALT_CLUSTER_TYPE),
+                galaxy == null);
+        if (type == null) {
+            return Optional.empty(); // no type qualifies — an honest answer, not an error
+        }
         double radiusFraction = CellHash.norm(CellHash.of(seed, cx, cy, cz, SALT_CLUSTER_RADIUS));
         double radiusLy = type.minRadiusLy + radiusFraction * (type.maxRadiusLy - type.minRadiusLy);
         long radius = superCellsForLightYears(radiusLy, config.minSpacing);
@@ -162,16 +182,36 @@ public final class ClusterField {
         return Math.max(1L, cells / Math.max(1L, superCellEdgeCells));
     }
 
-    private GalaxyGenConfig.ClusterType pickType(long h) {
-        long r = Math.floorMod(h, totalClusterWeight);
+    /**
+     * A weighted draw over the cluster table, or {@code null} when nothing qualifies.
+     *
+     * @param selfBoundOnly restrict to the types that survive outside a galaxy — the weights of the
+     *                      rest are then not merely skipped but EXCLUDED from the total, so the
+     *                      qualifying types keep their relative abundance instead of the draw falling
+     *                      through to whichever one happens to be last
+     */
+    private GalaxyGenConfig.ClusterType pickType(long h, boolean selfBoundOnly) {
+        long total = 0L;
+        for (GalaxyGenConfig.ClusterType t : config.clusterTypes) {
+            if (!selfBoundOnly || t.selfBound) {
+                total += t.weight;
+            }
+        }
+        if (total <= 0L) {
+            return null;
+        }
+        long r = Math.floorMod(h, total);
         GalaxyGenConfig.ClusterType last = null;
         for (GalaxyGenConfig.ClusterType t : config.clusterTypes) {
+            if (selfBoundOnly && !t.selfBound) {
+                continue;
+            }
             last = t;
             if (r < t.weight) {
                 return t;
             }
             r -= t.weight;
         }
-        return last; // config.clusterTypes is never empty
+        return last;
     }
 }

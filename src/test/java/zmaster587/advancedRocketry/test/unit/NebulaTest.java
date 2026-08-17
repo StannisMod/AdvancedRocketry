@@ -43,7 +43,7 @@ public class NebulaTest {
     }
 
     private static GalaxyGenConfig.ClusterType typeWithGas(double gas) {
-        return new GalaxyGenConfig.ClusterType("Test", 4, 5d, 15d, gas, 1);
+        return new GalaxyGenConfig.ClusterType("Test", 4, 5d, 15d, gas, false, 1);
     }
 
     // ─── The derivation ────────────────────────────────────────────────────────

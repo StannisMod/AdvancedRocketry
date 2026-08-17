@@ -15,12 +15,12 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 public final class EmptyGalaxyGenerator implements IGalaxyGenerator {
 
     @Override
-    public Optional<StarSystem> systemAt(long seed, GalacticCoord coord) {
+    public Optional<PlanetarySystem> systemAt(long seed, GalacticCoord coord) {
         return Optional.empty();
     }
 
     @Override
-    public Map<GalacticCoord, StarSystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
+    public Map<GalacticCoord, PlanetarySystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
         return Collections.emptyMap();
     }
 }

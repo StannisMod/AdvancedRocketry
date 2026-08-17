@@ -157,12 +157,17 @@ public class SystemContentTest {
         // SWEEP for an occupied super-cell rather than demanding one particular cube. Occupancy is a
         // draw scaled by the galaxy's profile, so any single cube is a coin toss and a fixture that
         // insists on one is testing the coin.
+        // It must be a seat with a STAR: the comparison is between one authored planet's orbit and one
+        // procedural planet's, and a starless system has no orbits at all to compare with.
         Optional<GalacticCoord> seat = Optional.empty();
-        for (long i = 1; i <= 8 && !seat.isPresent(); i++) {
-            seat = gen.anchorAt(0xBEEFL,
+        for (long i = 1; i <= 16 && !seat.isPresent(); i++) {
+            Optional<GalacticCoord> candidate = gen.anchorAt(0xBEEFL,
                     GalacticCoord.ofSectorLocal(i * spacing, spacing, spacing, 0L, 0L, 0L));
+            if (candidate.isPresent() && gen.systemAt(0xBEEFL, candidate.get()).get().star().isPresent()) {
+                seat = candidate;
+            }
         }
-        assertTrue("the fixture needs an occupied super-cell", seat.isPresent());
+        assertTrue("the fixture needs an occupied super-cell with a star in it", seat.isPresent());
         int compared = 0;
         for (SystemBody b : gen.bodiesFor(0xBEEFL, seat.get())) {
             if (b.kind() != SystemBodyKind.PLANET && b.kind() != SystemBodyKind.GAS_GIANT) {

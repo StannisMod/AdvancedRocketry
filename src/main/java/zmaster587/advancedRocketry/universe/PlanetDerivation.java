@@ -145,6 +145,26 @@ public final class PlanetDerivation {
     private static final double METALLICITY_SPAN = 1.25d;
     private static final double METALLICITY_BIAS = 1.3d;
 
+    /**
+     * The surface temperature of an Earth-gravity world lit by NOTHING, in kelvin: what its own
+     * internal heat alone holds it at.
+     *
+     * <p>Measured rather than picked. Earth's geothermal flux is 0.087 W/m²; a black body radiating
+     * that sits at {@code (F/σ)^¼ = 35 K}. Since the flux a world leaks scales with its mass over its
+     * area, and {@code M/R²} is exactly the surface gravity this derivation already computes, a
+     * starless world's temperature is {@code 35 K · g^¼} — one law, anchored on a real measurement,
+     * reusing a quantity that is already there rather than introducing a second size-to-heat
+     * relation.</p>
+     *
+     * <p><b>What it does not model</b>: a young giant is far hotter than this, because most of its
+     * heat is gravitational contraction rather than leftover formation heat — Jupiter's own flux is
+     * sixty times Earth's, and it would come out at 124 K rather than the 45 K this gives. That is an
+     * age term, and nothing in this layer knows a body's age.</p>
+     */
+    private static final double RESIDUAL_TEMPERATURE_K = 35d;
+    /** {@code T ∝ F^¼} for a black body, and the flux goes as the gravity. */
+    private static final double RESIDUAL_TEMPERATURE_EXPONENT = 0.25d;
+
     private PlanetDerivation() {
     }
 
@@ -310,6 +330,75 @@ public final class PlanetDerivation {
         return new BodyProfile(kind, preset == null ? PlanetTypes.UNCLASSIFIED : preset.name(), preset,
                 orbitalDistance, mass, radius, gravityPercent, pressure, temperature, oxygen, locked,
                 rings, metallicity, terrain, spin);
+    }
+
+    /**
+     * The full profile of a world with NO STAR — a {@link SystemBodyKind#ROGUE_PLANET}, the commonest
+     * thing there is to meet in the intergalactic void.
+     *
+     * <p>Half of {@link #derive}'s order simply does not apply, and that is the interesting part rather
+     * than a gap to be filled with defaults. There is no metallicity inherited from a parent star, no
+     * orbital radius, no insolation, no snow line to sit inside or outside of, and no tidal lock. What
+     * is left is the world's own bulk and its own leftover heat, so a rogue is derived from those and
+     * from nothing else.</p>
+     *
+     * <p><b>Its atmosphere is on the ground.</b> A rocky rogue sits at a few tens of kelvin, where every
+     * volatile it ever had is frozen solid, so it reads at minimum pressure however well its gravity
+     * could have held a gas — the retention law answers "could it keep this gas hot" and the answer here
+     * is that there is no gas left to keep. A body massive enough to have accreted hydrogen keeps it,
+     * because hydrogen does not freeze at these temperatures, and that is the one case that comes out
+     * thick.</p>
+     *
+     * <p><b>One kind, whatever its bulk.</b> A rogue that accreted like a giant is still a
+     * {@code ROGUE_PLANET} and not a {@link SystemBodyKind#GAS_GIANT}: that kind exists to say "a
+     * destination with a dimension and no surface", which is a statement about realization, and a rogue
+     * is not realized into a dimension yet. Its bulk is in the profile for anything that wants it.</p>
+     *
+     * @param variant disambiguates bodies SHARING a cell — the rogue itself is 0 and its moons follow
+     */
+    public static BodyProfile deriveRogue(long seed, GalacticCoord bodyCell, int variant) {
+        GalacticCoord key = bodyCell.cellCentre();
+        // Its own draw, because it has no star to have inherited one from. A rogue formed in some
+        // system and carries that system's metals; which system is not a thing this layer can know.
+        double metallicity = metallicityOf(seed, key);
+        // Colder than any snow line, by construction — so the giant roll is the outer-zone one, which
+        // is the same law every other body past the frost line is drawn by rather than a rate of its own.
+        boolean bulky = isGiantAt(seed, key, variant, 0);
+
+        double radius = radiusOf(seed, key, variant, bulky, false);
+        double mass = massOf(seed, key, variant, radius, bulky);
+        int gravityPercent = gravityPercentOf(mass, radius);
+        int pressure = bulky ? DimensionProperties.MAX_ATM_PRESSURE : DimensionProperties.MIN_ATM_PRESSURE;
+        int temperature = residualTemperature(mass, radius);
+
+        PlanetTypePreset preset = PlanetTypes.drawType(pressure, temperature, gravityPercent, bulky,
+                CellHash.ofBody(seed, key, variant, SALT_TYPE));
+        TerrainOption terrain = PlanetTypes.drawTerrain(preset,
+                CellHash.ofBody(seed, key, variant, SALT_TERRAIN));
+
+        boolean rings = CellHash.norm(CellHash.ofBody(seed, key, variant, SALT_RINGS))
+                < (bulky ? RING_CHANCE_GIANT : RING_CHANCE_ROCKY);
+        int spin = rotationalPeriodOf(seed, key, variant, bulky);
+
+        // No oxygen: free oxygen is biology, and it is also a GAS — a world whose air is lying on it as
+        // ice has none of either. No tidal lock: there is nothing to be locked to.
+        return new BodyProfile(SystemBodyKind.ROGUE_PLANET,
+                preset == null ? PlanetTypes.UNCLASSIFIED : preset.name(), preset,
+                SystemBody.ORBIT_UNKNOWN, mass, radius, gravityPercent, pressure, temperature,
+                false, false, rings, metallicity, terrain, spin);
+    }
+
+    /**
+     * What a world with no star sits at, in kelvin: its own internal heat and nothing else.
+     *
+     * <p>{@code 35 K · g^¼}, with {@code g = M/R²} in Earth units — see
+     * {@link #RESIDUAL_TEMPERATURE_K} for where the anchor comes from and what it leaves out.</p>
+     */
+    public static int residualTemperature(double massEarths, double radiusEarths) {
+        double gravity = massEarths / Math.max(1e-6d, radiusEarths * radiusEarths);
+        double kelvin = RESIDUAL_TEMPERATURE_K
+                * Math.pow(Math.max(1e-6d, gravity), RESIDUAL_TEMPERATURE_EXPONENT);
+        return (int) Math.max(1L, Math.round(kelvin));
     }
 
     /**

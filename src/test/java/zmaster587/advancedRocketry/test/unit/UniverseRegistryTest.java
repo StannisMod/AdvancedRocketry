@@ -20,7 +20,7 @@ import zmaster587.advancedRocketry.universe.GalacticAnchor;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
-import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
@@ -258,22 +258,22 @@ public class UniverseRegistryTest {
         GalacticCoord placedCell = GalacticCoord.ofSectorLocal(5, 5, 5, 0, 0, 0);
         reg.place(placedCell, 42);
 
-        Optional<StarSystem> atPlaced = reg.systemForCoord(placedCell);
+        Optional<PlanetarySystem> atPlaced = reg.systemForCoord(placedCell);
         assertTrue(atPlaced.isPresent());
-        assertSame("stored placement must win over the generator", stored, atPlaced.get().star());
-        assertEquals(42, atPlaced.get().starId());
+        assertSame("stored placement must win over the generator", stored, atPlaced.get().star().get());
+        assertEquals(42, atPlaced.get().systemId());
 
         // A member cell of the stored anchor's super-cell attributes to the STORED system, not the
         // generator: an authored anchor owns every cell of its super-cell.
-        Optional<StarSystem> nearStored = reg.systemForCoord(GalacticCoord.ofSectorLocal(6, 6, 6, 0, 0, 0));
+        Optional<PlanetarySystem> nearStored = reg.systemForCoord(GalacticCoord.ofSectorLocal(6, 6, 6, 0, 0, 0));
         assertTrue(nearStored.isPresent());
-        assertEquals(42, nearStored.get().starId());
+        assertEquals(42, nearStored.get().systemId());
 
         // A cell in a DIFFERENT super-cell falls through to the generator.
-        Optional<StarSystem> farAway = reg.systemForCoord(
+        Optional<PlanetarySystem> farAway = reg.systemForCoord(
                 GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, ANOTHER_SUPER_CELL, ANOTHER_SUPER_CELL, 0, 0, 0));
         assertTrue(farAway.isPresent());
-        assertEquals(777, farAway.get().starId());
+        assertEquals(777, farAway.get().systemId());
     }
 
     @Test
@@ -291,10 +291,10 @@ public class UniverseRegistryTest {
         GalacticCoord anchor = null;
         SystemBody planet = null;
         for (long sup = 0; sup < 8 && planet == null; sup++) {
-            Optional<StarSystem> sys = reg.systemForCoord(
+            Optional<PlanetarySystem> sys = reg.systemForCoord(
                     GalacticCoord.ofSectorLocal(sup * cfg.minSpacing, 0, 0, 0, 0, 0));
-            if (!sys.isPresent()) {
-                continue;
+            if (!sys.isPresent() || !sys.get().star().isPresent()) {
+                continue; // a starless system has no star body to be the anchor of this comparison
             }
             for (SystemBody b : reg.systemBodiesAt(
                     GalacticCoord.ofSectorLocal(sup * cfg.minSpacing, 0, 0, 0, 0, 0))) {
@@ -310,9 +310,9 @@ public class UniverseRegistryTest {
         assertFalse("the sampled body must sit in its OWN cell", planet.name().sameCell(anchor));
 
         // The body's cell resolves to the same system (member attribution).
-        Optional<StarSystem> atBody = reg.systemForCoord(planet.name());
+        Optional<PlanetarySystem> atBody = reg.systemForCoord(planet.name());
         assertTrue(atBody.isPresent());
-        assertEquals(planet.starId(), atBody.get().starId());
+        assertEquals(planet.starId(), atBody.get().systemId());
 
         // Zone read at the body's cell returns the body; at the anchor it returns the star, not the body.
         List<SystemBody> zone = reg.bodiesAt(planet.name());
@@ -349,7 +349,7 @@ public class UniverseRegistryTest {
         }
         assertNotNull("need an occupied procedural super-cell", anchor);
 
-        int starIdBefore = reg.systemForCoord(anchor).get().starId();
+        int starIdBefore = reg.systemForCoord(anchor).get().systemId();
         List<SystemBody> bodiesBefore = reg.systemBodiesAt(anchor);
 
         // TOUCH: pin the system (addPoi would do the same implicitly).
@@ -359,7 +359,7 @@ public class UniverseRegistryTest {
         // A config/seed change (the drift scenario) must NOT move or reshape the pinned system…
         reg.bindWorldSeed(999_999L);
         assertEquals("pinned system survives a seed change", starIdBefore,
-                reg.systemForCoord(anchor).get().starId());
+                reg.systemForCoord(anchor).get().systemId());
         assertEquals("pinned bodies survive a seed change", bodiesBefore, reg.systemBodiesAt(anchor));
 
         // …and the pin round-trips through NBT (reads from the save, not the generator or catalogue).
@@ -369,7 +369,7 @@ public class UniverseRegistryTest {
         round.readFromNBT(tag);
         round.bindWorldSeed(999_999L);
         assertTrue(round.systemForCoord(anchor).isPresent());
-        assertEquals(starIdBefore, round.systemForCoord(anchor).get().starId());
+        assertEquals(starIdBefore, round.systemForCoord(anchor).get().systemId());
         assertEquals(bodiesBefore, round.systemBodiesAt(anchor));
     }
 
@@ -383,9 +383,9 @@ public class UniverseRegistryTest {
     public void systemsAreLocationAgnostic() {
         // The coordinate is obtainable ONLY from the registry; the system handle exposes no coordinate.
         StellarBody body = star(9);
-        StarSystem sys = new StarSystem(body);
-        assertEquals(9, sys.starId());
-        assertSame(body, sys.star());
+        PlanetarySystem sys = PlanetarySystem.ofStar(body);
+        assertEquals(9, sys.systemId());
+        assertSame(body, sys.star().get());
 
         UniverseRegistry reg = new UniverseRegistry();
         assertFalse("an unregistered system has no coord", reg.coordForStar(body).isPresent());
@@ -761,14 +761,14 @@ public class UniverseRegistryTest {
         }
 
         @Override
-        public Optional<StarSystem> systemAt(long seed, GalacticCoord coord) {
-            return Optional.of(new StarSystem(body));
+        public Optional<PlanetarySystem> systemAt(long seed, GalacticCoord coord) {
+            return Optional.of(PlanetarySystem.ofStar(body));
         }
 
         @Override
-        public Map<GalacticCoord, StarSystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
-            Map<GalacticCoord, StarSystem> m = new HashMap<>();
-            m.put(min.cellCentre(), new StarSystem(body));
+        public Map<GalacticCoord, PlanetarySystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
+            Map<GalacticCoord, PlanetarySystem> m = new HashMap<>();
+            m.put(min.cellCentre(), PlanetarySystem.ofStar(body));
             return m;
         }
     }

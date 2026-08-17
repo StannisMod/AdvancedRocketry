@@ -14,7 +14,7 @@ import zmaster587.advancedRocketry.space.CellFrames;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
-import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 
@@ -59,7 +59,7 @@ public class InterstellarLegDistanceTest {
         List<Long> ticks = new ArrayList<>();
         List<String> rows = new ArrayList<>();
         for (long seed = 1L; seed <= 20L; seed++) {
-            Map<GalacticCoord, StarSystem> found = gen.systemsInRegion(seed,
+            Map<GalacticCoord, PlanetarySystem> found = gen.systemsInRegion(seed,
                     cell(-SEARCH_RADIUS_CELLS, -SEARCH_RADIUS_CELLS, -SEARCH_RADIUS_CELLS),
                     cell(SEARCH_RADIUS_CELLS, SEARCH_RADIUS_CELLS, SEARCH_RADIUS_CELLS));
             // The leg a PLAYER flies runs anchor to anchor: he sits in a system and jumps to another
@@ -193,7 +193,7 @@ public class InterstellarLegDistanceTest {
 
     /** The distance from the system nearest the origin to ITS nearest neighbour, in light years. */
     private static Double nearestNeighbourLightYears(ClusteredGalaxyGenerator gen, long seed) {
-        Map<GalacticCoord, StarSystem> found = gen.systemsInRegion(seed,
+        Map<GalacticCoord, PlanetarySystem> found = gen.systemsInRegion(seed,
                 cell(-SEARCH_RADIUS_CELLS, -SEARCH_RADIUS_CELLS, -SEARCH_RADIUS_CELLS),
                 cell(SEARCH_RADIUS_CELLS, SEARCH_RADIUS_CELLS, SEARCH_RADIUS_CELLS));
         GalacticCoord home = nearestTo(found.keySet(), cell(0L, 0L, 0L));

@@ -14,7 +14,7 @@ import zmaster587.advancedRocketry.space.CellFrames;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
-import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 
@@ -252,7 +252,7 @@ public class DriveLadderTest {
         long stride = 4L * GalaxyGenConfig.DEFAULT_MIN_SPACING;
         List<Double> legs = new ArrayList<>();
         for (long seed = 1L; seed <= 20L; seed++) {
-            Map<GalacticCoord, StarSystem> found = gen.systemsInRegion(seed,
+            Map<GalacticCoord, PlanetarySystem> found = gen.systemsInRegion(seed,
                     cell(-stride, -stride, -stride), cell(stride, stride, stride));
             GalacticCoord home = nearestTo(found.keySet(), cell(0L, 0L, 0L));
             GalacticCoord neighbour = home == null ? null : nearestTo(found.keySet(), home);

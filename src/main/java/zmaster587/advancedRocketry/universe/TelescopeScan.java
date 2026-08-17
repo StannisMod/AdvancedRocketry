@@ -162,7 +162,7 @@ public final class TelescopeScan {
             }
         }
         if (!namedSomething) {
-            StarSystem system = registry.systemForCoord(anchor.get()).orElse(null);
+            PlanetarySystem system = registry.systemForCoord(anchor.get()).orElse(null);
             if (memory.record(entryForSystem(anchor.get(), system, observedTick))) {
                 written++;
             }
@@ -184,9 +184,11 @@ public final class TelescopeScan {
      * A system with nothing the registry can enumerate: the address alone, so a pilot can still aim
      * at the light and go look. It names no body, because none has been resolved.
      */
-    public static CrystalEntry entryForSystem(GalacticCoord coord, StarSystem system, long observedTick) {
-        String name = system != null && system.star() != null ? system.star().getName() : "";
-        return new CrystalEntry(coord.cellCentre(), name, SystemBodyKind.STAR, InfoTier.TELESCOPE,
-                observedTick);
+    public static CrystalEntry entryForSystem(GalacticCoord coord, PlanetarySystem system, long observedTick) {
+        // The system's own name and its own PRIMARY KIND: a starless system recorded as a STAR would
+        // send a pilot out expecting a sun, and the address is the whole content of this entry.
+        String name = system == null ? "" : system.name();
+        SystemBodyKind kind = system == null ? SystemBodyKind.STAR : system.primaryKind();
+        return new CrystalEntry(coord.cellCentre(), name, kind, InfoTier.TELESCOPE, observedTick);
     }
 }

@@ -17,6 +17,7 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.PlanetDerivation;
+import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.PlanetTypes;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
@@ -67,7 +68,14 @@ public class SystemRetinueTest {
                 null, null));
     }
 
-    /** Every occupied system anchor in a sweep of super-cells. */
+    /**
+     * Every anchor in a sweep of super-cells that holds a system with a STAR.
+     *
+     * <p>Starless systems are skipped, and the filter is the subject of this class rather than a
+     * convenience: a retinue is what orbits a star — a zone, a snow line, a belt at the outer edge of
+     * one — and a system with no star has none of those to get right. What a rogue keeps instead, and
+     * that it still honours one real body per cell, is {@code VoidContentTest}'s.</p>
+     */
     private static List<GalacticCoord> anchors(ClusteredGalaxyGenerator g, long seed, int minSpacing,
                                                int supercells) {
         Set<String> seen = new HashSet<>();
@@ -77,7 +85,11 @@ public class SystemRetinueTest {
                 for (long sz = -supercells; sz <= supercells; sz++) {
                     Optional<GalacticCoord> a = g.anchorAt(seed,
                             cell(sx * minSpacing, sy * minSpacing, sz * minSpacing));
-                    if (a.isPresent() && seen.add(a.get().cellKey())) {
+                    if (!a.isPresent() || !seen.add(a.get().cellKey())) {
+                        continue;
+                    }
+                    Optional<PlanetarySystem> sys = g.systemAt(seed, a.get());
+                    if (sys.isPresent() && sys.get().star().isPresent()) {
                         out.add(a.get());
                     }
                 }
@@ -149,7 +161,7 @@ public class SystemRetinueTest {
         ClusteredGalaxyGenerator g = gen(SPACING);
         int checked = 0;
         for (GalacticCoord anchor : anchors(g, SEED, SPACING, 2)) {
-            if (!g.systemAt(SEED, anchor).get().star().getSubStars().isEmpty()) {
+            if (!g.systemAt(SEED, anchor).get().star().get().getSubStars().isEmpty()) {
                 continue;
             }
             int wanted = ClusteredGalaxyGenerator.retinueSize(SEED, anchor);
@@ -175,7 +187,7 @@ public class SystemRetinueTest {
         int droppedSomewhere = 0;
         int checked = 0;
         for (GalacticCoord anchor : anchors(g, SEED, CRAMPED_SPACING, 2)) {
-            StellarBody star = g.systemAt(SEED, anchor).get().star();
+            StellarBody star = g.systemAt(SEED, anchor).get().star().get();
             int count = ClusteredGalaxyGenerator.retinueSize(SEED, anchor);
             Set<Integer> drawn = new HashSet<>();
             for (int i = 0; i < count; i++) {
@@ -216,7 +228,7 @@ public class SystemRetinueTest {
         // universe into a failure about nothing. The rate itself (10/28 = 36 %) is what the
         // multiplicity contract says it should be.
         for (GalacticCoord anchor : anchors(g, SEED, SPACING, 3)) {
-            if (g.systemAt(SEED, anchor).get().star().getSubStars().isEmpty()) {
+            if (g.systemAt(SEED, anchor).get().star().get().getSubStars().isEmpty()) {
                 continue;
             }
             multiple++;
@@ -250,7 +262,7 @@ public class SystemRetinueTest {
         int multiple = 0;
         int mostStars = 0;
         for (GalacticCoord anchor : anchors(g, SEED, SPACING, 2)) {
-            StellarBody star = g.systemAt(SEED, anchor).get().star();
+            StellarBody star = g.systemAt(SEED, anchor).get().star().get();
             int stars = 1 + star.getSubStars().size();
             systems++;
             if (stars > 1) {
@@ -273,7 +285,7 @@ public class SystemRetinueTest {
         ClusteredGalaxyGenerator g = gen(SPACING);
         int checked = 0;
         for (GalacticCoord anchor : anchors(g, SEED, SPACING, 2)) {
-            StellarBody star = g.systemAt(SEED, anchor).get().star();
+            StellarBody star = g.systemAt(SEED, anchor).get().star().get();
             Set<Integer> ids = new HashSet<>();
             assertTrue(ids.add(star.getId()));
             for (StellarBody companion : star.getSubStars()) {
@@ -297,7 +309,7 @@ public class SystemRetinueTest {
         ClusteredGalaxyGenerator g = gen(SPACING);
         int checkedCompanions = 0;
         for (GalacticCoord anchor : anchors(g, SEED, SPACING, 2)) {
-            StellarBody star = g.systemAt(SEED, anchor).get().star();
+            StellarBody star = g.systemAt(SEED, anchor).get().star().get();
             if (star.getSubStars().isEmpty()) {
                 continue;
             }
@@ -334,7 +346,7 @@ public class SystemRetinueTest {
         ClusteredGalaxyGenerator g = gen(SPACING);
         int checked = 0;
         for (GalacticCoord anchor : anchors(g, SEED, SPACING, 2)) {
-            StellarBody star = g.systemAt(SEED, anchor).get().star();
+            StellarBody star = g.systemAt(SEED, anchor).get().star().get();
             if (star.getSubStars().isEmpty()) {
                 continue;
             }

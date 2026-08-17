@@ -246,7 +246,8 @@ public final class SystemBody {
      */
     public boolean definesFrame() {
         return kind == SystemBodyKind.STAR || kind == SystemBodyKind.PLANET
-                || kind == SystemBodyKind.GAS_GIANT || kind == SystemBodyKind.ASTEROID_BELT;
+                || kind == SystemBodyKind.GAS_GIANT || kind == SystemBodyKind.ASTEROID_BELT
+                || kind == SystemBodyKind.ROGUE_PLANET;
     }
 
     /**

@@ -172,7 +172,7 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
      * a planet's own zone cell, or the void between bodies of one system — resolves to its owning system.
      * Resolution order: pinned &rarr; authored store &rarr; the procedural generator. Empty means void space.
      */
-    public Optional<StarSystem> systemForCoord(GalacticCoord coord) {
+    public Optional<PlanetarySystem> systemForCoord(GalacticCoord coord) {
         Optional<GalacticCoord> anchor = anchorForCell(coord);
         if (!anchor.isPresent()) {
             return Optional.empty();
@@ -256,16 +256,17 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     }
 
     /** The system AT a known anchor cell: pinned content &rarr; catalogued star &rarr; procedural generator. */
-    private Optional<StarSystem> systemAtAnchor(GalacticCoord anchor) {
+    private Optional<PlanetarySystem> systemAtAnchor(GalacticCoord anchor) {
         String key = anchor.cellKey();
         PinnedSystem pinned = pinnedSystems.get(key);
         if (pinned != null) {
-            return Optional.of(new StarSystem(pinned.toStar()));
+            return Optional.of(pinned.toSystem());
         }
         Integer id = byCell.get(key);
         if (id != null) {
             StellarBody star = starLookup.apply(id);
-            return star == null ? Optional.<StarSystem>empty() : Optional.of(new StarSystem(star));
+            return star == null ? Optional.<PlanetarySystem>empty()
+                    : Optional.of(PlanetarySystem.ofStar(star));
         }
         return generator.systemAt(worldSeed, anchor);
     }
@@ -317,7 +318,7 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     }
 
     /** Every stored system whose cell falls inside the inclusive sector box, merged over the generator. */
-    public Map<GalacticCoord, StarSystem> systemsInRegion(GalacticCoord min, GalacticCoord max) {
+    public Map<GalacticCoord, PlanetarySystem> systemsInRegion(GalacticCoord min, GalacticCoord max) {
         // Normalise the box once (per axis) so the generator and the override scan see the same ordered
         // bounds — a real generator is entitled to assume min <= max.
         GalacticCoord lo = GalacticCoord.ofSectorLocal(
@@ -328,7 +329,7 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
                 Math.max(min.sectorX(), max.sectorX()),
                 Math.max(min.sectorY(), max.sectorY()),
                 Math.max(min.sectorZ(), max.sectorZ()), 0L, 0L, 0L);
-        Map<GalacticCoord, StarSystem> out = new HashMap<>(generator.systemsInRegion(worldSeed, lo, hi));
+        Map<GalacticCoord, PlanetarySystem> out = new HashMap<>(generator.systemsInRegion(worldSeed, lo, hi));
         for (Map.Entry<Integer, GalacticCoord> e : byStar.entrySet()) {
             GalacticCoord c = e.getValue();
             if (c.sectorX() >= lo.sectorX() && c.sectorX() <= hi.sectorX()
@@ -336,7 +337,7 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
                     && c.sectorZ() >= lo.sectorZ() && c.sectorZ() <= hi.sectorZ()) {
                 StellarBody star = starLookup.apply(e.getKey());
                 if (star != null) {
-                    out.put(c, new StarSystem(star)); // overrides win over any procedural entry at the same cell
+                    out.put(c, PlanetarySystem.ofStar(star)); // overrides win over any procedural entry here
                 }
             }
         }
@@ -631,15 +632,22 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         if (byCell.containsKey(key)) {
             return false; // authored, or pinned already (pin places into byCell below)
         }
-        Optional<StarSystem> sys = generator.systemAt(worldSeed, anchor);
+        Optional<PlanetarySystem> sys = generator.systemAt(worldSeed, anchor);
         if (!sys.isPresent()) {
             return false;
         }
         List<SystemBody> bodies = new ArrayList<>(generator.bodiesFor(worldSeed, anchor));
-        place(anchor, sys.get().starId());
-        StellarBody star = sys.get().star();
-        pinnedSystems.put(key, new PinnedSystem(sys.get().starId(), star.getTemperature(), star.getSize(),
-                star.getName(), bodies));
+        place(anchor, sys.get().systemId());
+        // A star's temperature and size are frozen HERE, because they are drawn values that a later
+        // seed or config edit would otherwise move under the planets already derived from them. A
+        // system with no star has neither, and freezing a zero for each would be inventing two
+        // properties it does not have — its primary's physics is derived from the cell like any
+        // other body's, and the cell is what the pin is keyed by.
+        PlanetarySystem system = sys.get();
+        PinnedSystem snapshot = system.star().isPresent()
+                ? PinnedSystem.ofStar(system.systemId(), system.star().get(), bodies)
+                : PinnedSystem.ofRogue(system.systemId(), system.name(), bodies);
+        pinnedSystems.put(key, snapshot);
         markDirty();
         return true;
     }
@@ -652,6 +660,10 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
      * frozen in the save, so a later seed or config edit cannot warm it up under the planets that were
      * derived from it. Realization needs this to materialize a body's physics, and the star it uses must
      * be the one the scan already described.</p>
+     *
+     * <p>Empty means two different things and a caller has to tell them apart: there is no system here
+     * at all, or there IS one and its primary is not a star (a rogue world out in the void). Ask
+     * {@link #systemForCoord} when the difference matters.</p>
      */
     public Optional<StellarBody> starAt(GalacticCoord coord) {
         Optional<GalacticCoord> anchorOpt = anchorForCell(coord);
@@ -661,14 +673,14 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         GalacticCoord anchor = anchorOpt.get();
         PinnedSystem pinned = pinnedSystems.get(anchor.cellKey());
         if (pinned != null) {
-            return Optional.of(pinned.toStar());
+            return pinned.toSystem().star();
         }
         Integer id = byCell.get(anchor.cellKey());
         if (id != null) {
             return Optional.ofNullable(starLookup.apply(id));
         }
-        Optional<StarSystem> sys = generator.systemAt(worldSeed, anchor);
-        return sys.isPresent() ? Optional.of(sys.get().star()) : Optional.<StellarBody>empty();
+        Optional<PlanetarySystem> sys = generator.systemAt(worldSeed, anchor);
+        return sys.isPresent() ? sys.get().star() : Optional.<StellarBody>empty();
     }
 
     /**
@@ -1128,7 +1140,15 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
             for (int j = 0; j < bodyList.tagCount(); j++) {
                 bodies.add(SystemBody.readFromNBT(bodyList.getCompoundTagAt(j)));
             }
-            pinnedSystems.put(anchor.cellKey(), new PinnedSystem(e.getInteger("starId"),
+            SystemBodyKind primaryKind = SystemBodyKind.STAR;
+            if (e.hasKey("primaryKind")) {
+                try {
+                    primaryKind = SystemBodyKind.valueOf(e.getString("primaryKind"));
+                } catch (IllegalArgumentException ex) {
+                    primaryKind = SystemBodyKind.STAR; // a kind this build does not know: read it as a star
+                }
+            }
+            pinnedSystems.put(anchor.cellKey(), PinnedSystem.read(e.getInteger("starId"), primaryKind,
                     e.getInteger("temperature"), e.getFloat("size"), e.getString("name"), bodies));
         }
     }
@@ -1173,6 +1193,11 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
             NBTTagCompound entry = new NBTTagCompound();
             anchor.writeToNBT(entry);
             entry.setInteger("starId", p.starId);
+            // Written only when it is not a star, so a stellar system's snapshot is byte-identical to
+            // what it was before starless systems existed.
+            if (p.primaryKind != SystemBodyKind.STAR) {
+                entry.setString("primaryKind", p.primaryKind.name());
+            }
             entry.setInteger("temperature", p.temperature);
             entry.setFloat("size", p.size);
             entry.setString("name", p.name == null ? "" : p.name);
@@ -1189,29 +1214,58 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         return nbt;
     }
 
-    /** A pinned procedural system's content snapshot (A#1a pin-on-touch): fabricated star + body list. */
+    /**
+     * A pinned procedural system's content snapshot (A#1a pin-on-touch): its primary's drawn
+     * properties plus its full body list.
+     *
+     * <p>{@code primaryKind} is what a re-read reconstructs the system FROM, and it is stored rather
+     * than inferred from a zero temperature: a star that happens to be cold and a system that has no
+     * star are different facts, and telling them apart by their arithmetic is exactly the confusion
+     * the kind exists to end.</p>
+     */
     private static final class PinnedSystem {
         final int starId;
+        final SystemBodyKind primaryKind;
         final int temperature;
         final float size;
         final String name;
         final List<SystemBody> bodies;
 
-        PinnedSystem(int starId, int temperature, float size, String name, List<SystemBody> bodies) {
+        private PinnedSystem(int starId, SystemBodyKind primaryKind, int temperature, float size,
+                             String name, List<SystemBody> bodies) {
             this.starId = starId;
+            this.primaryKind = primaryKind;
             this.temperature = temperature;
             this.size = size;
             this.name = name;
             this.bodies = bodies;
         }
 
-        StellarBody toStar() {
+        static PinnedSystem ofStar(int starId, StellarBody star, List<SystemBody> bodies) {
+            return new PinnedSystem(starId, SystemBodyKind.STAR, star.getTemperature(), star.getSize(),
+                    star.getName(), bodies);
+        }
+
+        /** A system anchored on a starless world: an id, a name, and nothing a star would have had. */
+        static PinnedSystem ofRogue(int starId, String name, List<SystemBody> bodies) {
+            return new PinnedSystem(starId, SystemBodyKind.ROGUE_PLANET, 0, 0f, name, bodies);
+        }
+
+        static PinnedSystem read(int starId, SystemBodyKind primaryKind, int temperature, float size,
+                                 String name, List<SystemBody> bodies) {
+            return new PinnedSystem(starId, primaryKind, temperature, size, name, bodies);
+        }
+
+        PlanetarySystem toSystem() {
+            if (primaryKind != SystemBodyKind.STAR) {
+                return PlanetarySystem.ofRogue(starId, name);
+            }
             StellarBody star = new StellarBody();
             star.setId(starId);
             star.setTemperature(temperature);
             star.setSize(size);
             star.setName(name);
-            return star;
+            return PlanetarySystem.ofStar(star);
         }
     }
 

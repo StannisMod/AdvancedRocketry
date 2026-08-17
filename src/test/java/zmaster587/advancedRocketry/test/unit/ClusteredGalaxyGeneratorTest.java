@@ -14,7 +14,7 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
-import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.UniverseScale;
@@ -92,14 +92,19 @@ public class ClusteredGalaxyGeneratorTest {
             if (!anchor.isPresent()) {
                 return;
             }
-            Optional<StarSystem> a = gen.systemAt(SEED, anchor.get());
-            Optional<StarSystem> b = gen.systemAt(SEED, anchor.get());
+            Optional<PlanetarySystem> a = gen.systemAt(SEED, anchor.get());
+            Optional<PlanetarySystem> b = gen.systemAt(SEED, anchor.get());
             assertTrue("an attributed anchor must point-resolve at " + anchor.get(), a.isPresent());
             assertEquals("presence must be stable", a.isPresent(), b.isPresent());
-            assertEquals("id stable", a.get().starId(), b.get().starId());
-            assertEquals("temperature stable", a.get().star().getTemperature(),
-                    b.get().star().getTemperature());
-            assertEquals("size stable", a.get().star().getSize(), b.get().star().getSize(), 0f);
+            assertEquals("id stable", a.get().systemId(), b.get().systemId());
+            assertEquals("primary kind stable", a.get().primaryKind(), b.get().primaryKind());
+            assertEquals("star presence stable", a.get().star().isPresent(), b.get().star().isPresent());
+            if (!a.get().star().isPresent()) {
+                return; // a starless system: it has no temperature or size to be stable
+            }
+            assertEquals("temperature stable", a.get().star().get().getTemperature(),
+                    b.get().star().get().getTemperature());
+            assertEquals("size stable", a.get().star().get().getSize(), b.get().star().get().getSize(), 0f);
         });
     }
 
@@ -186,23 +191,34 @@ public class ClusteredGalaxyGeneratorTest {
     }
 
     @Test
-    public void starsStopAtTheirGalaxysDeclaredEdge() {
-        // The star field is the GALAXY's density profile, so where a galaxy ends the stars end. This
-        // is what an independent per-cell mask could not do: drawn above the percolation threshold it
-        // produced one unbounded sponge, with no edge to reach and no answer to "which galaxy is this".
+    public void starFormationStopsAtTheGalaxysDeclaredEdge() {
+        // The star field is the GALAXY's density profile, so where a galaxy ends, star FORMATION ends.
+        // This is what an independent per-cell mask could not do: drawn above the percolation threshold
+        // it produced one unbounded sponge, with no edge to reach and no answer to "which galaxy is
+        // this".
+        //
+        // It is star FORMATION and not "anything at all", and the distinction is the whole of the void
+        // content: what is out past the edge got there by being thrown, and the material that carries
+        // it is the ejecta halo rather than the profile. So the reading is the BOUND term — what a
+        // star needs to condense out of — and it is zero past the radius on the nose.
         //
         // Sampled against the home galaxy's OWN radius rather than a hard-coded distance: the radius
         // is drawn per seed, so a fixed number would be testing one draw.
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(1.0d, SPACING));
         Galaxy home = gen.galaxies().home(SEED);
 
-        int inside = seatsInBlockAround(gen, 0L, 3);
-        long beyondEdge = UniverseScale.cellsForLightYears(home.radiusLy() * 1.5d);
-        int outside = seatsInBlockAround(gen, beyondEdge, 3);
+        assertTrue("the galaxy's core must hold stars (found " + seatsInBlockAround(gen, 0L, 3) + ")",
+                seatsInBlockAround(gen, 0L, 3) > 0);
+        assertTrue("inside the galaxy there must be material a star can form out of",
+                gen.galaxies().materialAtSector(SEED, 0L, 0L, 0L).bound > 0d);
 
-        assertTrue("the galaxy's core must hold stars (found " + inside + ")", inside > 0);
-        assertEquals("past the declared radius of " + (long) home.radiusLy()
-                + " ly there must be nothing", 0, outside);
+        long beyondEdge = UniverseScale.cellsForLightYears(home.radiusLy() * 1.5d);
+        for (long d = 0; d <= 3; d++) {
+            long sector = beyondEdge + d * SPACING;
+            assertEquals("past the declared radius of " + (long) home.radiusLy()
+                            + " ly nothing may FORM, at " + sector,
+                    0d, gen.galaxies().materialAtSector(SEED, sector, 0L, 0L).bound, 0d);
+        }
     }
 
     @Test
@@ -223,14 +239,14 @@ public class ClusteredGalaxyGeneratorTest {
         });
         assertFalse("the sweep must find systems", byAttribution.isEmpty());
 
-        Map<GalacticCoord, StarSystem> region = gen.systemsInRegion(SEED, cell(-r, -r, -r), cell(r, r, r));
+        Map<GalacticCoord, PlanetarySystem> region = gen.systemsInRegion(SEED, cell(-r, -r, -r), cell(r, r, r));
         Set<String> byRegion = new HashSet<>();
-        for (Map.Entry<GalacticCoord, StarSystem> e : region.entrySet()) {
+        for (Map.Entry<GalacticCoord, PlanetarySystem> e : region.entrySet()) {
             byRegion.add(e.getKey().cellKey());
             // The enumerated cell must itself point-resolve to the same system.
-            Optional<StarSystem> point = gen.systemAt(SEED, e.getKey());
+            Optional<PlanetarySystem> point = gen.systemAt(SEED, e.getKey());
             assertTrue("region cell " + e.getKey() + " must point-resolve", point.isPresent());
-            assertEquals(point.get().starId(), e.getValue().starId());
+            assertEquals(point.get().systemId(), e.getValue().systemId());
         }
         assertTrue("every seat the sweep attributed must be enumerated by the region query",
                 byRegion.containsAll(byAttribution));
@@ -240,8 +256,8 @@ public class ClusteredGalaxyGeneratorTest {
     public void systemsInRegionHandlesSwappedBounds() {
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(defaultsCfg());
         long r = 2L * SPACING;
-        Map<GalacticCoord, StarSystem> ordered = gen.systemsInRegion(SEED, cell(-r, -r, -r), cell(r, r, r));
-        Map<GalacticCoord, StarSystem> swapped = gen.systemsInRegion(SEED, cell(r, r, r), cell(-r, -r, -r));
+        Map<GalacticCoord, PlanetarySystem> ordered = gen.systemsInRegion(SEED, cell(-r, -r, -r), cell(r, r, r));
+        Map<GalacticCoord, PlanetarySystem> swapped = gen.systemsInRegion(SEED, cell(r, r, r), cell(-r, -r, -r));
         assertEquals("swapped min/max must enumerate the same box", ordered.keySet(), swapped.keySet());
     }
 
@@ -290,8 +306,11 @@ public class ClusteredGalaxyGeneratorTest {
                 if (!anchor.isPresent()) {
                     continue;
                 }
-                StarSystem sys = gen.systemAt(SEED, anchor.get()).get();
-                int temp = sys.star().getTemperature();
+                PlanetarySystem sys = gen.systemAt(SEED, anchor.get()).get();
+                if (!sys.star().isPresent()) {
+                    continue; // a starless system draws no star archetype, which is this test's subject
+                }
+                int temp = sys.star().get().getTemperature();
                 seenTemps.add(Integer.toString(temp));
                 total++;
                 if (temp == 50) {
@@ -302,7 +321,7 @@ public class ClusteredGalaxyGeneratorTest {
                     other++;
                 }
                 // size must lie in the archetype's range
-                float size = sys.star().getSize();
+                float size = sys.star().get().getSize();
                 if (temp == 50) {
                     assertTrue(size >= 0.5f && size <= 1.0f);
                 } else if (temp == 250) {
@@ -323,7 +342,7 @@ public class ClusteredGalaxyGeneratorTest {
         for (GalacticCoord anchor : anchors(gen, SEED, SPACING, 2)) {
             sawAny = true;
             assertTrue("procedural systems must carry a synthetic negative id",
-                    gen.systemAt(SEED, anchor).get().starId() < 0);
+                    gen.systemAt(SEED, anchor).get().systemId() < 0);
         }
         assertTrue(sawAny);
     }
@@ -361,9 +380,12 @@ public class ClusteredGalaxyGeneratorTest {
         for (long x = -20; x <= 20; x++) {
             for (long y = -20; y <= 20; y++) {
                 Optional<GalacticCoord> anchor = gen.anchorAt(SEED, cell(x * SPACING, y * SPACING, 0));
-                if (anchor.isPresent()) {
-                    seenTemps.add(Integer.toString(
-                            gen.systemAt(SEED, anchor.get()).get().star().getTemperature()));
+                if (!anchor.isPresent()) {
+                    continue;
+                }
+                PlanetarySystem sys = gen.systemAt(SEED, anchor.get()).get();
+                if (sys.star().isPresent()) {
+                    seenTemps.add(Integer.toString(sys.star().get().getTemperature()));
                 }
             }
         }
@@ -380,6 +402,9 @@ public class ClusteredGalaxyGeneratorTest {
         long s = config.minSpacing;
         boolean checkedAny = false;
         for (GalacticCoord anchor : anchors(gen, SEED, SPACING, 1)) {
+            if (!gen.systemAt(SEED, anchor).get().star().isPresent()) {
+                continue; // a starless system has no star at its anchor, which is what this pins
+            }
             checkedAny = true;
             List<SystemBody> a = gen.bodiesFor(SEED, anchor);
             assertEquals("bodiesFor must be deterministic", a, gen.bodiesFor(SEED, anchor));
@@ -396,7 +421,7 @@ public class ClusteredGalaxyGeneratorTest {
             Set<Integer> systemStars = new HashSet<>();
             systemStars.add(a.get(0).starId());
             for (zmaster587.advancedRocketry.api.dimension.solar.StellarBody companion
-                    : gen.systemAt(SEED, anchor).get().star().getSubStars()) {
+                    : gen.systemAt(SEED, anchor).get().star().get().getSubStars()) {
                 systemStars.add(companion.getId());
             }
 
@@ -488,9 +513,17 @@ public class ClusteredGalaxyGeneratorTest {
             }
             checkedAny = true;
             List<SystemBody> bodies = gen.bodiesFor(SEED, c);
-            assertEquals("a one-cell neighbourhood can host exactly one real body", 1, bodies.size());
-            assertEquals("and that body is the star", SystemBodyKind.STAR, bodies.get(0).kind());
-            assertTrue("which holds the anchor cell", bodies.get(0).name().sameCell(c));
+            int real = 0;
+            for (SystemBody body : bodies) {
+                assertTrue("nothing may escape the one cell this system has",
+                        body.name().sameCell(c));
+                if (body.definesFrame()) {
+                    real++;
+                }
+            }
+            assertEquals("a one-cell neighbourhood can host exactly one real body", 1, real);
+            assertTrue("and that body is the system's primary",
+                    bodies.get(0).definesFrame() && bodies.get(0).name().sameCell(c));
         }
         assertTrue(checkedAny);
     }

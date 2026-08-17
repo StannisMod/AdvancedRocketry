@@ -384,14 +384,14 @@ public class TelescopeRegionScanTest {
         }
 
         @Override
-        public java.util.Optional<zmaster587.advancedRocketry.universe.StarSystem> systemAt(
+        public java.util.Optional<zmaster587.advancedRocketry.universe.PlanetarySystem> systemAt(
                 long seed, GalacticCoord coord) {
             queries++;
             return real.systemAt(seed, coord);
         }
 
         @Override
-        public java.util.Map<GalacticCoord, zmaster587.advancedRocketry.universe.StarSystem>
+        public java.util.Map<GalacticCoord, zmaster587.advancedRocketry.universe.PlanetarySystem>
                 systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
             queries++;
             return real.systemsInRegion(seed, min, max);

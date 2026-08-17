@@ -19,7 +19,7 @@ import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyField;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.LightYearVector;
-import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -260,10 +260,13 @@ public class GalaxyFieldTest {
     }
 
     @Test
-    public void theVoidBetweenGalaxiesHoldsNoSystems() {
-        // The generator's own view of the same fact: outside every galaxy the profile is zero, so the
-        // intergalactic void is what the profile leaves empty rather than a second rule someone has to
-        // remember to apply.
+    public void theVoidBetweenGalaxiesHoldsNothingThatFormedThere() {
+        // Outside every galaxy the BOUND profile is zero, so the intergalactic void is what the profile
+        // leaves empty rather than a second rule someone has to remember to apply.
+        //
+        // "Empty of stars", not "empty": what a ship meets out here is material the galaxies threw out,
+        // and that is the ejecta halo rather than the profile. This pins the half that has not moved —
+        // nothing CONDENSES out here — and VoidContentTest pins the half that has.
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(1.0d));
         Galaxy home = gen.galaxies().home(77L);
         // Past the whole RETINUE, not just past the primary: a satellite sits one to three diameters
@@ -274,8 +277,9 @@ public class GalaxyFieldTest {
         long spacing = GalaxyGenConfig.DEFAULT_MIN_SPACING;
         for (long i = 0; i < 40; i++) {
             GalacticCoord probe = GalacticCoord.ofSectorLocal(beyond + i * spacing, 0L, 0L, 0L, 0L, 0L);
-            assertFalse("a system turned up in intergalactic space at " + probe.cellKey(),
-                    gen.anchorAt(77L, probe).isPresent());
+            assertEquals("star-forming material turned up in intergalactic space at " + probe.cellKey(),
+                    0d, gen.galaxies().materialAtSector(77L, probe.sectorX(), probe.sectorY(),
+                            probe.sectorZ()).bound, 0d);
         }
     }
 
@@ -615,7 +619,7 @@ public class GalaxyFieldTest {
 
         // And the generator actually seats systems in it.
         long stride = config.minSpacing;
-        Map<GalacticCoord, StarSystem> found = gen.systemsInRegion(seed,
+        Map<GalacticCoord, PlanetarySystem> found = gen.systemsInRegion(seed,
                 GalacticCoord.ofSectorLocal(core.sectorX() - 3L * stride,
                         core.sectorY() - 3L * stride, core.sectorZ() - 3L * stride, 0L, 0L, 0L),
                 GalacticCoord.ofSectorLocal(core.sectorX() + 3L * stride,
