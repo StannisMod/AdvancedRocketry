@@ -559,6 +559,32 @@ public class XMLPlanetLoaderTest {
     }
 
     @Test
+    public void aPartiallySpecifiedGalaxyTypeInheritsTheSTOCKspiralNotAFrozenCopyOfIt()
+            throws Exception {
+        // The reason this test exists: the reader's defaults used to be literals — 900 / 2200 ly — and
+        // they went stale the moment the galaxy scale moved, so a pack that wrote only `thickness` got
+        // a "spiral" an order and a half under every real one, silently and only in the authored path.
+        // A pack writing one attribute must get the SHIPPED spiral for the rest.
+        GalaxyGenConfig.GalaxyType stock = GalaxyGenConfig.stockSpiral();
+        DimensionPropertyCoupling c = parse(galaxy(
+                "<galaxyGen>\n"
+                        + "  <galaxyType name=\"Fat Disc\" thickness=\"0.25\"/>\n"
+                        + "</galaxyGen>\n"));
+        assertNotNull(c.galaxyGenConfig);
+        GalaxyGenConfig.GalaxyType t = c.galaxyGenConfig.galaxyTypes.get(0);
+
+        assertEquals("thickness is what the pack asked for", 0.25d, t.scaleHeightRatio, 1e-9);
+        assertEquals("and the radius band is the SHIPPED spiral's", stock.minRadiusLy,
+                t.minRadiusLy, 1e-9);
+        assertEquals(stock.maxRadiusLy, t.maxRadiusLy, 1e-9);
+        assertEquals(stock.armCount, t.armCount);
+        assertEquals(stock.rotationSpeedKmS, t.rotationSpeedKmS, 1e-9);
+        assertEquals(stock.coreRadiusFraction, t.coreRadiusFraction, 1e-9);
+        assertEquals("weight is the deliberate exception: an unweighted type is the rarest", 1,
+                t.weight);
+    }
+
+    @Test
     public void galaxyTypesRoundTripThroughWriteXml() throws IOException {
         // This file is REWRITTEN on every world save, so a table the writer does not emit is a table a
         // pack silently loses the first time anybody saves.

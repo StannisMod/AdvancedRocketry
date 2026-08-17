@@ -329,12 +329,16 @@ public class XMLPlanetLoader {
      * Parse one {@code <galaxyType>} element into a galaxy archetype.
      *
      * <pre>{@code
-     * <galaxyType name="Spiral" profile="DISC" minRadius="900" maxRadius="2200"
+     * <galaxyType name="Spiral" profile="DISC" minRadius="15000" maxRadius="60000"
      *             thickness="0.02" arms="2" rotationSpeed="220" coreFraction="0.08" weight="7"/>
      * }</pre>
      *
-     * <p>Every attribute defaults to the stock spiral's value, so a pack that wants to change only
-     * how flat a disc is writes only {@code thickness}.</p>
+     * <p>Every SHAPE attribute defaults to the stock spiral's value, so a pack that wants to change
+     * only how flat a disc is writes only {@code thickness}. Those defaults are READ OFF
+     * {@link GalaxyGenConfig#stockSpiral()} rather than written here: they were literals once, and the
+     * copy went stale the moment the galaxy scale moved. {@code weight} is the deliberate exception —
+     * it defaults to {@code 1}, the rarest, because a type a pack did not weight should not silently
+     * inherit a spiral's abundance.</p>
      */
     private static GalaxyGenConfig.GalaxyType readGalaxyType(Node node) {
         String profileName = attr(node, ATTR_PROFILE);
@@ -348,15 +352,16 @@ public class XMLPlanetLoader {
             }
         }
         String name = attr(node, ATTR_NAME);
+        GalaxyGenConfig.GalaxyType stock = GalaxyGenConfig.stockSpiral();
         return new GalaxyGenConfig.GalaxyType(
                 (name == null || name.trim().isEmpty()) ? "Galaxy" : name.trim(),
                 profile,
-                attrDouble(node, ATTR_MINRADIUS, 900d),
-                attrDouble(node, ATTR_MAXRADIUS, 2200d),
-                attrDouble(node, ATTR_THICKNESS, 0.02d),
-                attrInt(node, ATTR_ARMS, 2),
-                attrDouble(node, ATTR_ROTATIONSPEED, 220d),
-                attrDouble(node, ATTR_COREFRACTION, 0.08d),
+                attrDouble(node, ATTR_MINRADIUS, stock.minRadiusLy),
+                attrDouble(node, ATTR_MAXRADIUS, stock.maxRadiusLy),
+                attrDouble(node, ATTR_THICKNESS, stock.scaleHeightRatio),
+                attrInt(node, ATTR_ARMS, stock.armCount),
+                attrDouble(node, ATTR_ROTATIONSPEED, stock.rotationSpeedKmS),
+                attrDouble(node, ATTR_COREFRACTION, stock.coreRadiusFraction),
                 attrInt(node, ATTR_WEIGHT, 1));
     }
 

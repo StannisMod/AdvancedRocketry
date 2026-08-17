@@ -256,6 +256,24 @@ public final class GalaxyGenConfig {
      * The stock galaxy table. Weights are the real abundance ordering — dwarfs outnumber giants by two
      * orders — so a spiral is something a player FINDS rather than the default sky.
      */
+    /**
+     * The stock SPIRAL archetype — the type every partially-specified {@code <galaxyType>} inherits
+     * its unwritten attributes from.
+     *
+     * <p>It exists so those defaults are not a second copy of the numbers below. They were, and the
+     * copy went stale the moment the galaxy scale moved: a pack writing
+     * {@code <galaxyType thickness="0.05"/>} got a "spiral" 900&ndash;2 200 ly across, an order and a
+     * half under every real one, silently and only in the authored path.</p>
+     */
+    public static GalaxyType stockSpiral() {
+        for (GalaxyType t : defaultGalaxyTypes()) {
+            if ("Spiral".equals(t.name)) {
+                return t;
+            }
+        }
+        throw new IllegalStateException("the stock galaxy table must contain a Spiral");
+    }
+
     private static List<GalaxyType> defaultGalaxyTypes() {
         // The bands are REAL radii, read off a catalogue and stated in light years so they can be
         // checked against one — never a multiple of UniverseScale.REFERENCE_GALAXY_RADIUS_LY. They
