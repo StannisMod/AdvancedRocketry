@@ -156,6 +156,7 @@ public final class HeatNetwork {
         HeatNetworkState state = (HeatNetworkState) raw;
         if (!enabled()) {
             state.setThermalState(0L, 0L, ambientKelvin(), 0);
+            state.setRejectionState(0L, 0, 0);
             return;
         }
 
@@ -184,15 +185,106 @@ public final class HeatNetwork {
             // A loop of consoles and nothing else has nowhere to put heat, so it must not collect
             // any: taking it would be the one thing conservation forbids.
             state.setThermalState(0L, 0L, ambientKelvin(), 0);
+            state.setRejectionState(0L, exchangerCount(members), 0);
             return;
         }
 
         long generated = collectGeneration(world, state.getEmitterPositions());
         stored += generated;
+        // Rejection is evaluated at the temperature the loop has AFTER this tick's generation, and
+        // is bounded by what the loop actually holds, so a loop can never radiate itself below
+        // ambient. It does not need that bound to be physical — at ambient the quartic difference is
+        // exactly zero — but it does need it against rounding.
+        long rejected = rejectHeat(members, capacity, stored);
+        stored -= rejected;
         distribute(mass, capacity, stored);
 
         state.setThermalState(stored, capacity, temperature(stored, capacity),
                 (int) Math.min(Integer.MAX_VALUE, generated));
+        state.setRejectionState(rejected, exchangerCount(members), radiatingCells(members));
+    }
+
+    /**
+     * Heat leaving the loop through everything attached to it that can move heat out.
+     * <p>
+     * {@code P = k · A · (T⁴ − T_amb⁴)} in floating point, with `k` expressed as a reference power at
+     * a reference temperature so the config states a point on the curve rather than a bare
+     * coefficient. The quartic is the whole reason a chiller is interesting later: area buys
+     * rejection linearly, temperature buys it to the fourth power.
+     * <p>
+     * The machines are told how much to move; they never say. That asymmetry is deliberate — see
+     * {@link IHeatExchanger}.
+     */
+    private static long rejectHeat(List<ISubsystemNetworkNode> members, long capacity, long stored) {
+        if (stored <= 0L) {
+            return 0L;
+        }
+        List<IHeatExchanger> exchangers = new ArrayList<>();
+        long totalCells = 0L;
+        for (ISubsystemNetworkNode node : members) {
+            if (!(node instanceof IHeatExchanger)) {
+                continue;
+            }
+            int cells = Math.max(0, ((IHeatExchanger) node).getExchangeCells());
+            if (cells <= 0) {
+                continue;
+            }
+            exchangers.add((IHeatExchanger) node);
+            totalCells += cells;
+        }
+        if (totalCells <= 0L) {
+            return 0L;
+        }
+
+        double loopKelvin = temperature(stored, capacity);
+        double ambient = ambientKelvin();
+        double reference = Math.max(1.0D, ARConfiguration.getCurrentConfig().shipHeatRadiatorReferenceKelvin);
+        double perCell = perTick(ARConfiguration.getCurrentConfig().shipHeatRadiatorCellPower)
+                * (pow4(loopKelvin) - pow4(ambient)) / pow4(reference);
+        if (perCell <= 0.0D) {
+            return 0L;
+        }
+
+        long want = Math.min(stored, (long) (perCell * totalCells));
+        long rejected = 0L;
+        long handedOut = 0L;
+        for (int i = 0; i < exchangers.size(); i++) {
+            IHeatExchanger exchanger = exchangers.get(i);
+            long share = i == exchangers.size() - 1
+                    ? want - handedOut
+                    : want * Math.max(0, exchanger.getExchangeCells()) / totalCells;
+            handedOut += share;
+            if (share > 0L) {
+                rejected += Math.max(0L, exchanger.exchange(share));
+            }
+        }
+        return Math.min(stored, rejected);
+    }
+
+    /** `T⁴` in double, never int: 2000 K overflows a 32-bit accumulator immediately. */
+    private static double pow4(double kelvin) {
+        double squared = kelvin * kelvin;
+        return squared * squared;
+    }
+
+    private static int exchangerCount(List<ISubsystemNetworkNode> members) {
+        int count = 0;
+        for (ISubsystemNetworkNode node : members) {
+            if (node instanceof IHeatExchanger) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int radiatingCells(List<ISubsystemNetworkNode> members) {
+        long cells = 0L;
+        for (ISubsystemNetworkNode node : members) {
+            if (node instanceof IHeatExchanger) {
+                cells += Math.max(0, ((IHeatExchanger) node).getExchangeCells());
+            }
+        }
+        return (int) Math.min(Integer.MAX_VALUE, cells);
     }
 
     /**

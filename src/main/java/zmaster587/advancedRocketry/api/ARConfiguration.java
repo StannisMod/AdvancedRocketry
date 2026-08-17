@@ -307,6 +307,12 @@ public class ARConfiguration {
     @ConfigProperty
     public int shipHeatWasteFraction;
     @ConfigProperty
+    public int shipHeatRadiatorCellPower;
+    @ConfigProperty
+    public int shipHeatRadiatorReferenceKelvin;
+    @ConfigProperty
+    public int shipHeatRadiatorClearance;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -597,6 +603,9 @@ public class ARConfiguration {
         arConfig.shipHeatAccumulatorCapacity = config.get(HEAT, "shipHeatAccumulatorCapacity", 1000, "How much heat one accumulator block absorbs per kelvin — fifty pipes' worth at the defaults, which is what makes a block of it worth the space when a jump has to be survived.", 0, Integer.MAX_VALUE).getInt();
         arConfig.shipHeatPipeThroughput = config.get(HEAT, "shipHeatPipeThroughput", 200000, "Heat one pipe block will carry each second between the loop and what is attached to it. The default is exactly one mid-game reactor at cruise, so a second reactor wants a second run rather than a longer one.", 0, Integer.MAX_VALUE).getInt();
         arConfig.shipHeatWasteFraction = config.get(HEAT, "shipHeatWasteFraction", 300, "How much of the energy a machine spends comes back out as waste heat a coolant loop can pick up, in thousandths. The rest is taken away by the air around the machine, which is why a planetside base needs no thermal build at all.", 0, 1000).getInt();
+        arConfig.shipHeatRadiatorCellPower = config.get(HEAT, "shipHeatRadiatorCellPower", 6000, "How much heat one radiating cell sheds each second when the loop is at the reference temperature and the surroundings are cold. This is a POINT ON THE CURVE, not the whole answer: the law is quartic, so the same cell sheds far less at a cooler loop temperature and far more at a hotter one, and that is what makes a chiller worth building.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.shipHeatRadiatorReferenceKelvin = config.get(HEAT, "shipHeatRadiatorReferenceKelvin", 500, "The loop temperature at which a cell sheds exactly shipHeatRadiatorCellPower, in kelvin. Move this and every cell is rescaled without the curve changing shape.", 1, 5000).getInt();
+        arConfig.shipHeatRadiatorClearance = config.get(HEAT, "shipHeatRadiatorClearance", 10, "How many blocks must be empty in front of a radiating cell for it to work. Anything in the way means the heat comes back to the ship, which is deliberately not modelled — the cell simply stops working and reports where the obstruction is. Rejection is meant to be built with margin, so losing one cell is a degradation and not a failure.", 1, 64).getInt();
         arConfig.solarGeneratorMult = config.get(ENERGY, "solarGeneratorMultiplier", 1, "Power produced per tick by the solar generator.").getInt();
         arConfig.microwaveRecieverMulitplier = (float) config.get(ENERGY, "MicrowaveRecieverMultiplier", 1f, "Multiplier for microwave receiver power output.").getDouble();
         arConfig.defaultItemTimeBlackHole = config.get(ENERGY, "defaultBurnTime", 500, "Burn time in ticks for items not listed in blackHoleTimings.").getInt();

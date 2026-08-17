@@ -30,6 +30,9 @@ public class HeatNetworkState extends SubsystemNetworkState {
      * does not.
      */
     private List<BlockPos> emitterPositions = Collections.emptyList();
+    private long rejectedThisTick;
+    private int exchangerCount;
+    private int radiatingCells;
 
     @Override
     public SubsystemNetworkState copy() {
@@ -48,7 +51,35 @@ public class HeatNetworkState extends SubsystemNetworkState {
             heat.temperatureKelvin = temperatureKelvin;
             heat.generationThisTick = generationThisTick;
             heat.emitterPositions = new ArrayList<>(emitterPositions);
+            heat.rejectedThisTick = rejectedThisTick;
+            heat.exchangerCount = exchangerCount;
+            heat.radiatingCells = radiatingCells;
         }
+    }
+
+    /** Heat that left the loop for good on the last tick. */
+    public long getRejectedThisTick() {
+        return rejectedThisTick;
+    }
+
+    /** How many machines on this loop can move heat out of it, working or not. */
+    public int getExchangerCount() {
+        return exchangerCount;
+    }
+
+    /**
+     * Working surface across all of them. Read beside {@link #getExchangerCount()} this is the
+     * blocked-state readout: three exchangers reporting two cells means one of them is obstructed,
+     * and which one is a question for the block itself.
+     */
+    public int getRadiatingCells() {
+        return radiatingCells;
+    }
+
+    void setRejectionState(long rejectedThisTick, int exchangerCount, int radiatingCells) {
+        this.rejectedThisTick = rejectedThisTick;
+        this.exchangerCount = exchangerCount;
+        this.radiatingCells = radiatingCells;
     }
 
     /** The machines this loop touches. Re-derived whenever the loop is rebuilt. */

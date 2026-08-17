@@ -6,6 +6,7 @@ import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
+import zmaster587.advancedRocketry.subsystem.hull.HullClearance;
 
 /**
  * Throwing matter out of a hull, done once for everyone who needs to.
@@ -34,23 +35,12 @@ public final class EjectionPort {
     /**
      * How far along {@code facing} the first obstruction sits, or 0 when the exit is clear.
      * <p>
-     * Reported as a distance rather than a boolean because a blocked port is something a player has
-     * to go and FIND: "blocked at 2" sends them to the right block, "blocked" sends them around the
-     * ship. Air and replaceable blocks (grass, snow) do not count as obstructions — a port that
-     * refused to fire because of a snow layer would read as broken.
+     * The walk itself is {@link HullClearance}: a radiator needs the same question answered and is
+     * not ejecting anything, so the implementation moved somewhere neutrally named and this stays as
+     * the ejection-side name for it.
      */
     public static int obstructionDistance(World world, BlockPos pos, EnumFacing facing, int clearance) {
-        if (world == null || pos == null || facing == null) {
-            return 1;
-        }
-        for (int step = 1; step <= Math.max(1, clearance); step++) {
-            BlockPos ahead = pos.offset(facing, step);
-            if (!world.isAirBlock(ahead)
-                    && !world.getBlockState(ahead).getBlock().isReplaceable(world, ahead)) {
-                return step;
-            }
-        }
-        return 0;
+        return HullClearance.obstructionDistance(world, pos, facing, clearance);
     }
 
     /**

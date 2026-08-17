@@ -10863,7 +10863,13 @@ public class TestProbeCommand extends CommandBase {
                     "shipHeat",
                     "shipHeatPipeCapacity",
                     "shipHeatAccumulatorCapacity",
-                    "shipHeatWasteFraction"));
+                    "shipHeatWasteFraction",
+                    // The radiator's reference point and its clearance: an area-linearity test has to
+                    // build cells rather than tune them, but a clearance test needs the RULE's
+                    // distance to place an obstruction at, and hard-coding the default would make
+                    // the assertion restate a tuned number instead of the rule it enforces.
+                    "shipHeatRadiatorCellPower",
+                    "shipHeatRadiatorClearance"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -16679,6 +16685,13 @@ public class TestProbeCommand extends CommandBase {
         out.append(",\"temperatureMilliK\":").append(heatState == null
                 ? 0L
                 : Math.round(heatState.getTemperatureKelvin() * 1000.0D));
+        // Rejection, and the two numbers that make the blocked state readable: how many machines on
+        // the loop CAN shed heat, and how much working surface they actually have between them. Three
+        // exchangers reporting two cells is one obstructed cell, which is a degradation and not a
+        // failure — and `heat read` on the cell itself says how far away the obstruction is.
+        out.append(",\"heatRejected\":").append(heatState == null ? 0L : heatState.getRejectedThisTick());
+        out.append(",\"exchangers\":").append(heatState == null ? 0 : heatState.getExchangerCount());
+        out.append(",\"radiatingCells\":").append(heatState == null ? 0 : heatState.getRadiatingCells());
         out.append('}');
         send(sender, out.toString());
     }
@@ -16699,14 +16712,19 @@ public class TestProbeCommand extends CommandBase {
      * per-tick physics makes — the probe supplies a starting state, it does not implement one.</p>
      *
      * <pre>
-     * {"ok":true,"isLoopBlock":true,"heatStored":4530,"heatCapacity":20}
+     * {"ok":true,"isLoopBlock":true,"heatStored":4530,"heatCapacity":20,"isRadiator":true,
+     *  "obstruction":0,"radiatingCells":1,"facing":"up","rejected":264}
      * </pre>
      */
     private void handleHeat(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 6 && "cycle".equalsIgnoreCase(args[0])) {
+            handleHeatCycle(server, sender, args);
+            return;
+        }
         if (args.length < 5
                 || !("set".equalsIgnoreCase(args[0]) || "read".equalsIgnoreCase(args[0]))) {
             send(sender, "{\"error\":\"unknown heat subcommand — try set <dim> <x> <y> <z> <amount>"
-                    + " | read <dim> <x> <y> <z>\"}");
+                    + " | read <dim> <x> <y> <z> | cycle <dim> <x> <y> <z> <charge> [ticks]\"}");
             return;
         }
         int dim = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -16733,8 +16751,92 @@ public class TestProbeCommand extends CommandBase {
             }
             loopBlock.setStoredHeat(parseLongOr(args[5], 0L));
         }
+        // A radiating cell answers two more things, and every loop block answers them so the reply
+        // keeps one shape: a plain pipe is simply never obstructed and never sheds anything.
+        boolean isRadiator = loopBlock instanceof zmaster587.advancedRocketry.tile.heat.TileHeatRadiator;
+        zmaster587.advancedRocketry.tile.heat.TileHeatRadiator radiator = isRadiator
+                ? (zmaster587.advancedRocketry.tile.heat.TileHeatRadiator) loopBlock
+                : null;
         send(sender, "{\"ok\":true,\"isLoopBlock\":true,\"heatStored\":" + loopBlock.getStoredHeat()
-                + ",\"heatCapacity\":" + loopBlock.getHeatCapacity() + "}");
+                + ",\"heatCapacity\":" + loopBlock.getHeatCapacity()
+                + ",\"isRadiator\":" + isRadiator
+                + ",\"obstruction\":" + (radiator == null ? 0 : radiator.getObstruction())
+                + ",\"radiatingCells\":" + (radiator == null ? 0 : radiator.getExchangeCells())
+                + ",\"facing\":\"" + (radiator == null ? "none" : radiator.getRadiatingFacing().getName())
+                + "\",\"rejected\":" + (radiator == null ? 0L : radiator.getRejectedThisTick()) + "}");
+    }
+
+    /**
+     * {@code /artest heat cycle <dim> <x> <y> <z> <charge> [ticks]} — charge a whole coolant loop to
+     * exactly {@code charge} and advance it, in ONE call.
+     *
+     * <p>It has to be one call. A probe holds the server thread while it runs, but <b>between</b>
+     * calls the world ticks normally, and the heat domain is ticked by the ordinary
+     * {@code WorldTickEvent} like everything else — so a test that charged a loop with one command
+     * and measured it with the next was measuring whatever was left after some natural ticks had
+     * already shed heat. That is not a small error: two loops with different radiating area cool at
+     * different rates in the gap, so the very ratio such a test exists to measure is the thing the
+     * gap corrupts. Measured 2026-08-17, and it read exactly like a broken area law.</p>
+     *
+     * <p>Charging is per LOOP, not per block: the queried block takes all of it and every other
+     * member is zeroed, so the loop holds the stated number and nothing else. Then the domain's own
+     * public tick runs {@code ticks} times — production, not a copy of it.</p>
+     *
+     * <pre>
+     * {"ok":true,"inLoop":true,"charged":8000,"ticks":1,"rejected":79,"heatStored":7921,
+     *  "heatCapacity":80,"temperatureMilliK":392012,"exchangers":1,"radiatingCells":1}
+     * </pre>
+     */
+    private void handleHeatCycle(MinecraftServer server, ICommandSender sender, String[] args) {
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        long charge = parseLongOr(args[5], 0L);
+        int ticks = args.length >= 7 ? Math.max(0, Math.min(20000, parseIntOr(args[6], 1))) : 1;
+
+        zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState raw =
+                zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager.getState(
+                        zmaster587.advancedRocketry.subsystem.heat.HeatNetwork.DOMAIN, world, pos);
+        if (!(raw instanceof zmaster587.advancedRocketry.subsystem.heat.HeatNetworkState)) {
+            send(sender, "{\"ok\":true,\"inLoop\":false,\"charged\":0,\"ticks\":0,\"rejected\":0,"
+                    + "\"heatStored\":0,\"heatCapacity\":0,\"temperatureMilliK\":0,\"exchangers\":0,"
+                    + "\"radiatingCells\":0}");
+            return;
+        }
+
+        for (BlockPos member : raw.getMemberPositions()) {
+            net.minecraft.tileentity.TileEntity tile = world.getTileEntity(member);
+            if (tile instanceof zmaster587.advancedRocketry.tile.heat.TileHeatLoopBlock) {
+                ((zmaster587.advancedRocketry.tile.heat.TileHeatLoopBlock) tile)
+                        .setStoredHeat(member.equals(pos) ? charge : 0L);
+            }
+        }
+        for (int i = 0; i < ticks; i++) {
+            zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager.tick(
+                    zmaster587.advancedRocketry.subsystem.heat.HeatNetwork.DOMAIN, world);
+        }
+
+        zmaster587.advancedRocketry.subsystem.heat.HeatNetworkState after =
+                (zmaster587.advancedRocketry.subsystem.heat.HeatNetworkState)
+                        zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager.getState(
+                                zmaster587.advancedRocketry.subsystem.heat.HeatNetwork.DOMAIN, world, pos);
+        if (after == null) {
+            send(sender, "{\"ok\":true,\"inLoop\":false,\"charged\":" + charge + ",\"ticks\":" + ticks
+                    + ",\"rejected\":0,\"heatStored\":0,\"heatCapacity\":0,\"temperatureMilliK\":0,"
+                    + "\"exchangers\":0,\"radiatingCells\":0}");
+            return;
+        }
+        send(sender, "{\"ok\":true,\"inLoop\":true,\"charged\":" + charge + ",\"ticks\":" + ticks
+                + ",\"rejected\":" + after.getRejectedThisTick()
+                + ",\"heatStored\":" + after.getStoredHeat()
+                + ",\"heatCapacity\":" + after.getHeatCapacity()
+                + ",\"temperatureMilliK\":" + Math.round(after.getTemperatureKelvin() * 1000.0D)
+                + ",\"exchangers\":" + after.getExchangerCount()
+                + ",\"radiatingCells\":" + after.getRadiatingCells() + "}");
     }
 
     // Gas separator state probe ---------------------------------------
