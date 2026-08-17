@@ -116,7 +116,7 @@ public final class ShieldControl {
             if (group == null) {
                 continue;
             }
-            if (emitter.getShieldPriority() != group.getPriority()) {
+            if (emitter.getPriority() != group.getPriority()) {
                 emitter.setPriority(group.getPriority());
             }
             applied++;

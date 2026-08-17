@@ -1,8 +1,7 @@
 package com.github.stannismod.affs.world.contour;
 
 import com.github.stannismod.affs.te.TileEntityContourInjector;
-import com.github.stannismod.affs.world.shield.IShieldNetworkNode;
-import com.github.stannismod.affs.world.shield.ShieldNetworkRegistry;
+import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -10,6 +9,8 @@ import net.minecraftforge.event.world.ExplosionEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import zmaster587.advancedRocketry.api.Constants;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemNetworkNode;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
 
 import java.util.*;
 
@@ -27,7 +28,9 @@ public final class ContourFieldExplosionHandler {
         }
 
         Map<TileEntityContourInjector, Set<BlockPos>> injectorBlocks = new LinkedHashMap<>();
-        for (IShieldNetworkNode node : ShieldNetworkRegistry.snapshot()) {
+        // The registry is already keyed by domain, so naming it here is the whole filter — there is
+        // nothing else in this set to sort out.
+        for (ISubsystemNetworkNode node : SubsystemNetworkRegistry.snapshot(ShieldNetworkManager.DOMAIN)) {
             if (!(node instanceof TileEntityContourInjector)) {
                 continue;
             }

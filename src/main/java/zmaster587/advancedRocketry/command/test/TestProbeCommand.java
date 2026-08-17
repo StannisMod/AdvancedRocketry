@@ -775,7 +775,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("shieldStored", emitter.getEnergyStored());
                 info.put("shieldMax", emitter.getMaxEnergyStored());
                 info.put("radius", emitter.getRadius());
-                info.put("requested", emitter.getRequestedShieldEnergy());
+                info.put("requested", emitter.getRequested());
                 // P2 (D134-3/4): the emitter's tier, its tier-scaled recharge throughput (the per-zone
                 // regen cap), the passive-maintenance draw this tick, and how much it actually received
                 // this tick — so a test can assert the throughput cap and the tier scaling.
@@ -792,7 +792,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("worldZ", wc.z);
                 info.put("shipFramed", emitter.isShipFramed());
                 info.put("frameReady", emitter.isFrameReady());
-                info.put("priority", emitter.getShieldPriority());
+                info.put("priority", emitter.getPriority());
                 // P4 (D134-5/6): the emitter's domain, the priority group that lists it (if any), and its
                 // carried access credential — so a test can assert group push-down and code rotation.
                 String domainId = com.github.stannismod.affs.world.shield.ShieldDomains.forBlock(
@@ -811,7 +811,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("kind", "generator");
                 info.put("shieldStored", gen.getShieldStored());
                 info.put("feStored", gen.getFeStored());
-                info.put("available", gen.getAvailableShieldEnergy());
+                info.put("available", gen.getAvailable());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldCable) {
                 // P6: a cable's transport cap, so a test can compare the two limiters (transport vs the
                 // emitter's recharge throughput) without pinning either magnitude.
@@ -825,8 +825,8 @@ public class TestProbeCommand extends CommandBase {
                 info.put("kind", "accumulator");
                 info.put("shieldStored", acc.getShieldStored());
                 info.put("shieldMax", acc.getMaxShieldStored());
-                info.put("available", acc.getAvailableShieldEnergy());
-                info.put("free", acc.getFreeShieldCapacity());
+                info.put("available", acc.getAvailable());
+                info.put("free", acc.getFreeCapacity());
             } else {
                 info.put("error", "not a shield tile");
                 info.put("tileClass", tile == null ? "null" : tile.getClass().getName());
@@ -980,7 +980,72 @@ public class TestProbeCommand extends CommandBase {
             if (args.length >= 6) {
                 emitter.setPriority(parseIntOr(args[5], 0));
             }
-            send(sender, "{\"ok\":true,\"priority\":" + emitter.getShieldPriority() + "}");
+            send(sender, "{\"ok\":true,\"priority\":" + emitter.getPriority() + "}");
+            return;
+        }
+        if (args.length >= 5 && "console-info".equalsIgnoreCase(args[0])) {
+            // console-info <dim> <x> <y> <z> — what a shield CONSOLE is currently displaying, as
+            // opposed to what the network state says. The two can disagree, and that disagreement is
+            // the bug class this verb exists to make visible (ledger #260). Read out of the console's
+            // own writeToNBT, so it reports the same fields production persists rather than a
+            // parallel accessor that could drift from them.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof com.github.stannismod.affs.te.TileEntityShieldConsole)) {
+                send(sender, "{\"error\":\"not a TileEntityShieldConsole\",\"tile\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound shown =
+                    tile.writeToNBT(new net.minecraft.nbt.NBTTagCompound());
+            send(sender, "{\"ok\":true"
+                    + ",\"networkConnected\":" + shown.getBoolean("networkConnected")
+                    + ",\"networkStatus\":" + shown.getInteger("networkStatus")
+                    + ",\"cableCount\":" + shown.getInteger("cableCount")
+                    + ",\"sourceAvailable\":" + shown.getInteger("sourceAvailable")
+                    + ",\"sinkRequested\":" + shown.getInteger("sinkRequested")
+                    + ",\"deliveredFlow\":" + shown.getInteger("deliveredFlow")
+                    + ",\"resistanceBias\":" + shown.getDouble("shieldEnergyResistanceBias") + "}");
+            return;
+        }
+        if (args.length >= 6 && "console-bias".equalsIgnoreCase(args[0])) {
+            // console-bias <dim> <x> <y> <z> <0..1> — drive the console's own
+            // applyShieldEnergyResistanceBias, the method its GUI slider calls. The setting is
+            // console-OWNED and console-persisted, which is the property a restart test pins.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            double bias;
+            try {
+                bias = Double.parseDouble(args[5]);
+            } catch (NumberFormatException badNumber) {
+                send(sender, "{\"error\":\"bias must be a number\",\"got\":\"" + escapeJson(args[5]) + "\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof com.github.stannismod.affs.te.TileEntityShieldConsole)) {
+                send(sender, "{\"error\":\"not a TileEntityShieldConsole\"}");
+                return;
+            }
+            com.github.stannismod.affs.te.TileEntityShieldConsole consoleTile =
+                    (com.github.stannismod.affs.te.TileEntityShieldConsole) tile;
+            consoleTile.applyShieldEnergyResistanceBias(bias);
+            send(sender, "{\"ok\":true,\"resistanceBias\":"
+                    + consoleTile.getShieldEnergyResistanceBias() + "}");
             return;
         }
         if (args.length >= 6 && "group".equalsIgnoreCase(args[0])) {
