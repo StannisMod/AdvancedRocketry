@@ -60,6 +60,15 @@ public final class ModConfig {
     // multi-emitter network squeezed through one thin line. Tunable, never balance-pinned.
     public static int cableThroughputPerTick = 20_000;
 
+    // A shield node's condition drives what it DELIVERS. Two coefficients because the two consequences
+    // are different in kind, not in size: a scalar node (generator / cable / accumulator) simply moves
+    // less, while an emitter projects a SMALLER SPHERE — the one consequence a player can see coming,
+    // before the shell collapses. Each is the fraction lost at the last stage before destruction; 0
+    // disables that consequence entirely. Neither touches what the shield COSTS: a shrunken emitter is
+    // still billed for the radius it was told to hold, or being shot would save energy.
+    public static double shieldNodeDamagePenaltyMax = 0.75D;
+    public static double emitterRadiusDamagePenaltyMax = 0.5D;
+
     // D134-2 tier-1 cooperative weapon interaction (axis-G tunable, never balance-pinned):
     //  - shieldStrikeAbsorptionRate: shield energy spent per unit of a cooperative strike's declared
     //    impact energy. spent = min(stored, impactEnergy x rate x kindMult / tierEff).
@@ -240,6 +249,28 @@ public final class ModConfig {
                 "Per-tick shield-energy transport capacity of one cable. Kept well above a single emitter's "
                         + "recharge throughput on purpose: normal builds should be limited by where you put "
                         + "your emitters, not by pipe-sizing. Lower it to make plumbing a real constraint."
+        );
+
+        shieldNodeDamagePenaltyMax = configuration.getFloat(
+                "shieldNodeDamagePenaltyMax",
+                CATEGORY_SHIELD,
+                0.75F,
+                0.0F,
+                1.0F,
+                "How much of a shield generator's conversion, a cable's transport or an accumulator's "
+                        + "reserve is lost when the block is one stage from destruction. 0 makes battle "
+                        + "damage free for these blocks."
+        );
+
+        emitterRadiusDamagePenaltyMax = configuration.getFloat(
+                "emitterRadiusDamagePenaltyMax",
+                CATEGORY_SHIELD,
+                0.5F,
+                0.0F,
+                1.0F,
+                "How much of an emitter's radius is lost when the block is one stage from destruction. "
+                        + "The field visibly draws in, uncovering whatever it used to reach; the emitter is "
+                        + "still billed for its declared radius, so damage never saves energy."
         );
 
         generatorShieldBuffer = configuration.getInt(

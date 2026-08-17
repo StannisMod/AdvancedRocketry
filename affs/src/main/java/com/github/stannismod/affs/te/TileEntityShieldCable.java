@@ -104,7 +104,10 @@ public class TileEntityShieldCable extends TileEntity implements ITickable, ISub
     public int getThroughputPerTick() {
         // Config-tunable (P6): transport is meant to be the limiter of LAST resort, so this sits well
         // above one emitter's recharge throughput and a normal build is bound by emitter placement.
-        return com.github.stannismod.affs.config.ModConfig.cableThroughputPerTick;
+        // Scaled by this cable's own condition: a shot-up line carries less, which is what turns a hit
+        // on the plumbing into a shield that refills slowly instead of one that notices nothing.
+        return com.github.stannismod.affs.world.shield.ShieldCondition.derate(world, pos,
+                com.github.stannismod.affs.config.ModConfig.cableThroughputPerTick);
     }
 
     @Override

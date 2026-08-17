@@ -1,6 +1,7 @@
 package com.github.stannismod.affs.te;
 
 import com.github.stannismod.affs.config.ModConfig;
+import com.github.stannismod.affs.world.shield.ShieldCondition;
 import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
@@ -53,7 +54,7 @@ public class TileEntityShieldGenerator extends TileEntity implements ITickable, 
         shieldProducedThisTick = 0;
         shieldExtractedThisTick = 0;
 
-        int convertible = Math.min(CONVERSION_PER_TICK, feStorage.getEnergyStored());
+        int convertible = Math.min(getConversionPerTick(), feStorage.getEnergyStored());
         convertible = Math.min(convertible, shieldStorage.getMaxEnergyStored() - shieldStorage.getEnergyStored());
         if (convertible > 0) {
             feStorage.drainInternal(convertible);
@@ -149,8 +150,17 @@ public class TileEntityShieldGenerator extends TileEntity implements ITickable, 
         return shieldStorage.getEnergyStored();
     }
 
+    /**
+     * How much FE this generator can turn into shield energy in one tick, in the condition it is in.
+     * A battered plant converts less: the rated figure scaled by the block's own damage stage, pulled
+     * from the world rather than pushed by whatever hit it.
+     */
+    public int getConversionPerTick() {
+        return ShieldCondition.derate(world, pos, CONVERSION_PER_TICK);
+    }
+
     public int getShieldProductionPotential() {
-        return Math.max(0, Math.min(CONVERSION_PER_TICK, Math.min(feStorage.getEnergyStored(), shieldStorage.getMaxEnergyStored() - shieldStorage.getEnergyStored())));
+        return Math.max(0, Math.min(getConversionPerTick(), Math.min(feStorage.getEnergyStored(), shieldStorage.getMaxEnergyStored() - shieldStorage.getEnergyStored())));
     }
 
     /**

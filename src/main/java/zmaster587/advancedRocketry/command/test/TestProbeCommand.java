@@ -774,7 +774,13 @@ public class TestProbeCommand extends CommandBase {
                 info.put("powered", emitter.isFieldPowered());
                 info.put("shieldStored", emitter.getEnergyStored());
                 info.put("shieldMax", emitter.getMaxEnergyStored());
+                // The field it PROJECTS beside the field it was DECLARED to hold, and the bill. A
+                // damaged emitter separates the three: the first shrinks, the second does not, and the
+                // third is charged against the second — so a test can read "damage never pays" off one
+                // response instead of inferring it.
                 info.put("radius", emitter.getRadius());
+                info.put("declaredRadius", emitter.getDeclaredRadius());
+                info.put("cycleCost", emitter.getShieldCycleCost());
                 info.put("requested", emitter.getRequested());
                 // P2 (D134-3/4): the emitter's tier, its tier-scaled recharge throughput (the per-zone
                 // regen cap), the passive-maintenance draw this tick, and how much it actually received
@@ -812,6 +818,9 @@ public class TestProbeCommand extends CommandBase {
                 info.put("shieldStored", gen.getShieldStored());
                 info.put("feStored", gen.getFeStored());
                 info.put("available", gen.getAvailable());
+                // The conversion CAP in this generator's current condition — independent of how full
+                // its FE buffer happens to be, which is what makes it readable as an ordering.
+                info.put("conversionPerTick", gen.getConversionPerTick());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldCable) {
                 // P6: a cable's transport cap, so a test can compare the two limiters (transport vs the
                 // emitter's recharge throughput) without pinning either magnitude.
@@ -825,6 +834,8 @@ public class TestProbeCommand extends CommandBase {
                 info.put("kind", "accumulator");
                 info.put("shieldStored", acc.getShieldStored());
                 info.put("shieldMax", acc.getMaxShieldStored());
+                // Rated capacity above, what this bank can still hold in its current condition here.
+                info.put("shieldMaxEffective", acc.getEffectiveMaxShieldStored());
                 info.put("available", acc.getAvailable());
                 info.put("free", acc.getFreeCapacity());
             } else {
@@ -876,6 +887,22 @@ public class TestProbeCommand extends CommandBase {
             info.put("posY", y);
             info.put("posZ", z);
             info.put("activeEmitters", emitters.size());
+            // Zone ownership answers WHICH emitter is responsible for a point; coverage answers whether
+            // anything actually reaches it. They come apart exactly when an emitter shrinks — its zone
+            // is still nearest, and the hull inside it is no longer under the shell — which is the
+            // consequence a damaged emitter is supposed to have, so both are reported side by side.
+            // Signed: negative is inside the field, positive is the gap outside it.
+            double hullDistance = com.github.stannismod.affs.world.FieldSurfaceMath
+                    .compositeHullDistance(emitters, point);
+            info.put("hullDistance", Double.isInfinite(hullDistance) ? Double.MAX_VALUE : hullDistance);
+            boolean covered = false;
+            for (com.github.stannismod.affs.te.TileEntityFieldGenerator emitter : emitters) {
+                if (emitter.protects(new BlockPos(x, y, z))) {
+                    covered = true;
+                    break;
+                }
+            }
+            info.put("covered", covered);
             if (owner == null) {
                 info.put("owned", false);
             } else {

@@ -103,7 +103,7 @@ public class TileEntityShieldAccumulator extends TileEntity implements ISubsyste
 
     @Override
     public int getFreeCapacity() {
-        return Math.max(0, storage.getMaxEnergyStored() - storage.getEnergyStored());
+        return Math.max(0, getEffectiveMaxShieldStored() - storage.getEnergyStored());
     }
 
     @Override
@@ -127,6 +127,19 @@ public class TileEntityShieldAccumulator extends TileEntity implements ISubsyste
 
     public int getMaxShieldStored() {
         return storage.getMaxEnergyStored();
+    }
+
+    /**
+     * The reserve this accumulator can actually hold in the condition it is in — the rated capacity
+     * scaled by its own damage stage. A battered bank stops accepting sooner, so a fight that damages
+     * the storage shortens how long the shield can be held up afterwards.
+     *
+     * <p>What is already inside is not destroyed by the shrink: energy that was banked before the hit
+     * is still there to spend, it simply cannot be topped back up to where it was.</p>
+     */
+    public int getEffectiveMaxShieldStored() {
+        return com.github.stannismod.affs.world.shield.ShieldCondition.derate(world, pos,
+                storage.getMaxEnergyStored());
     }
 
     public int getShieldReceivedThisTick() {
