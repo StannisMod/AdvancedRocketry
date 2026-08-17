@@ -93,7 +93,7 @@ public final class ShipNavigation implements JumpGate.ShipContext {
 
     @Override
     public long capacitorCharge() {
-        return drive().capacitorCharge(SpaceSubsystem.spaceClock());
+        return drive().capacitorCharge();
     }
 
     @Override

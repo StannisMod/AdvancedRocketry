@@ -2738,12 +2738,12 @@ public class TestProbeCommand extends CommandBase {
             for (zmaster587.advancedRocketry.tile.hyperdrive.TileJumpCapacitor capacitor
                     : drive.capacitors()) {
                 if (full) {
-                    capacitor.fill(now);
+                    capacitor.fill();
                 } else {
-                    capacitor.discharge(capacitor.chargeAt(now), now);
+                    capacitor.discharge(capacitor.charge());
                 }
             }
-            send(sender, "{\"ok\":true,\"charge\":" + drive.capacitorCharge(now) + "}");
+            send(sender, "{\"ok\":true,\"charge\":" + drive.capacitorCharge() + "}");
             return;
         }
         if ("arm".equalsIgnoreCase(verb)) {
@@ -2787,8 +2787,8 @@ public class TestProbeCommand extends CommandBase {
             info.put("burstCost", stats.burstCost());
             info.put("capacitors", drive.capacitors().size());
             info.put("capacity", drive.capacitorCapacity());
-            info.put("charge", drive.capacitorCharge(now));
-            info.put("cooldownTicks", drive.cooldownTicks(now));
+            info.put("charge", drive.capacitorCharge());
+            info.put("cooldownTicks", drive.cooldownTicks());
             info.put("emitters", drive.emitters().size());
             info.put("dampeners", drive.dampeners().size());
             info.put("poweredDampeners", drive.poweredDampenerPositions().size());

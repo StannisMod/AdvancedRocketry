@@ -89,14 +89,25 @@ public final class DriveTuning {
     public static final long CAPACITOR_BASE_CAPACITY = 20_000L;
     /** Charge each capacitor cell adds. */
     public static final long CAPACITY_PER_CELL = 100_000L;
-    /** Charge per tick the controller recovers on its own. */
-    public static final long CAPACITOR_BASE_CHARGE_RATE = 10L;
+
     /**
-     * Charge per tick each heat sink adds. Cooling does not get a mechanism of its own: a sink
-     * raises the rate at which the capacitor refills, and the reload time — the cooldown a pilot
-     * actually feels — is {@code burstCost / chargeRate} with no timer to persist.
+     * How much charge per tick the controller can ACCEPT on its own — a throughput limit, never a
+     * supply. The energy comes from the ship's own generation; this is only how fast the buffer will
+     * swallow it.
+     *
+     * <p>It was {@code CAPACITOR_BASE_CHARGE_RATE} and it meant the opposite: joules the block
+     * recovered by itself, which made the largest cost in this family free. The rename is the whole
+     * correction — a rate constant standing in for an absent power plant will absorb any amount of
+     * tuning and never come right.</p>
      */
-    public static final long CHARGE_RATE_PER_SINK = 40L;
+    public static final long CAPACITOR_BASE_ACCEPT_RATE = 10L;
+    /**
+     * How much more charge per tick each heat sink lets the bank accept. Cooling does not get a
+     * mechanism of its own: a sink is what allows a large inflow to be swallowed without cooking, so
+     * the cooldown a pilot feels is his reactors' output against this ceiling — with no timer to
+     * persist and no energy created anywhere.
+     */
+    public static final long ACCEPT_RATE_PER_SINK = 40L;
     /** How many capacitor components (cells + sinks) one controller will count. */
     public static final int MAX_CAPACITOR_COMPONENTS = 256;
 

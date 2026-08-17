@@ -885,7 +885,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         }
         long capacity = drive.capacitorCapacity();
         hudDriveCharge = capacity <= 0 ? 0f
-                : (float) Math.min(1.0, (double) drive.capacitorCharge(now) / (double) capacity);
+                : (float) Math.min(1.0, (double) drive.capacitorCharge() / (double) capacity);
         zmaster587.advancedRocketry.navigation.ShipNavigation nav =
                 new zmaster587.advancedRocketry.navigation.ShipNavigation(world, getPos(), shipId);
         zmaster587.advancedRocketry.tile.TileNavigationComputer computer = nav.findNavComputer();
