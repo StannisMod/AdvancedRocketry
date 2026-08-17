@@ -45,6 +45,13 @@ public class HeatNetworkState extends SubsystemNetworkState {
      */
     private double incidentFluxPerCell;
     /**
+     * Heat taken OUT of compartment air by the chillers breathing on it, this tick. Reported beside
+     * the work and the delivery so that conservation across the air/coolant boundary is checkable
+     * from ONE tick of ONE component — the same reason the coolant-to-coolant figures are all
+     * reported by the cold loop.
+     */
+    private long airTakenThisTick;
+    /**
      * Heat handed to this loop by a chiller since its last tick. Written by the COLD loop's tick and
      * read by this one, so it is an inbox rather than a statistic — a pump acts while the loop it
      * feeds is not the one being solved.
@@ -78,6 +85,7 @@ public class HeatNetworkState extends SubsystemNetworkState {
             heat.exchangerCount = exchangerCount;
             heat.radiatingCells = radiatingCells;
             heat.incidentFluxPerCell = incidentFluxPerCell;
+            heat.airTakenThisTick = airTakenThisTick;
             heat.pumpPositions = new ArrayList<>(pumpPositions);
         }
     }
@@ -165,9 +173,14 @@ public class HeatNetworkState extends SubsystemNetworkState {
         return incidentFluxPerCell;
     }
 
+    /** Heat this loop's chillers took out of compartment air on the last tick. */
+    public long getAirTakenThisTick() {
+        return airTakenThisTick;
+    }
+
     void setExchangeState(long rejectedThisTick, long pumpedOutThisTick, long deliveredThisTick,
                           long pumpedInThisTick, long workThisTick, int exchangerCount,
-                          int radiatingCells, double incidentFluxPerCell) {
+                          int radiatingCells, double incidentFluxPerCell, long airTakenThisTick) {
         this.rejectedThisTick = rejectedThisTick;
         this.pumpedOutThisTick = pumpedOutThisTick;
         this.deliveredThisTick = deliveredThisTick;
@@ -176,6 +189,7 @@ public class HeatNetworkState extends SubsystemNetworkState {
         this.exchangerCount = exchangerCount;
         this.radiatingCells = radiatingCells;
         this.incidentFluxPerCell = incidentFluxPerCell;
+        this.airTakenThisTick = airTakenThisTick;
     }
 
     /** The machines this loop touches. Re-derived whenever the loop is rebuilt. */

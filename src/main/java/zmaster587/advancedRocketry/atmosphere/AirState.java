@@ -189,6 +189,36 @@ public class AirState {
      * defect as a machine being allowed to declare how much heat it removes. A caller that really is
      * moving the room's own air says so by passing {@link #getTemperatureKelvin()}.
      */
+    /**
+     * Take heat OUT of this air, and answer how much was actually taken.
+     * <p>
+     * The amount asked for is the caller's business — a chiller's throughput, say — and what comes
+     * back is what the air could actually give up, which is what the caller may then move. Reporting
+     * the difference rather than swallowing it is the whole of conservation on this seam: heat that
+     * was not taken from here must not turn up somewhere else.
+     * <p>
+     * Air with no gas in it, or a zone in a world where air carries no heat at all, gives up nothing:
+     * there is no body there to cool. Nothing stops the air being driven BELOW the cabin temperature —
+     * that is what an air conditioner does — and nothing needs to, because the price is Carnot: the
+     * colder the air gets relative to where the heat is going, the more work each unit costs.
+     *
+     * @param volumeBlocks the zone's size, as the flood-fill measured it
+     */
+    public long removeHeat(long amount, int volumeBlocks) {
+        long capacity = getHeatCapacity(volumeBlocks);
+        if (amount <= 0L || capacity <= 0L)
+            return 0L;
+        // Absolute zero is the floor, and it is a floor on the ENERGY that can be removed rather than
+        // a rule about temperature: taking more than the air has leaves it colder than anything is.
+        long available = (long) ((double) temperatureMilliK / 1000.0D * capacity);
+        long taken = Math.min(amount, Math.max(0L, available));
+        if (taken <= 0L)
+            return 0L;
+        double dropped = getTemperatureKelvin() - (double) taken / capacity;
+        temperatureMilliK = (int) Math.max(0L, Math.round(dropped * 1000.0D));
+        return taken;
+    }
+
     public void addNitrogen(int amount, double incomingKelvin) {
         mixIn(Math.max(0, amount), incomingKelvin);
         nitrogen += Math.max(0, amount);

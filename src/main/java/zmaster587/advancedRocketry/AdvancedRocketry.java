@@ -428,6 +428,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.heat.TileHeatAccumulator.class, "ARheatAccumulator");
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.heat.TileHeatRadiator.class, "ARheatRadiator");
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.heat.TileHeatChiller.class, "ARheatChiller");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.heat.TileHeatIntakeDuct.class, "ARheatIntakeDuct");
         GameRegistry.registerTileEntity(TileWarpController.class, "ARStationMonitor");
         GameRegistry.registerTileEntity(TileAtmosphereDetector.class, "AROxygenDetector");
         GameRegistry.registerTileEntity(TileStationOrientationController.class, "AROrientationControl");
@@ -794,6 +795,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockHeatAccumulator = new zmaster587.advancedRocketry.block.BlockHeatAccumulator().setCreativeTab(tabAdvRocketry).setUnlocalizedName("heatAccumulator").setHardness(3f);
         AdvancedRocketryBlocks.blockHeatRadiator = new zmaster587.advancedRocketry.block.BlockHeatRadiator().setCreativeTab(tabAdvRocketry).setUnlocalizedName("heatRadiator").setHardness(1f);
         AdvancedRocketryBlocks.blockHeatChiller = new BlockTile(zmaster587.advancedRocketry.tile.heat.TileHeatChiller.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setUnlocalizedName("heatChiller").setHardness(3f);
+        AdvancedRocketryBlocks.blockHeatIntakeDuct = new zmaster587.advancedRocketry.block.BlockHeatIntakeDuct().setCreativeTab(tabAdvRocketry).setUnlocalizedName("heatIntakeDuct").setHardness(1f);
         AdvancedRocketryBlocks.blockOxygenVent = new BlockTile(TileOxygenVent.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("oxygenVent").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockOxygenCharger = new BlockHalfTile(TileGasChargePad.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("oxygenCharger").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockOxygenDetection = new BlockRedstoneEmitter(Material.IRON, "advancedrocketry:atmosphereDetector_active").setUnlocalizedName("atmosphereDetector").setHardness(3f).setCreativeTab(tabAdvRocketry);
@@ -994,6 +996,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockHeatAccumulator.setRegistryName("heatAccumulator"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockHeatRadiator.setRegistryName("heatRadiator"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockHeatChiller.setRegistryName("heatChiller"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockHeatIntakeDuct.setRegistryName("heatIntakeDuct"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenVent.setRegistryName("oxygenVent"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenCharger.setRegistryName("oxygenCharger"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenDetection.setRegistryName("oxygenDetection"));

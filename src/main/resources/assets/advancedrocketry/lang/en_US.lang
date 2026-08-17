@@ -96,6 +96,7 @@ tile.heatPipe.name=Coolant Pipe
 tile.heatAccumulator.name=Heat Accumulator
 tile.heatRadiator.name=Radiator Cell
 tile.heatChiller.name=Coolant Chiller
+tile.heatIntakeDuct.name=Air Intake Duct
 tile.oxygenCharger.name=Gas Charge Pad
 tile.dockingPad.name=Docking Pad
 tile.stationmonitor.name=Warp Controller

@@ -9,6 +9,9 @@ import zmaster587.advancedRocketry.api.capability.CapabilityHeatEmitter;
 import zmaster587.advancedRocketry.api.capability.CapabilityHeatPump;
 import zmaster587.advancedRocketry.api.capability.IHeatEmitter;
 import zmaster587.advancedRocketry.api.capability.IHeatPump;
+import zmaster587.advancedRocketry.atmosphere.AirState;
+import zmaster587.advancedRocketry.tile.heat.TileHeatChiller;
+import zmaster587.advancedRocketry.tile.heat.TileHeatIntakeDuct;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemNetworkController;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemNetworkNode;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
@@ -179,7 +182,7 @@ public final class HeatNetwork {
         HeatNetworkState state = (HeatNetworkState) raw;
         if (!enabled()) {
             state.setThermalState(0L, 0L, ambientKelvin(), 0);
-            state.setExchangeState(0L, 0L, 0L, 0L, 0L, 0, 0, 0.0D);
+            state.setExchangeState(0L, 0L, 0L, 0L, 0L, 0, 0, 0.0D, 0L);
             return;
         }
 
@@ -227,7 +230,7 @@ public final class HeatNetwork {
             // A loop of consoles and nothing else has nowhere to put heat, so it must not collect any:
             // taking it would be the one thing conservation forbids.
             state.setThermalState(0L, 0L, ambientKelvin(), 0);
-            state.setExchangeState(0L, 0L, 0L, 0L, 0L, exchangerCount(members), 0, 0.0D);
+            state.setExchangeState(0L, 0L, 0L, 0L, 0L, exchangerCount(members), 0, 0.0D, 0L);
             return;
         }
 
@@ -243,6 +246,12 @@ public final class HeatNetwork {
         Pumped pumped = runPumps(world, state, capacity, stored);
         stored -= pumped.movedOut;
 
+        // And what the chillers breathing on a ROOM brought INTO this loop. Driven from the hot side
+        // on purpose: an air-cooled chiller has no cold loop, so no cold loop's tick would ever run
+        // it, and the hot loop is the reservoir that knows both temperatures the exchange needs.
+        Pumped fromAir = runAirCooledPumps(world, state, capacity, stored);
+        stored += fromAir.delivered;
+
         // Signed: negative means the surface ran backwards and the environment put heat IN.
         long rejected = rejectHeat(environment, members, capacity, stored);
         stored = Math.max(0L, stored - rejected);
@@ -251,8 +260,8 @@ public final class HeatNetwork {
         state.setThermalState(stored, capacity, temperature(stored, capacity),
                 (int) Math.min(Integer.MAX_VALUE, generated));
         state.setExchangeState(rejected, pumped.movedOut, pumped.delivered, state.takePumpedIn(),
-                pumped.work, exchangerCount(members), radiatingCells(members),
-                environment.unshieldedFluxPerCell());
+                pumped.work + fromAir.work, exchangerCount(members), radiatingCells(members),
+                environment.unshieldedFluxPerCell(), fromAir.movedOut);
     }
 
     /**
@@ -389,6 +398,87 @@ public final class HeatNetwork {
             workTotal += workPaid;
         }
         return new Pumped(movedTotal, deliveredTotal, workTotal);
+    }
+
+    /**
+     * Run every chiller whose HOT side is this loop and whose COLD side is a ROOM rather than coolant:
+     * take heat out of that room's air and deliver it, plus the work, into this loop.
+     * <p>
+     * <b>This is the air conditioner, and it is what the intake duct is for.</b> A chiller alone talks
+     * only to coolant; a duct on its cold face makes the machine breathe a compartment instead, which
+     * is how a ship's habitable volume finally connects to the thing that throws heat overboard.
+     * <p>
+     * <b>Driven from the HOT side, and it has to be.</b> Every other exchange in this domain is run by
+     * the loop being drawn FROM, because that loop's tick is where the cold temperature is known. An
+     * air-cooled chiller has no cold loop at all, so nothing would ever run it; the hot loop is the
+     * only reservoir in the arrangement, and it can see both temperatures.
+     * <p>
+     * <b>The work arrives whether or not the heat did.</b> A compressor that was paid for and found
+     * less air than it hoped still dissipated its electricity, so the work joins this loop regardless
+     * — the same clause as the coolant-to-coolant case, and for the same reason. What is skipped
+     * entirely is a duct with no air to breathe: a machine in a vacuum is not running against nothing,
+     * it simply has nothing to run against, and charging it forever would be a bill for no mechanic.
+     */
+    private static Pumped runAirCooledPumps(World world, HeatNetworkState state, long capacity, long stored) {
+        List<BlockPos> pumpPositions = state.getPumpPositions();
+        if (pumpPositions.isEmpty()) {
+            return Pumped.none();
+        }
+        Set<BlockPos> members = state.getMemberPositions();
+        double hotKelvin = temperature(stored, capacity);
+        long delivered = 0L;
+        long workTotal = 0L;
+        long airTaken = 0L;
+
+        for (BlockPos pumpPos : pumpPositions) {
+            if (!world.isBlockLoaded(pumpPos)) {
+                continue;
+            }
+            TileEntity tile = world.getTileEntity(pumpPos);
+            IHeatPump pump = CapabilityHeatPump.get(tile);
+            if (pump == null || !(tile instanceof TileHeatChiller)) {
+                continue;
+            }
+            // This loop must be the pump's HOT side, or it is somebody else's business.
+            BlockPos hotAnchor = pump.getHotSideAnchor();
+            if (hotAnchor == null || !members.contains(hotAnchor)) {
+                continue;
+            }
+            TileHeatIntakeDuct duct =
+                    TileHeatIntakeDuct.at(world, ((TileHeatChiller) tile).getColdSideAnchor());
+            if (duct == null) {
+                continue; // a coolant cold side: the other path owns it
+            }
+            AirState air = duct.getServedAir();
+            int volume = duct.getServedVolume();
+            if (air == null || air.getHeatCapacity(volume) <= 0L) {
+                continue; // nothing to breathe
+            }
+            int throughput = Math.max(0, pump.getThroughputPerTick());
+            if (throughput <= 0) {
+                continue;
+            }
+
+            double cop = coefficientOfPerformance(air.getTemperatureKelvin(), hotKelvin);
+            long workWanted = Math.max(1L, (long) (throughput / cop));
+            long workPaid = Math.max(0L, pump.payWork(workWanted));
+            if (workPaid <= 0L) {
+                continue;
+            }
+            long moved = workPaid >= workWanted ? throughput : throughput * workPaid / workWanted;
+            long taken = air.removeHeat(moved, volume);
+            delivered += taken + workPaid;
+            workTotal += workPaid;
+            airTaken += taken;
+        }
+        if (delivered > 0L) {
+            state.addPumpedIn(delivered);
+        }
+        // `movedOut` is what came off the COLD side, and here the cold side is a room: it is the heat
+        // actually taken out of the air. The caller does not subtract it from this loop's energy —
+        // it was never this loop's — it reports it, so that delivery, work and what left the room can
+        // all be read from one tick.
+        return new Pumped(airTaken, delivered, workTotal);
     }
 
     /**

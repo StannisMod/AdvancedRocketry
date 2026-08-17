@@ -1,0 +1,19 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+	"pgp",
+	"g g",
+	"pgp"
+    ],
+    "key":
+    {
+        "p": { "type": "forge:ore_dict", "ore": "plateIron" },
+        "g": { "type": "forge:ore_dict", "ore": "blockGlass" }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:heatintakeduct",
+        "count": 4
+    }
+}

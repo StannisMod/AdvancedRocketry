@@ -16727,6 +16727,9 @@ public class TestProbeCommand extends CommandBase {
         out.append(",\"incidentFluxMilli\":").append(heatState == null
                 ? 0L
                 : Math.round(heatState.getIncidentFluxPerCell() * 1000.0D));
+        // Heat taken out of compartment AIR this tick — the third figure a conservation check across
+        // the air/coolant boundary needs, beside `delivered` and `work`, all from one tick.
+        out.append(",\"airTaken\":").append(heatState == null ? 0L : heatState.getAirTakenThisTick());
         out.append('}');
         send(sender, out.toString());
     }
@@ -16854,6 +16857,19 @@ public class TestProbeCommand extends CommandBase {
                         .setStoredHeat(member.equals(pos) ? charge : 0L);
             }
         }
+        // A BOLTED machine is part of the loop's thermal mass without being a member of its graph
+        // (a chiller is a lump of metal in contact with the coolant), so a sweep over members alone
+        // leaves it holding whatever it accumulated during the ticks that ran between two probe
+        // calls — and the loop then starts at `charge` PLUS that, which is not what this verb says
+        // it does. Measured 2026-08-17: a loop charged to 0 reported 10700, of which 4460 was the
+        // chiller's own share carried over.
+        for (BlockPos pumpPos : ((zmaster587.advancedRocketry.subsystem.heat.HeatNetworkState) raw)
+                .getPumpPositions()) {
+            net.minecraft.tileentity.TileEntity bolted = world.getTileEntity(pumpPos);
+            if (bolted instanceof zmaster587.advancedRocketry.subsystem.heat.IHeatNode) {
+                ((zmaster587.advancedRocketry.subsystem.heat.IHeatNode) bolted).setStoredHeat(0L);
+            }
+        }
         for (int i = 0; i < ticks; i++) {
             zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager.tick(
                     zmaster587.advancedRocketry.subsystem.heat.HeatNetwork.DOMAIN, world);
@@ -16881,7 +16897,8 @@ public class TestProbeCommand extends CommandBase {
                 + ",\"pumpedIn\":" + after.getPumpedInThisTick()
                 + ",\"work\":" + after.getWorkThisTick()
                 + ",\"pumps\":" + after.getPumpPositions().size()
-                + ",\"incidentFluxMilli\":" + Math.round(after.getIncidentFluxPerCell() * 1000.0D) + "}");
+                + ",\"incidentFluxMilli\":" + Math.round(after.getIncidentFluxPerCell() * 1000.0D)
+                + ",\"airTaken\":" + after.getAirTakenThisTick() + "}");
     }
 
     // Gas separator state probe ---------------------------------------

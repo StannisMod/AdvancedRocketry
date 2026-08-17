@@ -96,6 +96,7 @@ public class AdvancedRocketryBlocks {
     public static Block blockHeatAccumulator;
     public static Block blockHeatRadiator;
     public static Block blockHeatChiller;
+    public static Block blockHeatIntakeDuct;
     public static Block blockCircleLight;
     public static Block blockSolarGenerator;
     public static Block blockDockingPort;
