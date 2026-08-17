@@ -22,7 +22,10 @@ import zmaster587.advancedRocketry.subsystem.hull.HullClearance;
  */
 public class TileHeatRadiator extends TileHeatLoopBlock implements IHeatExchanger {
 
-    /** Heat this cell shed on the last tick, for a readout. Per-tick, so never persisted. */
+    /**
+     * Heat this cell shed on the last tick, for a readout. Per-tick, so never persisted. Negative when
+     * the cell was absorbing more than it radiated, which is what a radiator under a star does.
+     */
     private long rejectedThisTick;
 
     @Override
@@ -61,13 +64,15 @@ public class TileHeatRadiator extends TileHeatLoopBlock implements IHeatExchange
 
     @Override
     public long exchange(long amount) {
-        rejectedThisTick = Math.max(0L, amount);
-        // The energy is gone: radiated into space, which is one of the three ways heat is allowed to
-        // leave a ship. There is nothing to hand it to.
+        rejectedThisTick = amount;
+        // Positive: the energy is gone, radiated into space, which is one of the three ways heat is
+        // allowed to leave a ship — there is nothing to hand it to. Negative: it came from the star or
+        // the world this cell is pointed at, and it arrives in the loop. Neither direction is clamped,
+        // because a surface that could only lose heat would make a ship in a star cooler than the star.
         return rejectedThisTick;
     }
 
-    /** What this cell shed on the last solve. */
+    /** What this cell shed on the last solve — negative if it took heat IN instead. */
     public long getRejectedThisTick() {
         return rejectedThisTick;
     }

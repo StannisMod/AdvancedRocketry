@@ -32,6 +32,8 @@ public class HeatRejectionTest extends AbstractSharedServerTest {
     /** `heat cycle` names its own figures, so they do not collide with the loop readout's. */
     private static final Pattern CYCLE_REJECTED = Pattern.compile("\"rejected\":(-?\\d+)");
     private static final Pattern CHARGED = Pattern.compile("\"charged\":(-?\\d+)");
+    /** What the outside puts into ONE cell per tick, in thousandths — the other half of the net. */
+    private static final Pattern INCIDENT_FLUX_MILLI = Pattern.compile("\"incidentFluxMilli\":(-?\\d+)");
 
     /** High and in the open, so a radiator facing up has nothing over it but sky. */
     private static final int Y = 100;
@@ -79,9 +81,16 @@ public class HeatRejectionTest extends AbstractSharedServerTest {
     }
 
     /**
-     * The same cell, a hotter loop. Rejection follows `T⁴ − T_amb⁴`, so raising the loop from a
-     * hundred degrees over ambient to two hundred must more than DOUBLE what it sheds — and by a
-     * specific amount the test derives rather than states.
+     * The same cell, a hotter loop. What a cell RADIATES follows the fourth power of its own
+     * temperature, so raising the loop from a hundred degrees over ambient to two hundred must do
+     * markedly more than double it.
+     *
+     * <p>What the loop NETS is that minus whatever the environment is putting back into the cell, so
+     * the law is recovered by adding the incident flux back on — and stating it that way is what keeps
+     * this a pin on the law rather than on a config number. Both halves are measured: the shed comes
+     * from the cycle, the flux from the same call's readout, and the only thing the test supplies is
+     * the two temperatures it asked for. `T_amb` deliberately does not appear — there is no such term
+     * any more, and a test still written around one would be asserting a model the code left behind.</p>
      */
     @Test
     public void rejectionFollowsTheFourthPowerOfTemperature() throws Exception {
@@ -94,20 +103,29 @@ public class HeatRejectionTest extends AbstractSharedServerTest {
         assertEquals("premise: a loop that has done nothing holds nothing: " + cold,
                 0, longOf(cold, HEAT_STORED));
 
-        long shedAtHundred = shedInOneTickFrom(X_QUARTIC, 100L * capacity);
-        long shedAtTwoHundred = shedInOneTickFrom(X_QUARTIC, 200L * capacity);
+        String hundred = cycle(X_QUARTIC, 100L * capacity);
+        String twoHundred = cycle(X_QUARTIC, 200L * capacity);
+        long shedAtHundred = longOf(hundred, CYCLE_REJECTED);
+        long shedAtTwoHundred = longOf(twoHundred, CYCLE_REJECTED);
+        // Per cell and per tick, and there is one cell here — the same units the shed is in.
+        double flux = longOf(hundred, INCIDENT_FLUX_MILLI) / 1000.0D;
+        assertEquals("premise: the environment must be the same in both legs, or adding it back is "
+                        + "not an identity: " + hundred + " | " + twoHundred,
+                longOf(hundred, INCIDENT_FLUX_MILLI), longOf(twoHundred, INCIDENT_FLUX_MILLI));
 
-        double expectedRatio = (pow4(ambient + 200.0D) - pow4(ambient))
-                / (pow4(ambient + 100.0D) - pow4(ambient));
-        double actualRatio = (double) shedAtTwoHundred / shedAtHundred;
+        double expectedRatio = pow4((ambient + 200.0D) / (ambient + 100.0D));
+        double actualRatio = (shedAtTwoHundred + flux) / (shedAtHundred + flux);
 
         assertTrue("premise: both legs must shed something (100K=" + shedAtHundred + " 200K="
                 + shedAtTwoHundred + ")", shedAtHundred > 0 && shedAtTwoHundred > 0);
         assertTrue("doubling the temperature rise must do markedly MORE than double the rejection, "
                         + "or the law is linear and the whole chiller tier is pointless (ratio="
-                        + actualRatio + ")", actualRatio > 2.5D);
-        assertTrue("and it must follow the fourth power: expected ratio " + expectedRatio
-                        + " from ambient " + ambient + " K, measured " + actualRatio,
+                        + (double) shedAtTwoHundred / shedAtHundred + ")",
+                (double) shedAtTwoHundred / shedAtHundred > 2.5D);
+        assertTrue("and what the cell radiates must follow the fourth power of its temperature: "
+                        + "expected " + expectedRatio + " from " + (ambient + 100.0D) + " K and "
+                        + (ambient + 200.0D) + " K, measured " + actualRatio + " (shed " + shedAtHundred
+                        + " and " + shedAtTwoHundred + " against an incident flux of " + flux + ")",
                 Math.abs(actualRatio - expectedRatio) < 0.1D * expectedRatio);
     }
 
@@ -183,11 +201,16 @@ public class HeatRejectionTest extends AbstractSharedServerTest {
      * different amounts in that gap, which corrupts precisely the ratio this test is about.</p>
      */
     private long shedInOneTickFrom(int x0, long charge) throws Exception {
+        return longOf(cycle(x0, charge), CYCLE_REJECTED);
+    }
+
+    /** The whole readout of one charged tick, for a caller that needs more than what left. */
+    private String cycle(int x0, long charge) throws Exception {
         String cycled = exec("artest heat cycle 0 " + x0 + " " + Y + " " + Z + " " + charge + " 1");
         assertTrue("heat cycle failed at " + x0 + ": " + cycled, cycled.contains("\"inLoop\":true"));
         assertEquals("premise: the loop must have been charged with exactly what was asked: " + cycled,
                 charge, longOf(cycled, CHARGED));
-        return longOf(cycled, CYCLE_REJECTED);
+        return cycled;
     }
 
     private void place(int x, String block, String meta) throws Exception {

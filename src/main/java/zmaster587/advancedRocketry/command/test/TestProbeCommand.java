@@ -10874,7 +10874,14 @@ public class TestProbeCommand extends CommandBase {
                     // what was radiated, what left the loop and what was paid, and it needs the COP
                     // to state that relation without restating a tuned number.
                     "shipHeatChillerThroughput",
-                    "shipHeatChillerCopFraction"));
+                    "shipHeatChillerCopFraction",
+                    // How strong a star is, and how much of it a shield keeps off. A test of what a
+                    // ship DOES with the flux needs the flux to be a variable — the alternative is to
+                    // fly the rig to a brighter star, which is a test of the universe layer and not of
+                    // this one. The attenuation is here for the opposite reason: the clause is that no
+                    // configuration can reach total immunity, so the test has to be able to ASK for it.
+                    "shipHeatStarFluxReferenceKelvin",
+                    "shipHeatShieldAttenuation"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -16705,6 +16712,13 @@ public class TestProbeCommand extends CommandBase {
         out.append(",\"pumpedIn\":").append(heatState == null ? 0L : heatState.getPumpedInThisTick());
         out.append(",\"heatWork\":").append(heatState == null ? 0L : heatState.getWorkThisTick());
         out.append(",\"pumps\":").append(heatState == null ? 0 : heatState.getPumpPositions().size());
+        // What the outside is putting into ONE radiating cell, in thousandths of a heat unit per tick,
+        // BEFORE any shield. Reported per cell rather than per loop so it can be compared straight
+        // against what a cell radiates, and unshielded so that a shielded ship and a ship parked
+        // somewhere cold are distinguishable — the shield's effect is `heatRejected` minus this.
+        out.append(",\"incidentFluxMilli\":").append(heatState == null
+                ? 0L
+                : Math.round(heatState.getIncidentFluxPerCell() * 1000.0D));
         out.append('}');
         send(sender, out.toString());
     }
@@ -16798,8 +16812,11 @@ public class TestProbeCommand extends CommandBase {
      * <pre>
      * {"ok":true,"inLoop":true,"charged":8000,"ticks":1,"rejected":79,"heatStored":7921,
      *  "heatCapacity":80,"temperatureMilliK":392012,"exchangers":1,"radiatingCells":1,
-     *  "pumpedOut":0,"pumpedIn":0,"work":0,"pumps":0}
+     *  "pumpedOut":0,"pumpedIn":0,"work":0,"pumps":0,"incidentFluxMilli":60712}
      * </pre>
+     *
+     * <p>{@code rejected} is SIGNED. Negative means the cells took heat in rather than shedding it,
+     * which is what a radiator under a star does, and a test reading it must not assume otherwise.</p>
      */
     private void handleHeatCycle(MinecraftServer server, ICommandSender sender, String[] args) {
         int dim = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -16855,7 +16872,8 @@ public class TestProbeCommand extends CommandBase {
                 + ",\"delivered\":" + after.getDeliveredThisTick()
                 + ",\"pumpedIn\":" + after.getPumpedInThisTick()
                 + ",\"work\":" + after.getWorkThisTick()
-                + ",\"pumps\":" + after.getPumpPositions().size() + "}");
+                + ",\"pumps\":" + after.getPumpPositions().size()
+                + ",\"incidentFluxMilli\":" + Math.round(after.getIncidentFluxPerCell() * 1000.0D) + "}");
     }
 
     // Gas separator state probe ---------------------------------------

@@ -29,6 +29,12 @@ public interface IHeatExchanger extends IHeatNode {
     /**
      * Take the amount the thermal system worked out, and put it where this machine puts it. Returns
      * what was actually moved, which is what leaves the loop.
+     * <p>
+     * <b>The amount may be NEGATIVE, and an implementation may not clamp it away.</b> A radiating
+     * surface works in both directions: parked under a star it absorbs more than it sheds, and the
+     * honest report of that tick is heat arriving. Treating the backwards case as zero would hand a
+     * ship immunity to its environment for free, which is precisely what the environment term exists
+     * to deny.
      */
     long exchange(long amount);
 }

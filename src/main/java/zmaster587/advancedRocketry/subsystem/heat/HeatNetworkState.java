@@ -38,6 +38,13 @@ public class HeatNetworkState extends SubsystemNetworkState {
     private int exchangerCount;
     private int radiatingCells;
     /**
+     * What the outside was putting into one radiating cell on the last tick, before any shield. A
+     * property of WHERE the loop is rather than of the loop, and reported even when the loop has no
+     * radiators to receive it — "there is a star over you and you have built nothing" is a thing a
+     * player is entitled to be told.
+     */
+    private double incidentFluxPerCell;
+    /**
      * Heat handed to this loop by a chiller since its last tick. Written by the COLD loop's tick and
      * read by this one, so it is an inbox rather than a statistic — a pump acts while the loop it
      * feeds is not the one being solved.
@@ -70,6 +77,7 @@ public class HeatNetworkState extends SubsystemNetworkState {
             heat.workThisTick = workThisTick;
             heat.exchangerCount = exchangerCount;
             heat.radiatingCells = radiatingCells;
+            heat.incidentFluxPerCell = incidentFluxPerCell;
             heat.pumpPositions = new ArrayList<>(pumpPositions);
         }
     }
@@ -145,9 +153,21 @@ public class HeatNetworkState extends SubsystemNetworkState {
         return radiatingCells;
     }
 
+    /**
+     * Energy the environment was putting into ONE radiating cell on the last tick, before the shield —
+     * the single channel every outside source arrives through.
+     * <p>
+     * Reported unshielded on purpose: what a shield stopped is visible as the difference between this
+     * and what the loop actually netted, and a readout that had already subtracted it could not tell a
+     * shielded ship from one parked somewhere cold.
+     */
+    public double getIncidentFluxPerCell() {
+        return incidentFluxPerCell;
+    }
+
     void setExchangeState(long rejectedThisTick, long pumpedOutThisTick, long deliveredThisTick,
                           long pumpedInThisTick, long workThisTick, int exchangerCount,
-                          int radiatingCells) {
+                          int radiatingCells, double incidentFluxPerCell) {
         this.rejectedThisTick = rejectedThisTick;
         this.pumpedOutThisTick = pumpedOutThisTick;
         this.deliveredThisTick = deliveredThisTick;
@@ -155,6 +175,7 @@ public class HeatNetworkState extends SubsystemNetworkState {
         this.workThisTick = workThisTick;
         this.exchangerCount = exchangerCount;
         this.radiatingCells = radiatingCells;
+        this.incidentFluxPerCell = incidentFluxPerCell;
     }
 
     /** The machines this loop touches. Re-derived whenever the loop is rebuilt. */

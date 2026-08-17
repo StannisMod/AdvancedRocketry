@@ -42,8 +42,15 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
  */
 public final class SystemContent {
 
-    /** Blocks per unit of {@code DimensionProperties} orbital distance (A#1a: ~1M blocks per orbit-unit). */
-    static final long ORBIT_UNIT_BLOCKS = 1_000_000L;
+    /**
+     * Blocks per unit of {@code DimensionProperties} orbital distance (A#1a: ~1M blocks per orbit-unit).
+     * <p>
+     * Public because it is the only bridge between the two distance vocabularies in this mod — the
+     * blocks a cell measures in, and the orbital units every stellar formula is written in. Anything
+     * that has a block distance to a star and wants a physical quantity out of it converts here rather
+     * than inventing a second scale that would drift from where the system was actually placed.
+     */
+    public static final long ORBIT_UNIT_BLOCKS = 1_000_000L;
     /** Blocks per unit of a moon's (parent-relative) orbital distance — moons cluster near their planet. */
     static final long MOON_UNIT_BLOCKS = 200L;
     /** Cells kept clear of the super-cell faces when clamping a body cell into its system's box. */

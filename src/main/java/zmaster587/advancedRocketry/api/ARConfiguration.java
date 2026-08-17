@@ -319,6 +319,10 @@ public class ARConfiguration {
     @ConfigProperty
     public int shipHeatChillerCapacity;
     @ConfigProperty
+    public int shipHeatStarFluxReferenceKelvin;
+    @ConfigProperty
+    public int shipHeatShieldAttenuation;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -615,6 +619,8 @@ public class ARConfiguration {
         arConfig.shipHeatChillerThroughput = config.get(HEAT, "shipHeatChillerThroughput", 120000, "How much heat one chiller shifts from its cold loop to its hot loop each second. This is a SIZE, not a temperature: the chiller sets no temperature anywhere — the heat it moves piles up in the hot loop against that loop's own capacity, and the temperature follows. Build a bigger hot loop and it climbs slower; build more radiators on it and it stops climbing.", 0, Integer.MAX_VALUE).getInt();
         arConfig.shipHeatChillerCopFraction = config.get(HEAT, "shipHeatChillerCopFraction", 500, "What fraction of the thermodynamic ideal a real chiller manages, in thousandths. The ideal is Carnot — the efficiency falls as the gap between the two loops widens — so this number cannot buy a machine past physics, only closer to it. 500 is a real machine at half of ideal. The work it spends JOINS the hot side, so the radiators must shed the heat plus the work, and driving the hot loop further costs more for less. That is the tier's ceiling, and it appears rather than being placed.", 1, 1000).getInt();
         arConfig.shipHeatChillerCapacity = config.get(HEAT, "shipHeatChillerCapacity", 200, "How much heat one chiller absorbs per kelvin. A chiller is a lump of metal and refrigerant bolted to its hot loop, so it counts as part of that loop's thermal mass — worth ten pipes at the defaults, which is why a hot side with a chiller on it climbs noticeably slower than its pipes alone would explain.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.shipHeatStarFluxReferenceKelvin = config.get(HEAT, "shipHeatStarFluxReferenceKelvin", 278, "The temperature a radiating cell settles at in unshaded starlight as strong as Earth's, in kelvin. This is how much of a star reaches a ship, stated as a temperature so it can be compared with a loop's own directly: a cell in that much sunlight cannot be cooled below this by any amount of area, and a closer or brighter star scales it. Set it to 0 and starlight stops warming ships entirely.", 0, 5000).getInt();
+        arConfig.shipHeatShieldAttenuation = config.get(HEAT, "shipHeatShieldAttenuation", 900, "How much of the heat arriving from outside a raised shield keeps off the ship, in thousandths. A shield is sunscreen and never a wall: whatever is written here, the game refuses to let it reach all of it, so a ship parked in a star always heats — slowly, but always. The shield pays for this with its generator's draw, which is itself a heat source, so tanking a star costs you twice.", 0, 1000).getInt();
         arConfig.solarGeneratorMult = config.get(ENERGY, "solarGeneratorMultiplier", 1, "Power produced per tick by the solar generator.").getInt();
         arConfig.microwaveRecieverMulitplier = (float) config.get(ENERGY, "MicrowaveRecieverMultiplier", 1f, "Multiplier for microwave receiver power output.").getDouble();
         arConfig.defaultItemTimeBlackHole = config.get(ENERGY, "defaultBurnTime", 500, "Burn time in ticks for items not listed in blackHoleTimings.").getInt();

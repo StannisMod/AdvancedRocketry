@@ -179,7 +179,7 @@ public final class HeatNetwork {
         HeatNetworkState state = (HeatNetworkState) raw;
         if (!enabled()) {
             state.setThermalState(0L, 0L, ambientKelvin(), 0);
-            state.setExchangeState(0L, 0L, 0L, 0L, 0L, 0, 0);
+            state.setExchangeState(0L, 0L, 0L, 0L, 0L, 0, 0, 0.0D);
             return;
         }
 
@@ -187,6 +187,7 @@ public final class HeatNetwork {
         long capacity = 0L;
         long stored = 0L;
         World world = null;
+        BlockPos where = null;
         for (ISubsystemNetworkNode node : members) {
             if (!(node instanceof IHeatNode)) {
                 continue;
@@ -198,6 +199,7 @@ public final class HeatNetwork {
             }
             if (world == null) {
                 world = node.getNodeWorld();
+                where = node.getNodePos();
             }
             mass.add(heatNode);
             capacity += nodeCapacity;
@@ -225,9 +227,14 @@ public final class HeatNetwork {
             // A loop of consoles and nothing else has nowhere to put heat, so it must not collect any:
             // taking it would be the one thing conservation forbids.
             state.setThermalState(0L, 0L, ambientKelvin(), 0);
-            state.setExchangeState(0L, 0L, 0L, 0L, 0L, exchangerCount(members), 0);
+            state.setExchangeState(0L, 0L, 0L, 0L, 0L, exchangerCount(members), 0, 0.0D);
             return;
         }
+
+        // Where the ship IS, resolved once for the whole loop: a star is millions of blocks away and a
+        // ship is tens across, so the sources do not vary between two of its blocks. Only the shield
+        // does, and that is asked per cell.
+        HeatEnvironment environment = HeatEnvironment.at(world, where);
 
         long generated = collectGeneration(world, state.getEmitterPositions());
         stored += generated;
@@ -236,14 +243,16 @@ public final class HeatNetwork {
         Pumped pumped = runPumps(world, state, capacity, stored);
         stored -= pumped.movedOut;
 
-        long rejected = rejectHeat(members, capacity, stored);
-        stored -= rejected;
+        // Signed: negative means the surface ran backwards and the environment put heat IN.
+        long rejected = rejectHeat(environment, members, capacity, stored);
+        stored = Math.max(0L, stored - rejected);
         distribute(mass, capacity, stored);
 
         state.setThermalState(stored, capacity, temperature(stored, capacity),
                 (int) Math.min(Integer.MAX_VALUE, generated));
         state.setExchangeState(rejected, pumped.movedOut, pumped.delivered, state.takePumpedIn(),
-                pumped.work, exchangerCount(members), radiatingCells(members));
+                pumped.work, exchangerCount(members), radiatingCells(members),
+                environment.unshieldedFluxPerCell());
     }
 
     /**
@@ -427,20 +436,29 @@ public final class HeatNetwork {
     }
 
     /**
-     * Heat leaving the loop through everything attached to it that can move heat out.
+     * The NET heat crossing the loop's radiating surface this tick: what the cells radiate away, minus
+     * what the outside is putting back into them.
      * <p>
-     * {@code P = k · A · (T⁴ − T_amb⁴)} in floating point, with `k` expressed as a reference power at a
-     * reference temperature so the config states a point on the curve rather than a bare coefficient.
-     * The quartic is why a chiller is worth its electricity: area buys rejection linearly, temperature
-     * buys it to the fourth power.
+     * {@code net = A · (k·T⁴ − incidentFlux)} in floating point, with `k` expressed as a reference power
+     * at a reference temperature so the config states a point on the curve rather than a bare
+     * coefficient. The quartic is why a chiller is worth its electricity: area buys rejection linearly,
+     * temperature buys it to the fourth power.
+     * <p>
+     * <b>There is no {@code T_amb} term any more, and its absence is the point.</b> The classical
+     * {@code k·A·(T⁴ − T_amb⁴)} hides an incident flux inside a temperature; written out, that second
+     * half is the environment, which is a real thing with real contributors rather than a config number
+     * standing in for all of them. See {@link HeatEnvironment}.
+     * <p>
+     * <b>The answer may be NEGATIVE, and a caller must honour that.</b> Where more arrives than the
+     * cells can shed — near a star, or under someone else's radiators — the surface runs backwards and
+     * the loop heats no matter what its own temperature is. That is the whole reason the environment is
+     * modelled at all; clamping it at zero would give a ship free immunity by having built nothing.
      * <p>
      * The machines are told how much to move; they never say. That asymmetry is deliberate — see
      * {@link IHeatExchanger}.
      */
-    private static long rejectHeat(List<ISubsystemNetworkNode> members, long capacity, long stored) {
-        if (stored <= 0L) {
-            return 0L;
-        }
+    private static long rejectHeat(HeatEnvironment environment, List<ISubsystemNetworkNode> members,
+                                   long capacity, long stored) {
         List<IHeatExchanger> exchangers = new ArrayList<>();
         long totalCells = 0L;
         for (ISubsystemNetworkNode node : members) {
@@ -458,29 +476,41 @@ public final class HeatNetwork {
             return 0L;
         }
 
-        double loopKelvin = temperature(stored, capacity);
-        double ambient = ambientKelvin();
-        double reference = Math.max(1.0D, ARConfiguration.getCurrentConfig().shipHeatRadiatorReferenceKelvin);
-        double perCell = perTick(ARConfiguration.getCurrentConfig().shipHeatRadiatorCellPower)
-                * (pow4(loopKelvin) - pow4(ambient)) / pow4(reference);
-        if (perCell <= 0.0D) {
-            return 0L;
-        }
-
-        long want = Math.min(stored, (long) (perCell * totalCells));
-        long rejected = 0L;
-        long handedOut = 0L;
-        for (int i = 0; i < exchangers.size(); i++) {
-            IHeatExchanger exchanger = exchangers.get(i);
-            long share = i == exchangers.size() - 1
-                    ? want - handedOut
-                    : want * Math.max(0, exchanger.getExchangeCells()) / totalCells;
-            handedOut += share;
+        double gross = cellPowerAt(temperature(stored, capacity));
+        long net = 0L;
+        for (IHeatExchanger exchanger : exchangers) {
+            int cells = Math.max(0, exchanger.getExchangeCells());
+            // Per exchanger rather than per loop, because the shield is positional: one cell can be
+            // under a field its neighbour on the same run is outside of.
+            double perCell = gross - environment.incidentFluxPerCell(exchanger.getNodePos());
+            long share = (long) (perCell * cells);
+            // A loop cannot shed more than it is holding; it can always ABSORB, which is why only the
+            // positive side is capped.
             if (share > 0L) {
-                rejected += Math.max(0L, exchanger.exchange(share));
+                share = Math.min(share, Math.max(0L, stored - net));
+            }
+            if (share != 0L) {
+                net += exchanger.exchange(share);
             }
         }
-        return Math.min(stored, rejected);
+        return Math.min(stored, net);
+    }
+
+    /**
+     * The reference-point form, and the one place it is written: what a single cell of surface radiates
+     * at {@code kelvin}, per tick.
+     * <p>
+     * Shared by the radiator and by every environment contributor, so a warm planet and a hot loop are
+     * quoted on the same curve and can simply be subtracted. It is also what makes the star term
+     * legible — its config number is a TEMPERATURE, not an energy.
+     */
+    static double cellPowerAt(double kelvin) {
+        if (kelvin <= 0.0D) {
+            return 0.0D;
+        }
+        double reference = Math.max(1.0D, ARConfiguration.getCurrentConfig().shipHeatRadiatorReferenceKelvin);
+        return perTick(ARConfiguration.getCurrentConfig().shipHeatRadiatorCellPower)
+                * pow4(kelvin) / pow4(reference);
     }
 
     /** `T⁴` in double, never int: 2000 K overflows a 32-bit accumulator immediately. */
