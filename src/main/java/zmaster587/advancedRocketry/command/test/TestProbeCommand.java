@@ -332,7 +332,7 @@ public class TestProbeCommand extends CommandBase {
                     sb.append(',');
                 }
                 first = false;
-                sb.append(shotJson(shot));
+                sb.append(shotJson(world, shot));
             }
             send(sender, sb.append("]}").toString());
             return;
@@ -351,7 +351,7 @@ public class TestProbeCommand extends CommandBase {
                         + ",\"count\":" + registry.count() + "}");
                 return;
             }
-            send(sender, "{\"ok\":true,\"present\":true,\"shot\":" + shotJson(shot) + "}");
+            send(sender, "{\"ok\":true,\"present\":true,\"shot\":" + shotJson(world, shot) + "}");
             return;
         }
         if ("clear".equals(sub)) {
@@ -706,19 +706,37 @@ public class TestProbeCommand extends CommandBase {
         return "{\"error\":\"" + escapeJson(message) + "\"}";
     }
 
-    private static String shotJson(zmaster587.advancedRocketry.projectile.Shot shot) {
+    /**
+     * One shot, in WORLD terms whatever frame it is being kept in — plus, when it is drilling a hull,
+     * the hull's id and the shot's place in that hull's own frame. Both are reported because they
+     * answer different questions: "where is the round" is a world question, and "did it stay put in
+     * the plate while the ship manoeuvred" can only be asked in the plate's frame.
+     */
+    private static String shotJson(net.minecraft.world.World world,
+                                   zmaster587.advancedRocketry.projectile.Shot shot) {
+        net.minecraft.util.math.Vec3d pos =
+                zmaster587.advancedRocketry.projectile.ShotFrame.worldPosition(world, shot);
+        net.minecraft.util.math.Vec3d vel =
+                zmaster587.advancedRocketry.projectile.ShotFrame.worldVelocity(world, shot);
+        String hull = shot.getHullId();
+        String inHull = hull == null ? ",\"hull\":null"
+                : ",\"hull\":\"" + escapeJson(hull) + "\""
+                        + ",\"hullX\":" + shot.getPosition().x
+                        + ",\"hullY\":" + shot.getPosition().y
+                        + ",\"hullZ\":" + shot.getPosition().z;
         return "{\"id\":" + shot.getId()
-                + ",\"x\":" + shot.getPosition().x
-                + ",\"y\":" + shot.getPosition().y
-                + ",\"z\":" + shot.getPosition().z
-                + ",\"vx\":" + shot.getVelocity().x
-                + ",\"vy\":" + shot.getVelocity().y
-                + ",\"vz\":" + shot.getVelocity().z
-                + ",\"speed\":" + shot.getSpeed()
+                + ",\"x\":" + pos.x
+                + ",\"y\":" + pos.y
+                + ",\"z\":" + pos.z
+                + ",\"vx\":" + vel.x
+                + ",\"vy\":" + vel.y
+                + ",\"vz\":" + vel.z
+                + ",\"speed\":" + vel.lengthVector()
                 + ",\"energy\":" + shot.getImpactEnergy()
                 + ",\"age\":" + shot.getAge()
                 + ",\"lifetime\":" + shot.getLifetimeTicks()
-                + ",\"kind\":\"" + shot.getKind().name() + "\"}";
+                + ",\"kind\":\"" + shot.getKind().name() + "\""
+                + inHull + "}";
     }
 
     // Vendored AFFS shield probes -----------------------------------------

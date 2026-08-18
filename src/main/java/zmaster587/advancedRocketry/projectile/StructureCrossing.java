@@ -86,12 +86,28 @@ public final class StructureCrossing {
 
     /** The first structure the segment {@code from -> to} meets, or null when it meets none. */
     static Hit firstAlong(World world, Vec3d from, Vec3d to) {
+        return firstAlong(world, from, to, null);
+    }
+
+    /**
+     * The same question, optionally narrowed to ONE hull.
+     *
+     * <p>{@code onlyHullId} is not a filter for convenience: a shot that is inside a hull's material
+     * is inside that hull and nothing else, so asking the world frame and every other loaded ship
+     * about it is work whose answer is known in advance. Null asks everything, which is what a body
+     * in open space needs.</p>
+     */
+    static Hit firstAlong(World world, Vec3d from, Vec3d to, String onlyHullId) {
         if (world == null || from == null || to == null) {
             return null;
         }
         double length = to.subtract(from).lengthVector();
         if (length <= 0.0D) {
             return null;
+        }
+
+        if (onlyHullId != null) {
+            return shipFrameHit(world, onlyHullId, from, to, length);
         }
 
         Hit best = worldFrameHit(world, from, to, length);

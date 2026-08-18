@@ -140,8 +140,9 @@ public final class ShotSubstrate {
                 // The shot's own position IS where it ended: every terminal branch of the step sets
                 // it to the crossing point before returning, so there is one place that decides
                 // where a round stopped rather than two that could disagree.
-                registry.end(shot.getId(), end, shot.getPosition());
-                ShotReplication.announceEnd(world, shot.getId(), shot.getPosition(), end);
+                Vec3d endedAt = ShotFrame.worldPosition(world, shot);
+                registry.end(shot.getId(), end, endedAt);
+                ShotReplication.announceEnd(world, shot.getId(), endedAt, end);
             }
         }
         registry.markDirty();
@@ -159,6 +160,13 @@ public final class ShotSubstrate {
             return ShotEndReason.EXPIRED;
         }
 
+        // A shot that spent the last tick inside a hull is kept in that hull's frame between ticks, so
+        // that a ship which manoeuvred in between carried it along. The tick itself is done in world
+        // terms — the shield layer, the damage engine and every other ship are world-frame questions —
+        // so it rejoins the world here, at the hull's CURRENT pose, and is handed back at the end.
+        String boringHull = shot.getHullId();
+        ShotFrame.leaveHull(world, shot);
+
         Vec3d position = shot.getPosition();
         Vec3d velocity = shot.getVelocity();
         double gravity = shot.getEnvironment().getGravityPerTickSquared();
@@ -167,6 +175,10 @@ public final class ShotSubstrate {
             // fired flat starts falling in the tick it is fired rather than the one after.
             velocity = velocity.addVector(0.0D, -gravity, 0.0D);
         }
+
+        // The hull it was still drilling when the tick ran out, if any: that is the frame it is
+        // handed back to at the end.
+        String endedInsideHull = null;
 
         double timeLeft = 1.0D;
         for (int crossing = 0; crossing < MAX_CROSSINGS_PER_TICK && timeLeft > 1.0E-6D; crossing++) {
@@ -180,7 +192,11 @@ public final class ShotSubstrate {
 
             double fieldDistance = ShieldStrikeService.nearestShellCrossing(world, position, direction,
                     reach);
-            StructureCrossing.Hit structure = StructureCrossing.firstAlong(world, position, segmentEnd);
+            // Only on the first crossing of a tick that began inside material: there the answer is
+            // known to be that hull, and once the round has deflected or come out it is an ordinary
+            // body again and asks everything.
+            StructureCrossing.Hit structure = StructureCrossing.firstAlong(world, position, segmentEnd,
+                    crossing == 0 ? boringHull : null);
             double structureDistance = structure == null ? -1.0D : structure.distance;
 
             boolean fieldFirst = fieldDistance >= 0.0D
@@ -224,6 +240,7 @@ public final class ShotSubstrate {
                     timeLeft = 0.0D;
                     velocity = slowedByWorkDone(velocity, energyBefore, shot.getImpactEnergy(),
                             shot.getKind());
+                    endedInsideHull = structure.shipId;
                 }
 
                 if (velocity.lengthVector()
@@ -284,6 +301,10 @@ public final class ShotSubstrate {
 
         shot.setPosition(position);
         shot.setVelocity(velocity);
+        // Still drilling somebody's hull when the tick ended: it belongs to that hull until it is out,
+        // so it is stored in the hull's own frame and rides whatever the ship does before the next
+        // tick. A round in the world's own blocks needs none of this — the world does not manoeuvre.
+        ShotFrame.embedIfInside(world, shot, endedInsideHull);
         return null;
     }
 

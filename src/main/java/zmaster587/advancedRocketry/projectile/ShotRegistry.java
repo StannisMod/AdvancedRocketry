@@ -171,12 +171,18 @@ public class ShotRegistry extends WorldSavedData {
         return shots.size();
     }
 
-    /** The shot nearest a world point, or null when nothing is in flight. Diagnostics and probes. */
-    public Shot nearest(Vec3d point) {
+    /**
+     * The shot nearest a WORLD point, or null when nothing is in flight. Diagnostics and probes.
+     *
+     * <p>The world is asked for because a shot drilling a hull is stored in that hull's own frame:
+     * comparing its raw coordinates against a world point would rank it by its distance from a
+     * shipyard millions of blocks away, and answer plausibly.</p>
+     */
+    public Shot nearest(net.minecraft.world.World world, Vec3d point) {
         Shot best = null;
         double bestSq = Double.POSITIVE_INFINITY;
         for (Shot shot : shots.values()) {
-            double sq = shot.getPosition().squareDistanceTo(point);
+            double sq = ShotFrame.worldPosition(world, shot).squareDistanceTo(point);
             if (sq < bestSq) {
                 bestSq = sq;
                 best = shot;

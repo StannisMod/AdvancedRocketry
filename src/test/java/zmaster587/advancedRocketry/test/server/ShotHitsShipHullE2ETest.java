@@ -6,6 +6,7 @@ import org.junit.Test;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -146,10 +147,124 @@ public class ShotHitsShipHullE2ETest extends AbstractSharedServerTest {
                 + " never mapped out of the ship's frame", offSeat < 400.0D);
     }
 
+    /** A second site: two ship scenarios on one shared server must not build over each other. */
+    private static final int MOVE_SRC_X = 6700, MOVE_SRC_Y = 80, MOVE_SRC_Z = 6400;
+    private static final int MOVE_FAR_X = 6700, MOVE_FAR_Y = 150, MOVE_FAR_Z = 8800;
+    /** Where the ship goes WHILE the round is inside it — far enough that no tolerance can absorb it. */
+    private static final int MOVE_AGAIN_X = 6700, MOVE_AGAIN_Y = 150, MOVE_AGAIN_Z = 9100;
+
+    @Test
+    public void aRoundDrillingAHullGoesWhereTheShipGoes() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the server classpath", serverHasVs());
+        exec("artest vs permaload true");
+        exec("artest shot clear 0");
+
+        String shipId = buildAndMoveShip(MOVE_SRC_X, MOVE_SRC_Y, MOVE_SRC_Z,
+                MOVE_FAR_X, MOVE_FAR_Y, MOVE_FAR_Z);
+        String seat = exec("artest vs find-seat 0 id " + shipId);
+        assertTrue("could not locate the ship's seat, so there is no known block to lodge in: " + seat,
+                seat.contains("\"seatFound\":true"));
+        int subX = extractInt(seat, "seatX"), subY = extractInt(seat, "seatY"),
+                subZ = extractInt(seat, "seatZ");
+        String mapped = exec("artest vs to-world 0 " + MOVE_FAR_X + " " + MOVE_FAR_Y + " " + MOVE_FAR_Z
+                + " " + subX + " " + subY + " " + subZ);
+        assertTrue("the seat's subspace address could not be mapped to a world point: " + mapped,
+                mapped.contains("\"ok\":true"));
+        double worldX = extractDouble(mapped, "worldX");
+        double worldY = extractDouble(mapped, "worldY");
+        double worldZ = extractDouble(mapped, "worldZ");
+
+        // A round too poor to buy even one stage: it lodges in the plate without damaging it. That is
+        // deliberate — this test is about WHERE a lodged round is, and a round that chews its way out
+        // (or dies paying) leaves nothing to ask the question about.
+        String plate = stage(subX, subY, subZ);
+        long stageCost = readLong(plate, "stageCost");
+        assertTrue("the plate has no price, so no budget can be chosen against it: " + plate,
+                stageCost > 1);
+        int energy = (int) (stageCost / 2);
+
+        // Slow, so it spends several ticks crossing one block rather than passing through in one.
+        long id = readLong(exec("artest shot fire 0 " + worldX + " " + (worldY + 1.5D) + " " + worldZ
+                + " 0 -0.2 0 " + energy + " 400"), "id");
+        assertTrue("the launch was refused, so nothing else here means anything", id > 0);
+
+        String lodged = null;
+        for (int tick = 0; tick < 40 && lodged == null; tick++) {
+            exec("artest shield tick 0");
+            String read = exec("artest shot read 0 " + id);
+            if (read.contains("\"hull\":\"")) {
+                lodged = read;
+            } else if (read.contains("\"present\":false")) {
+                break;
+            }
+        }
+        assertTrue("the round never came to be inside the hull — with nothing lodged there is no frame"
+                + " question to ask: " + exec("artest shot read 0 " + id), lodged != null);
+
+        double hullX = readDouble(lodged, "hullX");
+        double hullY = readDouble(lodged, "hullY");
+        double hullZ = readDouble(lodged, "hullZ");
+        double beforeX = readDouble(lodged, "x");
+        double beforeZ = readDouble(lodged, "z");
+
+        // The ship manoeuvres with the round still in it. No tick of the shot in between: what moves
+        // is the SHIP, and the only question is whether the round is a part of it or a thing left
+        // hanging in the air where the ship used to be.
+        String tp = exec("artest vs teleport-ship 0 " + MOVE_FAR_X + " " + MOVE_FAR_Y + " " + MOVE_FAR_Z
+                + " " + MOVE_AGAIN_X + " " + MOVE_AGAIN_Y + " " + MOVE_AGAIN_Z);
+        assertTrue("the ship could not be moved, so this run never tested a manoeuvre: " + tp,
+                tp.contains("\"ok\":true"));
+        exec("artest vs unpark 0 " + MOVE_AGAIN_X + " " + MOVE_AGAIN_Y + " " + MOVE_AGAIN_Z);
+
+        String after = exec("artest shot read 0 " + id);
+        assertTrue("the round left the hull when the ship moved: " + after,
+                after.contains("\"hull\":\""));
+        // ACROSS the bore the plate holds it exactly: a ship's translation must not show up as the
+        // round sliding sideways inside its own hole. ALONG the bore it keeps drilling, because this
+        // is a live server whose world ticks on its own — so the claim there is that it advanced by a
+        // few tenths of a block of boring and not by the hundreds the ship travelled.
+        assertEquals("the round moved sideways WITHIN the plate because the ship moved — the hull's"
+                + " own motion must not reach its frame at all: " + after,
+                hullX, readDouble(after, "hullX"), 1.0E-6D);
+        assertEquals(hullZ, readDouble(after, "hullZ"), 1.0E-6D);
+        double boredFurther = hullY - readDouble(after, "hullY");
+        assertTrue("along the bore the round went " + boredFurther + " blocks while the ship travelled "
+                + Math.abs(MOVE_AGAIN_Z - MOVE_FAR_Z) + ": it is being carried, not drilling: " + after,
+                boredFurther >= 0.0D && boredFurther < 4.0D);
+
+        double movedZ = readDouble(after, "z") - beforeZ;
+        double shipMovedZ = MOVE_AGAIN_Z - MOVE_FAR_Z;
+        assertEquals("the round stayed where the ship USED to be: a body inside a hull that manoeuvres"
+                + " travels with it, and one stored in world coordinates does not. " + after,
+                shipMovedZ, movedZ, 8.0D);
+        assertEquals("the round drifted across the manoeuvre on an axis the ship did not move along: "
+                + after, 0.0D, readDouble(after, "x") - beforeX, 8.0D);
+
+        // And it goes on from the ship's NEW place. Not "it is still lodged": a round that finished
+        // drilling through the plate and came out the far side has left the hull for good reasons, and
+        // a test that demanded it still be inside would be pinning how thick this fixture's plate is.
+        // What must hold either way is where it carries on FROM — a round resumed off a stale world
+        // position would be back at the site the ship left, hanging in the air.
+        exec("artest shield tick 0");
+        String resumed = exec("artest shot read 0 " + id);
+        if (resumed.contains("\"present\":true")) {
+            assertEquals("after the manoeuvre the round carried on from where the ship USED to be: "
+                    + resumed, (double) MOVE_AGAIN_Z, readDouble(resumed, "z"), 8.0D);
+        }
+
+        exec("artest shot clear 0");
+    }
+
     /** Build the fixture, assemble it into a ship and move it far from where it was built. */
     private String buildAndMoveShip() throws Exception {
-        clearArea(SRC_X, SRC_Z);
-        String coords = placeFixture(SRC_X, SRC_Y, SRC_Z, "with-pilot-seat");
+        return buildAndMoveShip(SRC_X, SRC_Y, SRC_Z, FAR_X, FAR_Y, FAR_Z);
+    }
+
+    /** The same, at a site of the caller's choosing — two ship scenarios must not share a build site. */
+    private String buildAndMoveShip(int srcX, int srcY, int srcZ, int farX, int farY, int farZ)
+            throws Exception {
+        clearArea(srcX, srcZ);
+        String coords = placeFixture(srcX, srcY, srcZ, "with-pilot-seat");
         String asm = exec("artest rocket assemble 0 " + coords);
         assertTrue("with VS an AFC-bearing build must become a ship, not a rocket: " + asm,
                 asm.contains("\"rocketCount\":0"));
@@ -157,7 +272,7 @@ public class ShotHitsShipHullE2ETest extends AbstractSharedServerTest {
         String info = null;
         for (int attempt = 0; attempt < 40; attempt++) {
             exec("artest vs load-ships 0");
-            info = exec("artest vs ship-info 0 " + SRC_X + " " + SRC_Y + " " + SRC_Z);
+            info = exec("artest vs ship-info 0 " + srcX + " " + srcY + " " + srcZ);
             if (info.contains("\"managed\":true")) {
                 break;
             }
@@ -166,11 +281,11 @@ public class ShotHitsShipHullE2ETest extends AbstractSharedServerTest {
         assertTrue("the build never became a ship managed at its build site: " + info,
                 info != null && info.contains("\"managed\":true"));
 
-        String tp = exec("artest vs teleport-ship 0 " + SRC_X + " " + SRC_Y + " " + SRC_Z
-                + " " + FAR_X + " " + FAR_Y + " " + FAR_Z);
+        String tp = exec("artest vs teleport-ship 0 " + srcX + " " + srcY + " " + srcZ
+                + " " + farX + " " + farY + " " + farZ);
         assertTrue("the ship could not be moved, so it never left the world blocks it was built from: "
                 + tp, tp.contains("\"ok\":true"));
-        exec("artest vs unpark 0 " + FAR_X + " " + FAR_Y + " " + FAR_Z);
+        exec("artest vs unpark 0 " + farX + " " + farY + " " + farZ);
         return extractString(info, "id");
     }
 
@@ -178,6 +293,7 @@ public class ShotHitsShipHullE2ETest extends AbstractSharedServerTest {
         return exec("artest damage stage 0 " + x + " " + y + " " + z);
     }
 
+    /** Cleared around the build height every fixture here is placed at. */
     private void clearArea(int baseX, int baseZ) throws Exception {
         int cx1 = (baseX - 4) >> 4, cz1 = (baseZ - 4) >> 4;
         int cx2 = (baseX + 20) >> 4, cz2 = (baseZ + 20) >> 4;

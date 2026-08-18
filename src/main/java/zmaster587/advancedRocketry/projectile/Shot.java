@@ -19,6 +19,14 @@ import java.util.UUID;
  * A record is simulated by its world's own tick regardless of who is watching, and costs three
  * vectors.</p>
  *
+ * <h3>Which frame its position is in — and why that is not always the world's</h3>
+ * <p>A free-flying shot is expressed in world coordinates. A shot that is <em>inside somebody's
+ * material</em> is expressed in that hull's own subspace frame instead ({@link #getHullId()}), because
+ * a hull is a thing that manoeuvres: a round stored in world coordinates would be left behind by a
+ * ship that moved between two ticks and would resume the next tick outside the plate it was drilling,
+ * or inside a plate that had sailed on. Riding the hull's frame makes boring through a hard-turning
+ * ship and boring through a parked one the same arithmetic.</p>
+ *
  * <h3>Mutable, and owned by exactly one thing</h3>
  * <p>Position, velocity, age and the remaining impact energy change every tick; everything else is
  * fixed at the muzzle. The record is owned by the {@link ShotRegistry} of one world and is mutated
@@ -39,6 +47,12 @@ public final class Shot {
 
     private Vec3d position;
     private Vec3d velocity;
+    /**
+     * The hull this shot is currently inside, or null when it is in free flight. While it is set,
+     * {@link #position} and {@link #velocity} are expressed in THAT ship's subspace frame, and the
+     * velocity is relative to the hull rather than to the world.
+     */
+    private String hullId;
     private int age;
     private int impactEnergy;
 
@@ -62,13 +76,14 @@ public final class Shot {
         this.position = spec.getOrigin();
         this.velocity = spec.getVelocity();
         this.impactEnergy = spec.getImpactEnergy();
+        this.hullId = null;
         this.age = 0;
         this.impactSequence = 0;
     }
 
     private Shot(long id, double radius, double mass, ImpactKind kind, UUID owner, String faction,
                  String guidance, ShotEnvironment environment, int lifetimeTicks, Vec3d position,
-                 Vec3d velocity, int age, int impactEnergy, int impactSequence) {
+                 Vec3d velocity, String hullId, int age, int impactEnergy, int impactSequence) {
         this.id = id;
         this.radius = radius;
         this.mass = mass;
@@ -80,6 +95,7 @@ public final class Shot {
         this.lifetimeTicks = lifetimeTicks;
         this.position = position;
         this.velocity = velocity;
+        this.hullId = hullId;
         this.age = age;
         this.impactEnergy = impactEnergy;
         this.impactSequence = impactSequence;
@@ -89,14 +105,30 @@ public final class Shot {
         return id;
     }
 
-    /** WORLD position. */
+    /**
+     * Position in the frame this shot is currently kept in: the WORLD's while it flies, its hull's
+     * SUBSPACE while it bores. Anything that needs world coordinates regardless asks
+     * {@link ShotFrame#worldPosition}.
+     */
     public Vec3d getPosition() {
         return position;
     }
 
-    /** WORLD velocity, blocks per tick. */
+    /**
+     * Velocity in the same frame as {@link #getPosition()}, blocks per tick — so while this shot is
+     * inside a hull, it is the velocity RELATIVE to that hull, which is the one boring is done with.
+     * {@link ShotFrame#worldVelocity} adds the hull's own motion back.
+     */
     public Vec3d getVelocity() {
         return velocity;
+    }
+
+    /**
+     * The hull this shot is inside, or null in free flight. Non-null means every coordinate on this
+     * record is that ship's subspace.
+     */
+    public String getHullId() {
+        return hullId;
     }
 
     public double getSpeed() {
@@ -153,6 +185,11 @@ public final class Shot {
         this.velocity = newVelocity;
     }
 
+    /** Declare which frame the coordinates above are in. Only {@link ShotFrame} may say. */
+    void setHullId(String newHullId) {
+        this.hullId = newHullId;
+    }
+
     void setImpactEnergy(int newImpactEnergy) {
         this.impactEnergy = Math.max(0, newImpactEnergy);
     }
@@ -193,6 +230,11 @@ public final class Shot {
         nbt.setDouble("velX", velocity.x);
         nbt.setDouble("velY", velocity.y);
         nbt.setDouble("velZ", velocity.z);
+        if (hullId != null) {
+            // Which frame the position above is in. Without it a reloaded save reads a subspace
+            // triple as a world one and the round reappears in the shipyard.
+            nbt.setString("hull", hullId);
+        }
         nbt.setInteger("age", age);
         nbt.setInteger("energy", impactEnergy);
         nbt.setInteger("impactSeq", impactSequence);
@@ -216,6 +258,7 @@ public final class Shot {
                 nbt.getInteger("lifetime"),
                 new Vec3d(nbt.getDouble("posX"), nbt.getDouble("posY"), nbt.getDouble("posZ")),
                 new Vec3d(nbt.getDouble("velX"), nbt.getDouble("velY"), nbt.getDouble("velZ")),
+                nbt.hasKey("hull") ? nbt.getString("hull") : null,
                 nbt.getInteger("age"), nbt.getInteger("energy"), nbt.getInteger("impactSeq"));
     }
 
@@ -229,7 +272,8 @@ public final class Shot {
 
     @Override
     public String toString() {
-        return "Shot#" + id + "[pos=" + position + " vel=" + velocity + " energy=" + impactEnergy
+        return "Shot#" + id + "[pos=" + position + " vel=" + velocity
+                + (hullId == null ? "" : " in hull " + hullId) + " energy=" + impactEnergy
                 + " age=" + age + "/" + lifetimeTicks + "]";
     }
 }
