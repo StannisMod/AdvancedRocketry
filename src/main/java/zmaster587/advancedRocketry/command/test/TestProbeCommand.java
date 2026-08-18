@@ -702,6 +702,36 @@ public class TestProbeCommand extends CommandBase {
                     + zmaster587.advancedRocketry.util.MotionTrace.clientSummary() + "}");
             return;
         }
+        // lifecycle reset — forget every recorded ship-was-named announcement.
+        // lifecycle <shipUuid> — what was announced FOR THAT SHIP: one count per cause, the durable
+        // id it was announced under, and `seen` saying whether the recorder has heard of it at all.
+        // Keyed on the ship's own identity rather than on what is nearest a point, because the
+        // scenarios that matter (a crossing landing beside a parked hull) hold two craft at once, and
+        // a positional answer there is a plausible-looking answer about the other one. The whole
+        // recorder is reported beside it, so "0 for this ship" is separable from "nothing arrived".
+        if (args.length >= 1 && "lifecycle".equalsIgnoreCase(args[0])) {
+            if (args.length >= 2 && "reset".equalsIgnoreCase(args[1])) {
+                zmaster587.advancedRocketry.util.ShipLifecycleTrace.reset();
+                send(sender, "{\"ok\":true,\"reset\":true}");
+                return;
+            }
+            if (args.length < 2) {
+                send(sender, "{\"error\":\"usage: vs lifecycle <shipUuid> | vs lifecycle reset\"}");
+                return;
+            }
+            java.util.UUID shipUuid;
+            try {
+                shipUuid = java.util.UUID.fromString(args[1]);
+            } catch (IllegalArgumentException notAnIdentity) {
+                send(sender, "{\"error\":\"not a ship uuid\",\"given\":\"" + args[1] + "\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true,"
+                    + zmaster587.advancedRocketry.util.ShipLifecycleTrace.summaryOf(shipUuid)
+                    + ",\"recorder\":{"
+                    + zmaster587.advancedRocketry.util.ShipLifecycleTrace.summary() + "}}");
+            return;
+        }
         // permaload <bool> — keep VS ships permanently loaded (headless has no player to hold a ship
         // loaded, so a freshly assembled ship auto-unloads between probe calls).
         if (args.length >= 2 && "permaload".equalsIgnoreCase(args[0])) {
@@ -918,6 +948,10 @@ public class TestProbeCommand extends CommandBase {
                 m.put("anchorY", anchor == null ? -1 : anchor.getY());
                 m.put("anchorZ", anchor == null ? -1 : anchor.getZ());
                 m.put("anchorSolid", anchorSolid);
+                // The identity the craft came out under. A crossing keeps it where it can, so this is
+                // usually the SAME uuid it went in with - which is exactly why a caller must be given
+                // it rather than left to look up whatever ship now sits at the destination.
+                m.put("shipUuid", res.shipUuid == null ? null : res.shipUuid.toString());
                 m.put("ridersCarried", riders.size());
                 send(sender, jsonMap(m));
             } catch (Throwable t) {
@@ -4953,9 +4987,12 @@ public class TestProbeCommand extends CommandBase {
                     }
                 }
             }
-            zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(
-                    w, new net.minecraft.util.math.BlockPos(1, 65, 1));
-            send(sender, "{\"ok\":true,\"slot\":" + slot + "}");
+            // The identity is handed back so a caller can ask about THIS ship afterwards rather than
+            // about whichever one is nearest a point - the assembly is the one moment it is free.
+            java.util.UUID assembled = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .assembleTier2Ship(w, new net.minecraft.util.math.BlockPos(1, 65, 1));
+            send(sender, "{\"ok\":true,\"slot\":" + slot + ",\"shipUuid\":"
+                    + (assembled == null ? "null" : "\"" + assembled + "\"") + "}");
             return;
         }
         if (args.length >= 2 && "vs-count".equalsIgnoreCase(args[0])) {

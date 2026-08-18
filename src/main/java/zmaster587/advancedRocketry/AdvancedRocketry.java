@@ -1231,6 +1231,9 @@ public class AdvancedRocketry {
         // attributable to chunk work if the count of chunks that arrived during it is on the same
         // sample. Two increments per chunk load, nothing else.
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.util.MotionTrace.Hooks());
+        // What the ship-was-named announcement said, per ship. An edge leaves no trace in the world
+        // it changes, so the only way to check one fired exactly once is to have been listening.
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.util.ShipLifecycleTrace.Hooks());
 
         PacketHandler.init();
 

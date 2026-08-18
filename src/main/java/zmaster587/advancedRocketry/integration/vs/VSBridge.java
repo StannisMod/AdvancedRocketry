@@ -29,6 +29,7 @@ import org.valkyrienskies.mod.common.util.ValkyrienUtils;
 import valkyrienwarfare.api.TransformType;
 
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
+import zmaster587.advancedRocketry.api.event.ShipLifecycleEvent;
 
 /**
  * The Valkyrien Skies-facing side of the integration. Every reference to an
@@ -71,6 +72,17 @@ final class VSBridge {
     }
 
     /**
+     * The same, for a craft that ALREADY EXISTED and is being re-registered around blocks pasted here
+     * — a crossing, a transit, a reposition. Nothing at the assembly can tell this from a new build,
+     * so the caller who knows says so, and the naming event carries the answer.
+     */
+    static UUID pasteTier2Ship(World world, BlockPos anchorPos, Logger logger, UUID keepUuid,
+                               UUID keepDurableId) {
+        return assembleTier2Ship(world, anchorPos, logger, keepUuid, keepDurableId,
+                ShipLifecycleEvent.Cause.PASTED);
+    }
+
+    /**
      * The same assembly, KEEPING an identity the caller already holds ({@code keepUuid}), so a ship
      * that crosses from one world to another comes out the other side as the same ship rather than as
      * a stranger that has to be re-found by position. {@code null} means "mint a fresh one", which is
@@ -86,6 +98,13 @@ final class VSBridge {
         return assembleTier2Ship(world, anchorPos, logger, keepUuid, null);
     }
 
+    /** @see #assembleTier2Ship(World, BlockPos, Logger, UUID, UUID, ShipLifecycleEvent.Cause) */
+    static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger, UUID keepUuid,
+                                  UUID keepDurableId) {
+        return assembleTier2Ship(world, anchorPos, logger, keepUuid, keepDurableId,
+                ShipLifecycleEvent.Cause.ASSEMBLED);
+    }
+
     /**
      * The same assembly, also carrying Advanced Rocketry's DURABLE name for the craft onto the record
      * it creates.
@@ -98,7 +117,7 @@ final class VSBridge {
      * The name belongs to the ship, so it travels with the ship.</p>
      */
     static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger, UUID keepUuid,
-                                  UUID keepDurableId) {
+                                  UUID keepDurableId, ShipLifecycleEvent.Cause cause) {
         UUID identity = adoptOwnRemnant(world, keepUuid, logger);
         ShipData ship = identity == null
                 ? ValkyrienUtils.createNewShip(world, anchorPos)
@@ -110,7 +129,7 @@ final class VSBridge {
             ship.setArDurableIdBeforeRegistration(keepDurableId);
         }
         WorldServerShipManager manager = ValkyrienUtils.getServerShipManager(world);
-        manager.queueShipSpawn(ship, anchorPos, BlockFinder.BlockFinderType.FIND_ALL_BLOCKS);
+        manager.queueShipSpawn(ship, anchorPos, BlockFinder.BlockFinderType.FIND_ALL_BLOCKS, cause);
         logger.info("Queued tier-2 ship assembly at {} (ship '{}', {}{}).", anchorPos, ship.getName(),
                 ship.getUuid(), identity == null && keepUuid != null ? ", identity NOT kept" : "");
         return ship.getUuid();

@@ -16,7 +16,6 @@ import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraft.world.gen.ChunkProviderServer;
-import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.valkyrienskies.mod.common.config.VSConfig;
 import org.valkyrienskies.mod.common.physics.BlockPhysicsDetails;
 import org.valkyrienskies.mod.common.ships.QueryableShipData;
@@ -28,7 +27,10 @@ import org.valkyrienskies.mod.common.ships.physics_data.BasicCenterOfMassProvide
 import org.valkyrienskies.mod.common.ships.physics_data.IPhysicsObjectCenterOfMassProvider;
 import org.valkyrienskies.mod.common.util.multithreaded.CalledFromWrongThreadException;
 import org.valkyrienskies.mod.common.util.multithreaded.VSWorldPhysicsLoop;
+import net.minecraftforge.common.MinecraftForge;
+import zmaster587.advancedRocketry.api.event.ShipLifecycleEvent;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.*;
 
 public class WorldServerShipManager implements IPhysObjectWorld {
@@ -38,12 +40,21 @@ public class WorldServerShipManager implements IPhysObjectWorld {
     private final WorldShipLoadingController loadingController;
     private final Map<UUID, PhysicsObject> loadedShips;
     // Use LinkedHashSet as a queue because it preserves order and doesn't allow duplicates
-    private final LinkedHashSet<ImmutableTriple<BlockPos, ShipData, BlockFinder.BlockFinderType>> spawnQueue;
+    private final LinkedHashSet<QueuedSpawn> spawnQueue;
     private final LinkedHashSet<UUID> loadQueue;
     private final LinkedHashSet<UUID> unloadQueue;
     private final LinkedHashSet<UUID> backgroundLoadQueue;
     private final Set<UUID> loadingInBackground;
     private ImmutableList<PhysicsObject> threadSafeLoadedShips;
+    /**
+     * Lifecycle transitions that happened this tick and have not been announced yet.
+     *
+     * <p>Collected rather than posted at the site, and flushed once the queues above have all been
+     * drained. A handler is then free to queue a spawn, a load or an unload of its own — it lands in
+     * a queue nothing is iterating, and is acted on next tick — where posting mid-drain would have
+     * meant a handler mutating the very collection the loop was walking.</p>
+     */
+    private final List<ShipLifecycleEvent> pendingLifecycle;
 
     public WorldServerShipManager(World world) {
         this.world = (WorldServer) world;
@@ -55,9 +66,56 @@ public class WorldServerShipManager implements IPhysObjectWorld {
         this.unloadQueue = new LinkedHashSet<>();
         this.backgroundLoadQueue = new LinkedHashSet<>();
         this.loadingInBackground = new HashSet<>();
+        this.pendingLifecycle = new ArrayList<>();
         this.threadSafeLoadedShips = ImmutableList.of();
         this.physicsThread = new Thread(physicsLoop);
         this.physicsThread.start();
+    }
+
+    /**
+     * One queued spawn: where to look for the blocks, the record to register them under, how to find
+     * them, and WHY the ship is appearing.
+     *
+     * <p>The cause is carried in from the caller rather than worked out at the drain, because the
+     * drain cannot tell a new build from a craft that was cut out of another world and pasted here —
+     * both arrive as the same call with the same blocks. Only the caller knows which it asked for,
+     * and the difference decides whether a consumer mints a durable record or reattaches to one.</p>
+     *
+     * <p>Value equality across all four fields, so the enclosing {@code LinkedHashSet} keeps refusing
+     * duplicates exactly as it did when this was a triple.</p>
+     */
+    private static final class QueuedSpawn {
+        private final BlockPos spawnPos;
+        private final ShipData toSpawn;
+        private final BlockFinder.BlockFinderType blockFinderType;
+        private final ShipLifecycleEvent.Cause cause;
+
+        private QueuedSpawn(BlockPos spawnPos, ShipData toSpawn,
+                            BlockFinder.BlockFinderType blockFinderType,
+                            ShipLifecycleEvent.Cause cause) {
+            this.spawnPos = spawnPos;
+            this.toSpawn = toSpawn;
+            this.blockFinderType = blockFinderType;
+            this.cause = cause;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof QueuedSpawn)) {
+                return false;
+            }
+            QueuedSpawn that = (QueuedSpawn) other;
+            return Objects.equals(spawnPos, that.spawnPos) && toSpawn == that.toSpawn
+                    && blockFinderType == that.blockFinderType && cause == that.cause;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(spawnPos, System.identityHashCode(toSpawn), blockFinderType, cause);
+        }
     }
 
     private void enforceGameThread() {
@@ -99,6 +157,7 @@ public class WorldServerShipManager implements IPhysObjectWorld {
                 // Copy ship blocks to the world
                 physicsObject.destroyShip();
                 // Then remove the ship from the world, and the ship map.
+                noteLifecycle(physicsObject.getShipData(), ShipLifecycleEvent.Cause.DESTROYED);
                 QueryableShipData.get(world).removeShip(physicsObject.getShipData());
                 iterator.remove();
             }
@@ -109,6 +168,8 @@ public class WorldServerShipManager implements IPhysObjectWorld {
         loadingController.determineLoadAndUnload();
         // Then execute queued ship load and unload operations
         loadAndUnloadShips();
+        // Then announce everything that appeared or vanished above, now that no queue is being walked
+        publishLifecycleEvents();
         // Then tick all the loaded ships
         for (PhysicsObject ship : getAllLoadedPhysObj()) {
             ship.onTick();
@@ -120,10 +181,10 @@ public class WorldServerShipManager implements IPhysObjectWorld {
     }
 
     private void spawnNewShips() {
-        for (final ImmutableTriple<BlockPos, ShipData, BlockFinder.BlockFinderType> spawnData : spawnQueue) {
-            final BlockPos physicsInfuserPos = spawnData.getLeft();
-            final ShipData toSpawn = spawnData.getMiddle();
-            final BlockFinder.BlockFinderType blockBlockFinderType = spawnData.getRight();
+        for (final QueuedSpawn spawnData : spawnQueue) {
+            final BlockPos physicsInfuserPos = spawnData.spawnPos;
+            final ShipData toSpawn = spawnData.toSpawn;
+            final BlockFinder.BlockFinderType blockBlockFinderType = spawnData.blockFinderType;
             dropOwnBlocklessRemnant(toSpawn.getUuid());
             if (loadedShips.containsKey(toSpawn.getUuid())) {
                 throw new IllegalStateException("Tried spawning a ShipData that was already loaded?\n" + toSpawn);
@@ -284,6 +345,8 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             // Finally, instantiate the PhysicsObject representation of this ShipData
             PhysicsObject physicsObject = new PhysicsObject(world, toSpawn);
             loadedShips.put(toSpawn.getUuid(), physicsObject);
+            // The ship is now resolvable by id: this is the naming edge for a spawn.
+            noteLifecycle(toSpawn, spawnData.cause);
         }
         spawnQueue.clear();
     }
@@ -317,12 +380,53 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             // block set, so nothing is resurrected).
             loaded.destroyShip();
             loadedShips.remove(uuid);
+            noteLifecycle(loaded.getShipData(), ShipLifecycleEvent.Cause.DESTROYED);
         }
         QueryableShipData.get(world).getShip(uuid).ifPresent(remnant -> {
             if (remnant.getBlockPositions() != null && remnant.getBlockPositions().isEmpty()) {
+                // Announced even though the spawn a few lines below re-registers the same identity:
+                // the registration a consumer was holding really does end here, and a consumer that
+                // saw only the re-registration would keep state built against the remnant.
+                noteLifecycle(remnant, ShipLifecycleEvent.Cause.DESTROYED);
                 QueryableShipData.get(world).removeShip(remnant);
             }
         });
+    }
+
+    /**
+     * Record a lifecycle transition for announcement at the end of this tick's pass.
+     *
+     * <p>Both identities are read HERE, while the record is still in hand: by publication time a
+     * destroyed ship is out of the registry and could not be asked for its durable id.</p>
+     */
+    private void noteLifecycle(@Nullable ShipData ship, ShipLifecycleEvent.Cause cause) {
+        if (ship == null) {
+            return;
+        }
+        UUID shipUuid = ship.getUuid();
+        UUID durableId = ship.getArDurableId();
+        pendingLifecycle.add(cause == ShipLifecycleEvent.Cause.UNLOADED
+                || cause == ShipLifecycleEvent.Cause.DESTROYED
+                ? new ShipLifecycleEvent.ShipUnnamed(world, shipUuid, durableId, cause)
+                : new ShipLifecycleEvent.ShipNamed(world, shipUuid, durableId, cause));
+    }
+
+    /**
+     * Announce this tick's lifecycle transitions, in the order they happened.
+     *
+     * <p>Drained into a local copy first: a handler is allowed to queue ship work, and a spawn it
+     * queues could otherwise append to the list being iterated. Anything a handler causes is
+     * announced on the tick it actually happens, not folded into this one.</p>
+     */
+    private void publishLifecycleEvents() {
+        if (pendingLifecycle.isEmpty()) {
+            return;
+        }
+        List<ShipLifecycleEvent> toPublish = new ArrayList<>(pendingLifecycle);
+        pendingLifecycle.clear();
+        for (ShipLifecycleEvent event : toPublish) {
+            MinecraftForge.EVENT_BUS.post(event);
+        }
     }
 
     private void injectChunkIntoWorldServer(@Nonnull Chunk chunk, int x, int z) {
@@ -356,6 +460,9 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             if (old != null) {
                 throw new IllegalStateException("How did we already have a ship loaded for " + toLoad);
             }
+            // The naming edge for a ship that already existed. A background load reaches this same
+            // loop once the controller promotes it, so there is one edge per load however it started.
+            noteLifecycle(toLoad, ShipLifecycleEvent.Cause.LOADED);
         }
         loadQueue.clear();
         // Load ships that aren't required immediately in the background.
@@ -413,6 +520,8 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             if (!success) {
                 throw new IllegalStateException("How did we fail to unload " + physicsObject.getShipData());
             }
+            // The craft is still registered and still on disk - only the ship object is gone.
+            noteLifecycle(physicsObject.getShipData(), ShipLifecycleEvent.Cause.UNLOADED);
         }
         unloadQueue.clear();
     }
@@ -432,10 +541,25 @@ public class WorldServerShipManager implements IPhysObjectWorld {
 
     /**
      * Thread safe way to queue a ship spawn. (Not the same as {@link #queueShipLoad(UUID)}.
+     *
+     * <p>Announced as a brand-new craft. A caller that is re-registering a craft which already
+     * existed — a crossing, a transit, a reposition — must say so through
+     * {@link #queueShipSpawn(ShipData, BlockPos, BlockFinder.BlockFinderType, ShipLifecycleEvent.Cause)}
+     * instead, because nothing at the drain can tell the two apart.</p>
      */
     public void queueShipSpawn(@Nonnull ShipData data, @Nonnull BlockPos spawnPos, @Nonnull BlockFinder.BlockFinderType blockFinderType) {
+        queueShipSpawn(data, spawnPos, blockFinderType, ShipLifecycleEvent.Cause.ASSEMBLED);
+    }
+
+    /**
+     * The same, stating WHY this ship is appearing — see {@link ShipLifecycleEvent.Cause}. The cause
+     * travels with the queued spawn and is what the naming event carries when the queue is drained.
+     */
+    public void queueShipSpawn(@Nonnull ShipData data, @Nonnull BlockPos spawnPos,
+                               @Nonnull BlockFinder.BlockFinderType blockFinderType,
+                               @Nonnull ShipLifecycleEvent.Cause cause) {
         enforceGameThread();
-        this.spawnQueue.add(ImmutableTriple.of(spawnPos, data, blockFinderType));
+        this.spawnQueue.add(new QueuedSpawn(spawnPos, data, blockFinderType, cause));
     }
 
     /**

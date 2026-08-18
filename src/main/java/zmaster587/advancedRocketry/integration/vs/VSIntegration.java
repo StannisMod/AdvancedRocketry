@@ -113,6 +113,28 @@ public final class VSIntegration {
     }
 
     /**
+     * The re-assembly half of a crossing: the same work, for a craft that ALREADY EXISTED and whose
+     * blocks have just been pasted here.
+     *
+     * <p>Identical in every mechanical respect to
+     * {@link #assembleTier2Ship(World, BlockPos, java.util.UUID, java.util.UUID)} — the only
+     * difference is what the resulting ship-was-named announcement says about WHY the ship appeared.
+     * Nothing downstream of the assembly can work that out for itself: a paste and a new build arrive
+     * as the same blocks through the same call, and the distinction decides whether a consumer mints
+     * a durable record for a new vessel or reattaches to the one this vessel already had. So the
+     * caller who knows says it here, rather than letting each consumer guess from whatever proxy is
+     * to hand.</p>
+     */
+    public static java.util.UUID pasteTier2Ship(World world, BlockPos anchorPos,
+                                                java.util.UUID keepUuid,
+                                                java.util.UUID keepDurableId) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.pasteTier2Ship(world, anchorPos, LOGGER, keepUuid, keepDurableId);
+    }
+
+    /**
      * The subspace shipyard box of the ship NAMED by {@code shipUuid}, or {@code null} when the
      * physics mod is absent or this world holds no such ship.
      *
@@ -438,7 +460,7 @@ public final class VSIntegration {
             // Re-assemble under the identity the ship crossed with. Same world as the source on a
             // same-world reposition, where this ship's own blockless remnant is what holds the
             // identity - it is adopted rather than collided with.
-            shipUuid = assembleTier2Ship(dstWorld, anchor, srcShipId, srcDurableName);
+            shipUuid = pasteTier2Ship(dstWorld, anchor, srcShipId, srcDurableName);
         } else {
             // The only DESTRUCTIVE failure of the four: the source has already been cut by this point,
             // so the ship exists as loose blocks at the paste site and nowhere else. Logged at ERROR
@@ -533,7 +555,11 @@ public final class VSIntegration {
                 }
             }
         }
-        java.util.UUID shipUuid = anchor == null ? null : assembleTier2Ship(dstWorld, anchor);
+        // A paste, not a build: these blocks came out of a snapshot of a craft that already existed.
+        // The identity is not carried on this path, but the CAUSE still is - a consumer that mints a
+        // durable record for every new vessel must not mint a second one for a craft that crossed.
+        java.util.UUID shipUuid = anchor == null ? null
+                : pasteTier2Ship(dstWorld, anchor, null, null);
         return new CrossResult(anchor, shipUuid, dstY, dstY + snap.getSizeY());
     }
 
