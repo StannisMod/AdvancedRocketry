@@ -33,21 +33,72 @@ public final class ImpactRequest {
     private final int budget;
     private final ImpactKind kind;
     private final SelectionMode selectionMode;
+    private final double reachBlocks;
+    private final double crossSectionArea;
+    private final boolean resumesInside;
+
+    /** The cross-section a budget is priced against unless the caller says otherwise. */
+    public static final double REFERENCE_AREA = Math.PI * 0.25D * 0.25D;
+
+    /** Reach for a caller that has no notion of one — an explosion, a collision, a hazard. */
+    public static final double UNBOUNDED_REACH = Double.MAX_VALUE;
 
     public ImpactRequest(long impactId, Vec3d point, Vec3d direction, int budget, ImpactKind kind,
                          SelectionMode selectionMode) {
+        this(impactId, point, direction, budget, kind, selectionMode, UNBOUNDED_REACH, REFERENCE_AREA);
+    }
+
+    public ImpactRequest(long impactId, Vec3d point, Vec3d direction, int budget, ImpactKind kind,
+                         SelectionMode selectionMode, double reachBlocks, double crossSectionArea) {
+        this(impactId, point, direction, budget, kind, selectionMode, reachBlocks, crossSectionArea,
+                false);
+    }
+
+    public ImpactRequest(long impactId, Vec3d point, Vec3d direction, int budget, ImpactKind kind,
+                         SelectionMode selectionMode, double reachBlocks, double crossSectionArea,
+                         boolean resumesInside) {
+        this.resumesInside = resumesInside;
         this.impactId = impactId;
         this.point = point;
         this.direction = normalize(direction);
         this.budget = Math.max(0, budget);
         this.kind = kind == null ? ImpactKind.KINETIC : kind;
         this.selectionMode = selectionMode == null ? SelectionMode.PENETRATING : selectionMode;
+        this.reachBlocks = reachBlocks <= 0.0D ? 0.0D : reachBlocks;
+        this.crossSectionArea = crossSectionArea <= 0.0D ? REFERENCE_AREA : crossSectionArea;
     }
 
     /** A solid body striking at a point and boring along its direction of travel. */
     public static ImpactRequest penetrating(long impactId, Vec3d point, Vec3d direction, int budget,
                                             ImpactKind kind) {
         return new ImpactRequest(impactId, point, direction, budget, kind, SelectionMode.PENETRATING);
+    }
+
+    /**
+     * The same, from a body that is only allowed to get so far this time and has a cross-section of
+     * its own — a shot boring through a hull over several ticks, which may spend only as much of its
+     * path as it actually travelled.
+     */
+    public static ImpactRequest penetrating(long impactId, Vec3d point, Vec3d direction, int budget,
+                                            ImpactKind kind, double reachBlocks,
+                                            double crossSectionArea) {
+        return new ImpactRequest(impactId, point, direction, budget, kind, SelectionMode.PENETRATING,
+                reachBlocks, crossSectionArea, false);
+    }
+
+    /**
+     * The same, from a body that is CONTINUING a bore it began on an earlier tick: it is standing in
+     * the block it starts in and has already been charged for it.
+     *
+     * <p>Without this a slow round pays for the block it is embedded in once per tick and grinds it to
+     * dust without moving, which is not "penetration takes time" — it is a shot that gets stronger the
+     * slower it goes.</p>
+     */
+    public static ImpactRequest resuming(long impactId, Vec3d point, Vec3d direction, int budget,
+                                         ImpactKind kind, double reachBlocks,
+                                         double crossSectionArea) {
+        return new ImpactRequest(impactId, point, direction, budget, kind, SelectionMode.PENETRATING,
+                reachBlocks, crossSectionArea, true);
     }
 
     /** Identity for retry refusal; see the class note. */
@@ -76,6 +127,30 @@ public final class ImpactRequest {
 
     public SelectionMode getSelectionMode() {
         return selectionMode;
+    }
+
+    /**
+     * How far along its direction this impact may reach, in blocks. A body that penetrates over time
+     * grants only the distance it actually travelled this tick; a caller with no such notion leaves it
+     * {@link #UNBOUNDED_REACH} and the engine's own path limit is what bounds the walk.
+     */
+    public double getReachBlocks() {
+        return reachBlocks;
+    }
+
+    /**
+     * The body's cross-section, in square blocks. Material resists with a PRESSURE, so the energy a
+     * body spends per unit of depth is that pressure times this area: the same energy behind a wider
+     * face bores less far. Defaults to {@link #REFERENCE_AREA}, at which the price is exactly what it
+     * was before areas were priced at all.
+     */
+    public double getCrossSectionArea() {
+        return crossSectionArea;
+    }
+
+    /** True when the body already paid for the block it starts in, on an earlier tick of the same bore. */
+    public boolean resumesInside() {
+        return resumesInside;
     }
 
     private static Vec3d normalize(Vec3d v) {

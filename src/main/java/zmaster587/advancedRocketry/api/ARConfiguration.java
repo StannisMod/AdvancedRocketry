@@ -401,6 +401,7 @@ public class ARConfiguration {
      */
     @ConfigProperty(needsSync = true)
     public double shotReflectionSpeedFloor = 0.05;
+    public double shotPenetrationSpeedFloor = 0.05;
     /**
      * How many shots one world may carry at once. A refusal, not an eviction: dropping somebody
      * else's round to make room would turn a burst of cheap fire into a way of deleting incoming fire.
@@ -725,6 +726,7 @@ public class ARConfiguration {
         arConfig.wearSeatBlockStageFraction = config.get(ROCKET, "wearSeatBlockStageFraction", 0.7, "Wear fraction (0..1 of max stage) at or above which a worn seat blocks a CREWED launch. Uncrewed/automated rockets ignore seat wear").getDouble();
         arConfig.enableProjectileSubstrate = config.get(WEAPONS, "enableProjectileSubstrate", true, "Track fired shots as server-side records that fly across loaded and unloaded space alike. Turn off to disable long-range fire entirely: nothing is admitted and nothing in flight is stepped").getBoolean();
         arConfig.shotReflectionSpeedFloor = config.get(WEAPONS, "shotReflectionSpeedFloor", 0.05, "Speed in blocks per tick below which a shot deflected by a shield is ended at the shell instead of continuing. Prevents near-motionless rounds loitering against a shield", 0.0, Double.MAX_VALUE).getDouble();
+        arConfig.shotPenetrationSpeedFloor = config.get(WEAPONS, "shotPenetrationSpeedFloor", 0.05, "Speed in blocks per tick below which a round boring through a hull is treated as having come to rest inside it. Penetration costs a round its speed, and without a floor a spent one creeps forward forever", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.maxShotsPerWorld = config.get(WEAPONS, "maxShotsPerWorld", 256, "How many shots one world may have in flight at once. Further fire is refused until some land; nothing already in flight is ever dropped to make room", 1, Integer.MAX_VALUE).getInt();
         arConfig.shotVisibilityRadius = config.get(WEAPONS, "shotVisibilityRadius", 256, "How near a player the path of a fired round must pass before that player is told about it and can see it drawn, in blocks. 0 disables shot replication entirely — the mechanic still works, nothing is drawn", 0, Integer.MAX_VALUE).getInt();
         arConfig.enableFireControlSensor = config.get(WEAPONS, "enableFireControlSensor", true, "Whether fire-control sensors search for targets. Off, a sensor acquires nothing, publishes nothing and draws no power: batteries are pointed by hand, as they were before sensors existed").getBoolean();

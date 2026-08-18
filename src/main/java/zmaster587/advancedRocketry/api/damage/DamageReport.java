@@ -22,10 +22,18 @@ public final class DamageReport {
     private final Vec3d entryPoint;
     private final Vec3d exitPoint;
     private final int penetrationDepth;
+    private final double distanceWalked;
 
     public DamageReport(DamageOutcome outcome, StopReason stopReason, int budgetSpent, int budgetLeft,
                         int blocksStaged, int blocksDestroyed, Vec3d entryPoint, Vec3d exitPoint,
                         int penetrationDepth) {
+        this(outcome, stopReason, budgetSpent, budgetLeft, blocksStaged, blocksDestroyed, entryPoint,
+                exitPoint, penetrationDepth, 0.0D);
+    }
+
+    public DamageReport(DamageOutcome outcome, StopReason stopReason, int budgetSpent, int budgetLeft,
+                        int blocksStaged, int blocksDestroyed, Vec3d entryPoint, Vec3d exitPoint,
+                        int penetrationDepth, double distanceWalked) {
         this.outcome = outcome;
         this.stopReason = stopReason;
         this.budgetSpent = budgetSpent;
@@ -35,6 +43,7 @@ public final class DamageReport {
         this.entryPoint = entryPoint;
         this.exitPoint = exitPoint;
         this.penetrationDepth = penetrationDepth;
+        this.distanceWalked = Math.max(0.0D, distanceWalked);
     }
 
     /** Nothing damageable was met: no spend, no change. */
@@ -85,6 +94,16 @@ public final class DamageReport {
     }
 
     /** Blocks traversed along the path — what tells two weapons of equal energy apart. */
+    /**
+     * How far into the target this impact actually got, in blocks along its own direction — distinct
+     * from {@link #getPenetrationDepth()}, which counts blocks met. A body that penetrates over time
+     * advances by this, so a bore that stalls against armour advances by very little and one that
+     * sails through advances by its whole reach.
+     */
+    public double getDistanceWalked() {
+        return distanceWalked;
+    }
+
     public int getPenetrationDepth() {
         return penetrationDepth;
     }

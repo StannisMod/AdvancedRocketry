@@ -23,9 +23,15 @@ import static org.junit.Assert.assertTrue;
  * <p>Two controls, both asserted before any conclusion is drawn. The world frame at the target must
  * genuinely hold <b>air</b>, so a hit cannot have come from the world-frame traversal; and the
  * subject block must be undamaged at its subspace address beforehand, so "damaged afterwards" is
- * about this shot. The end point is then checked against the ship's WORLD position — with the
- * mapping-back-out leg deleted, a shot would report ending five million blocks away in a shipyard
- * nobody can see, and every other assertion here would still pass.</p>
+ * about this shot. The shot's own position after the crossing is then checked against the ship's
+ * WORLD position — with the mapping-back-out leg deleted it would be five million blocks away in a
+ * shipyard nobody can see, and every other assertion here would still pass.</p>
+ *
+ * <p><b>Retired 2026-08-17, and worth saying why</b>: this used to assert that the round ENDED at the
+ * hull. It no longer does, because penetration takes time — a round carrying more than the hull costs
+ * is now correct to punch through and fly on, and a test that kept the old clause would be pinning
+ * behaviour the game deliberately dropped. What replaced it says the same thing about the frame
+ * without saying anything about stopping power: the round's budget fell by what the hull cost it.</p>
  */
 public class ShotHitsShipHullE2ETest extends AbstractSharedServerTest {
 
@@ -40,11 +46,17 @@ public class ShotHitsShipHullE2ETest extends AbstractSharedServerTest {
 
     /** Fast enough that one tick's segment crosses the whole hull — the case a point test misses. */
     private static final double SPEED = 40.0D;
-    /** Enough budget to be spent on more than the first block it meets. */
-    private static final int ENERGY = 200000;
+    /**
+     * How much of a block's destruction price the round is given, as a multiple. Enough to spend into
+     * the hull and stop inside it, not enough to bore out the far side — since penetration takes time
+     * a round richer than the hull is CORRECT to fly on through, and this test is about frames, not
+     * about stopping power. Priced off the target block's own cost, never hard-coded: that cost comes
+     * from the toughness table, which is balance and moves.
+     */
+    private static final double BUDGET_IN_BLOCKS = 1.5D;
 
     @Test
-    public void aShotStopsAtTheHullOfAMovedShipAndDamagesItsOwnBlock() throws Exception {
+    public void aShotFindsAMovedShipsHullInItsOwnFrameAndDamagesTheRightBlock() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the server classpath", serverHasVs());
         exec("artest vs permaload true");
         exec("artest damage clear-impacts");
@@ -97,17 +109,22 @@ public class ShotHitsShipHullE2ETest extends AbstractSharedServerTest {
                 readLong(before, "stage") == 0);
 
         // Fire straight down through the seat's WORLD position, from clear air above it.
+        int energy = (int) Math.round(readLong(before, "stageCost") * Math.max(1L,
+                readLong(before, "maxStage")) * BUDGET_IN_BLOCKS);
+        assertTrue("the target block has no price, so the round's budget would be meaningless: "
+                + before, energy > 0);
         long id = readLong(exec("artest shot fire 0 " + worldX + " " + (worldY + 30.0D) + " " + worldZ
-                + " 0 " + (-SPEED) + " 0 " + ENERGY + " 40"), "id");
+                + " 0 " + (-SPEED) + " 0 " + energy + " 40"), "id");
         assertTrue("the launch was refused, so nothing else here means anything", id > 0);
         exec("artest shield tick 0");
 
         String after = exec("artest shot read 0 " + id);
-        assertTrue("the shot is still in flight after a step that crossed the hull — a segment computed"
-                + " in the world frame finds nothing where a ship visibly is, which is exactly what"
-                + " this substrate maps around: " + after, after.contains("\"present\":false"));
-        assertTrue("the shot stopped, but not by meeting structure: " + after,
-                "STRUCTURE_IMPACT".equals(extractString(after, "ended")));
+        assertTrue("the shot must still be readable — present in flight, or remembered as ended: "
+                + after, after.contains("\"ok\":true"));
+        assertTrue("the shot's budget is untouched after a step that crossed the hull — a segment"
+                + " computed in the world frame finds nothing where a ship visibly is, which is"
+                + " exactly what this substrate maps around: " + after,
+                readLong(after, "energy") < energy);
 
         // The damage landed on the SHIP's own block, at its subspace address.
         String hull = stage(subX, subY, subZ);
@@ -118,15 +135,15 @@ public class ShotHitsShipHullE2ETest extends AbstractSharedServerTest {
                 + " subspace address (before=" + before + " after=" + hull + "): the impact was handed"
                 + " over in the wrong frame, or to the wrong target", staged || destroyed);
 
-        // And the shot ended in WORLD coordinates. Without the mapping back out it would report
-        // ending at a shipyard address millions of blocks from anything a player can see — and every
-        // assertion above would still have passed.
-        double endX = readDouble(after, "endX"), endY = readDouble(after, "endY"),
-                endZ = readDouble(after, "endZ");
-        double offSeat = Math.sqrt(sq(endX - worldX) + sq(endY - worldY) + sq(endZ - worldZ));
-        assertTrue("the shot ended at (" + endX + "," + endY + "," + endZ + "), " + offSeat
-                + " blocks from the world point it was fired through: the crossing point was never"
-                + " mapped out of the ship's frame", offSeat < 16.0D);
+        // And the crossing was expressed in WORLD coordinates. Without the mapping back out the shot
+        // would be sitting at a shipyard address millions of blocks from anything a player can see —
+        // and every assertion above would still have passed. The bound is generous on purpose: it is
+        // a millions-of-blocks error this is built to catch, not a metre.
+        double atX = readDouble(after, "x"), atY = readDouble(after, "y"), atZ = readDouble(after, "z");
+        double offSeat = Math.sqrt(sq(atX - worldX) + sq(atY - worldY) + sq(atZ - worldZ));
+        assertTrue("after crossing the hull the shot is at (" + atX + "," + atY + "," + atZ + "), "
+                + offSeat + " blocks from the world point it was fired through: the crossing point was"
+                + " never mapped out of the ship's frame", offSeat < 400.0D);
     }
 
     /** Build the fixture, assemble it into a ship and move it far from where it was built. */

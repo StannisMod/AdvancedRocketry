@@ -312,6 +312,13 @@ public class TestProbeCommand extends CommandBase {
                 spec = spec.withKind(zmaster587.advancedRocketry.api.damage.ImpactKind
                         .valueOf(args[10].toUpperCase(java.util.Locale.ROOT)));
             }
+            // The BODY, optionally: radius then mass. A round's cross-section is what its energy is
+            // spread over, so a test that wants to compare calibres has to be able to state one — the
+            // default is the reference body every other verb fires.
+            if (args.length >= 12) {
+                spec = spec.withBody(parseDoubleOr(args[11], 0.25D),
+                        args.length >= 13 ? parseDoubleOr(args[12], 1.0D) : 1.0D);
+            }
             long id = zmaster587.advancedRocketry.projectile.ShotSubstrate.launch(world, spec);
             send(sender, "{\"ok\":true,\"id\":" + id + ",\"count\":" + registry.count() + "}");
             return;

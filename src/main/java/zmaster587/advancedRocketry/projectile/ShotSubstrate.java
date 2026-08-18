@@ -6,7 +6,7 @@ import com.github.stannismod.affs.world.shield.ShieldStrikeService;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.ARConfiguration;
-import zmaster587.advancedRocketry.api.damage.ContactResult;
+import zmaster587.advancedRocketry.api.damage.ImpactKind;
 import zmaster587.advancedRocketry.api.projectile.ShotEndReason;
 import zmaster587.advancedRocketry.api.projectile.ShotSpec;
 
@@ -75,6 +75,34 @@ public final class ShotSubstrate {
             ShotReplication.announceSpawn(world, id, spec);
         }
         return id;
+    }
+
+    /**
+     * What is left of a body's velocity after it has spent energy boring.
+     *
+     * <p>Kinetic energy goes as the square of speed, so a body that has spent a fraction of its energy
+     * keeps the square root of what remains: {@code v' = v·sqrt(E'/E)}. Written as a RATIO rather than
+     * from {@code sqrt(2E/m)} on purpose — the ratio needs no mass, and a mass of zero is a legitimate
+     * declaration for a body that is not a lump of metal.</p>
+     *
+     * <p><b>Speed and energy are coupled only for a body with mass.</b> A beam pays for depth like
+     * anything else — it is the same pressure over the same area — but it does not decelerate, because
+     * a beam that has spent half its energy is DIMMER, not slower: its energy is amplitude and its
+     * speed is its own. A mass of zero is how the formula announces that the relationship does not
+     * exist for this thing, rather than a physical claim about how fast a massless body travels.</p>
+     */
+    private static Vec3d slowedByWorkDone(Vec3d velocity, int energyBefore, int energyAfter,
+                                          ImpactKind kind) {
+        if (!carriesMass(kind) || energyBefore <= 0 || energyAfter >= energyBefore) {
+            return velocity;
+        }
+        double ratio = Math.sqrt(Math.max(0.0D, (double) energyAfter / (double) energyBefore));
+        return velocity.scale(ratio);
+    }
+
+    /** Which kinds are a lump of something travelling, as opposed to energy arriving. */
+    private static boolean carriesMass(ImpactKind kind) {
+        return kind == ImpactKind.KINETIC || kind == ImpactKind.EXPLOSIVE;
     }
 
     /** Advance every shot in this world by one tick. Driven by {@link ShotSubstrateEvents}. */
@@ -146,23 +174,49 @@ public final class ShotSubstrate {
                 shot.setVelocity(velocity);
 
                 // The block decides, this loop obeys — the same relationship the shell above already
-                // has with the field layer. Today every ordinary block answers "stopped", which is
-                // exactly what happened before there was a contract; armour is what makes the other
-                // two answers reachable.
-                ContactResult contact = ContactResolver.resolve(world, shot, structure, velocity);
-                if (contact.isStopped()) {
+                // has with the field layer. What it is granted is only the path still left in THIS
+                // tick after reaching the surface: boring is a thing that takes time, so a round that
+                // meets armour spends the rest of the tick inside it rather than resolving its whole
+                // life at the moment of contact.
+                int energyBefore = shot.getImpactEnergy();
+                double reachInside = Math.max(0.0D, reach - structure.distance);
+                // A crossing found at zero distance is a bore this shot began on an earlier tick: it
+                // is standing in that block, and it paid for it then.
+                boolean resuming = structure.distance <= CROSSING_EPSILON * 2.0D;
+                ContactResolver.Resolution contact = ContactResolver.resolve(world, shot, structure,
+                        velocity, reachInside, resuming);
+                if (contact.result.isStopped()) {
+                    // It came to rest where the walk stopped, not where it went in.
+                    shot.setPosition(structure.point.add(direction.scale(contact.distance)));
+                    shot.setVelocity(new Vec3d(0.0D, 0.0D, 0.0D));
                     return ShotEndReason.STRUCTURE_IMPACT;
                 }
 
-                double consumed = (structure.distance + CROSSING_EPSILON) / speed;
-                timeLeft -= consumed;
-                shot.setImpactEnergy(contact.getResidualEnergy());
-                if (contact.isDeflected()) {
-                    velocity = contact.getDeflectedVelocity();
+                shot.setImpactEnergy(contact.result.getResidualEnergy());
+
+                if (contact.result.isDeflected()) {
+                    timeLeft -= (structure.distance + CROSSING_EPSILON) / speed;
+                    velocity = contact.result.getDeflectedVelocity();
                     position = structure.point.add(velocity.normalize().scale(CROSSING_EPSILON));
                 } else {
-                    position = structure.point.add(direction.scale(CROSSING_EPSILON));
+                    // It is still going, so it used this tick's travel: it is as deep as its speed
+                    // took it, and no deeper. That is the whole of "penetration takes time" — the
+                    // depth per tick is the distance per tick, and the next tick starts from here.
+                    position = structure.point.add(direction.scale(reachInside));
+                    timeLeft = 0.0D;
+                    velocity = slowedByWorkDone(velocity, energyBefore, shot.getImpactEnergy(),
+                            shot.getKind());
                 }
+
+                if (velocity.lengthVector()
+                        < ARConfiguration.getCurrentConfig().shotPenetrationSpeedFloor) {
+                    // It is still inside something and no longer travelling: it came to rest there.
+                    shot.setPosition(position);
+                    shot.setVelocity(new Vec3d(0.0D, 0.0D, 0.0D));
+                    return ShotEndReason.STRUCTURE_IMPACT;
+                }
+                shot.setPosition(position);
+                shot.setVelocity(velocity);
                 continue;
             }
             if (!fieldFirst) {

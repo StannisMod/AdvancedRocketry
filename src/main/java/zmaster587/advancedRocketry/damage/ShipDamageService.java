@@ -95,7 +95,8 @@ public final class ShipDamageService {
         if (shipId == null) {
             remember(world, request.getImpactId());
             return toReport(StructureDamageEngine.penetrate(world, point, request.getDirection(),
-                    request.getBudget()), null, world);
+                    request.getBudget(), request.getReachBlocks(), request.getCrossSectionArea(),
+                    request.resumesInside()), null, world);
         }
 
         double[] shipPoint = VSIntegration.toShipFrameFor(world, shipId, point.x, point.y, point.z);
@@ -111,7 +112,8 @@ public final class ShipDamageService {
         remember(world, request.getImpactId());
         StructureDamageEngine.WalkResult walk = StructureDamageEngine.penetrate(world,
                 new Vec3d(shipPoint[0], shipPoint[1], shipPoint[2]),
-                new Vec3d(shipDir[0], shipDir[1], shipDir[2]), request.getBudget());
+                new Vec3d(shipDir[0], shipDir[1], shipDir[2]), request.getBudget(),
+                request.getReachBlocks(), request.getCrossSectionArea(), request.resumesInside());
         return toReport(walk, shipId, world);
     }
 
@@ -197,8 +199,11 @@ public final class ShipDamageService {
     private static DamageReport toReport(StructureDamageEngine.WalkResult walk, String shipId, World world) {
         Vec3d entry = toWorld(world, shipId, walk.entryPoint);
         Vec3d exit = walk.outcome == DamageOutcome.EXITED ? toWorld(world, shipId, walk.exitPoint) : null;
+        // The distance needs no frame conversion: a ship's transform is rigid, so a length in its
+        // subspace is that same length in the world.
         return new DamageReport(walk.outcome, walk.stopReason, walk.budgetSpent, walk.budgetLeft,
-                walk.blocksStaged, walk.blocksDestroyed, entry, exit, walk.penetrationDepth);
+                walk.blocksStaged, walk.blocksDestroyed, entry, exit, walk.penetrationDepth,
+                walk.distanceWalked);
     }
 
     private static Vec3d toWorld(World world, String shipId, Vec3d local) {

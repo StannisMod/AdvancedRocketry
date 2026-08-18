@@ -186,6 +186,11 @@ public class ShieldDamageDegradesTest extends AbstractSharedServerTest {
             hit(ex);
             // The emitter re-reads its own condition on its tick, and a lit field costs energy to
             // hold, so keep feeding it: a dark shield covers nothing for reasons unrelated to damage.
+            // The FEED is the point — an emitter left to drain goes dark on a slow loop, and this
+            // test then fails about power while claiming to be about radius (seen under parallel load
+            // 2026-08-17, green serially).
+            exec("artest energy inject " + DIM + " " + (ex - 1) + " " + Y + " " + Z + " 8000");
+            exec("artest tile force-tick " + DIM + " " + (ex - 1) + " " + Y + " " + Z + " 1");
             exec("artest tile force-tick " + DIM + " " + ex + " " + Y + " " + Z + " 2");
             exec("artest shield tick " + DIM);
         }

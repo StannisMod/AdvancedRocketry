@@ -8,6 +8,7 @@ import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.damage.Contact;
 import zmaster587.advancedRocketry.api.damage.ContactResult;
 import zmaster587.advancedRocketry.api.damage.IContactResponder;
+import zmaster587.advancedRocketry.api.damage.DamageReport;
 import zmaster587.advancedRocketry.api.damage.ImpactRequest;
 import zmaster587.advancedRocketry.damage.ShipDamageService;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
@@ -39,10 +40,26 @@ public final class ContactResolver {
      *            world point
      * @param worldVelocity the shot's velocity in WORLD terms
      */
-    public static ContactResult resolve(World world, Shot shot, StructureCrossing.Hit hit,
-                                        Vec3d worldVelocity) {
+    /**
+     * What happened, AND how far along its own direction the body got while it happened. The distance
+     * is not part of {@link ContactResult} on purpose: a block answering a contact says what becomes
+     * of the body, not how the substrate should move it, and giving armour a way to state a distance
+     * would be giving it a way to teleport a round.
+     */
+    public static final class Resolution {
+        public final ContactResult result;
+        public final double distance;
+
+        Resolution(ContactResult result, double distance) {
+            this.result = result;
+            this.distance = Math.max(0.0D, distance);
+        }
+    }
+
+    public static Resolution resolve(World world, Shot shot, StructureCrossing.Hit hit,
+                                     Vec3d worldVelocity, double reachBlocks, boolean resumingBore) {
         if (world == null || shot == null || hit == null) {
-            return ContactResult.stopped();
+            return new Resolution(ContactResult.stopped(), 0.0D);
         }
 
         Contact contact = new Contact(hit.block, hit.point, hit.entryFace,
@@ -53,25 +70,53 @@ public final class ContactResolver {
         if (responder != null) {
             ContactResult answer = responder.onContact(contact);
             if (answer != null) {
-                return answer;
+                // A block that answered for itself did not walk anything, so the body is advanced past
+                // the block it was answered by — otherwise the next test finds the same block, asks
+                // again, and a round argues with one plate until the tick's crossing budget runs out.
+                return new Resolution(answer, answer.isStopped() ? 0.0D : 1.0D);
             }
         }
-        return defaultLaw(world, shot, contact);
+        return defaultLaw(world, shot, contact, reachBlocks, resumingBore);
+    }
+
+    /** How far a body of this radius reaches across, in square blocks. */
+    public static double areaOf(double radius) {
+        double r = Math.max(radius, 0.0D);
+        return r <= 0.0D ? ImpactRequest.REFERENCE_AREA : Math.PI * r * r;
     }
 
     /**
-     * What an ordinary block does: absorb the impact through the damage service and stop the body.
+     * What an ordinary block does: resist with a pressure, and let through whatever the body still has
+     * after paying for the depth it managed.
      *
-     * <p>The whole energy is declared, exactly as before this seam existed — a shot does not yet
-     * survive a hull, and making it survive is a separate decision with its own consequences (the
-     * deceleration law, a speed floor, an identity per tick). Wiring it here would have smuggled that
-     * change in under a refactor.</p>
+     * <p><b>Penetration takes time.</b> The impact is granted only the path the body actually
+     * travelled this tick, so boring through a hull is a thing that happens over several ticks rather
+     * than an event resolved in the tick it began. What comes back is the budget the walk could not
+     * spend, and that is what the body carries on with: a round that ran out inside the armour is
+     * stopped, and one that still has something left keeps going.</p>
+     *
+     * <p>The body's cross-section rides along, because the material resists with a pressure: the same
+     * energy behind a wider face buys less depth. At the reference cross-section the price is what it
+     * always was.</p>
      */
-    private static ContactResult defaultLaw(World world, Shot shot, Contact contact) {
-        ShipDamageService.apply(world, ImpactRequest.penetrating(shot.nextImpactId(),
-                contact.getPoint(), directionOf(contact, shot), contact.getEnergy(),
-                contact.getKind()));
-        return ContactResult.stopped();
+    private static Resolution defaultLaw(World world, Shot shot, Contact contact, double reachBlocks,
+                                         boolean resumingBore) {
+        ImpactRequest request = resumingBore
+                ? ImpactRequest.resuming(shot.nextImpactId(), contact.getPoint(),
+                        directionOf(contact, shot), contact.getEnergy(), contact.getKind(),
+                        reachBlocks, areaOf(contact.getRadius()))
+                : ImpactRequest.penetrating(shot.nextImpactId(), contact.getPoint(),
+                        directionOf(contact, shot), contact.getEnergy(), contact.getKind(),
+                        reachBlocks, areaOf(contact.getRadius()));
+        DamageReport report = ShipDamageService.apply(world, request);
+
+        int residual = report.getBudgetLeft();
+        if (residual <= 0) {
+            return new Resolution(ContactResult.stopped(), report.getDistanceWalked());
+        }
+        // It got through what it met, or as far as this tick's travel allowed. Either way it is still
+        // a shot, and the substrate advances it by what the walk says it covered.
+        return new Resolution(ContactResult.passedThrough(residual), report.getDistanceWalked());
     }
 
     /**
@@ -88,9 +133,8 @@ public final class ContactResolver {
 
     /**
      * The shot's velocity expressed in the frame the block lives in — itself off a ship, rotated into
-     * subspace on one. Done by mapping two world points a velocity apart and subtracting: a ship's
-     * transform is rigid, so the difference of two mapped points IS the mapped vector, and it needs no
-     * port surface beyond the one the crossing already uses.
+     * subspace on one, through the port's own vector rotation rather than a difference of two mapped
+     * points (which is the same thing when the transform is rigid, and one more place to drift).
      */
     private static Vec3d inBlockFrame(World world, StructureCrossing.Hit hit, Vec3d worldVelocity) {
         if (worldVelocity == null) {
@@ -99,17 +143,15 @@ public final class ContactResolver {
         if (hit.shipId == null) {
             return worldVelocity;
         }
-        double[] base = VSIntegration.toShipFrameFor(world, hit.shipId, hit.point.x, hit.point.y,
-                hit.point.z);
-        double[] tip = VSIntegration.toShipFrameFor(world, hit.shipId, hit.point.x + worldVelocity.x,
-                hit.point.y + worldVelocity.y, hit.point.z + worldVelocity.z);
-        if (base == null || tip == null) {
+        double[] rotated = VSIntegration.rotateToShipFrameFor(world, hit.shipId, worldVelocity.x,
+                worldVelocity.y, worldVelocity.z);
+        if (rotated == null) {
             // The ship stopped answering between the crossing and here. A world-frame velocity against
             // a subspace face would be a plausible-looking angle about nothing, so answer with no
             // velocity at all: the incidence reads square-on, which is the reading that never bounces.
             return null;
         }
-        return new Vec3d(tip[0] - base[0], tip[1] - base[1], tip[2] - base[2]);
+        return new Vec3d(rotated[0], rotated[1], rotated[2]);
     }
 
     /** The block's own answer, then its tile's; null when neither has one. */

@@ -6,6 +6,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.damage.DamageOutcome;
+import zmaster587.advancedRocketry.api.damage.ImpactRequest;
 import zmaster587.advancedRocketry.api.damage.StopReason;
 import zmaster587.advancedRocketry.util.SweptSegment;
 import zmaster587.advancedRocketry.util.WeightEngine;
@@ -75,6 +76,39 @@ public final class StructureDamageEngine {
      * in a row convince the walk it has come out the far side of a hull it is still inside.</p>
      */
     public static WalkResult penetrate(World world, Vec3d entry, Vec3d direction, int budget) {
+        return penetrate(world, entry, direction, budget, ImpactRequest.UNBOUNDED_REACH,
+                ImpactRequest.REFERENCE_AREA);
+    }
+
+    /**
+     * The same walk, bounded by how far the body actually got this time and priced against its
+     * cross-section.
+     *
+     * <h3>Reach</h3>
+     * <p>A body that penetrates over time may only spend the path it travelled - the alternative,
+     * resolving a whole bore in the tick it started, is what made a shot's whole life happen inside
+     * one impact. {@link #MAX_PATH_BLOCKS} stays as the backstop for a caller with no notion of reach
+     * (an explosion, a collision), so nothing walks away forever.</p>
+     *
+     * <h3>Area</h3>
+     * <p>Material resists with a pressure, so the energy per unit of depth is that pressure times the
+     * body's cross-section: the same energy behind a wider face bores less far, and behind a narrower
+     * one bores further. At {@link ImpactRequest#REFERENCE_AREA} the price is exactly what it was
+     * before any of this was priced, which is what keeps every shipped weapon where it was.</p>
+     */
+    public static WalkResult penetrate(World world, Vec3d entry, Vec3d direction, int budget,
+                                       double reachBlocks, double crossSectionArea) {
+        return penetrate(world, entry, direction, budget, reachBlocks, crossSectionArea, false);
+    }
+
+    /**
+     * The same walk, told whether the body is CONTINUING a bore through the block it starts in. A body
+     * that is already inside one has paid for it on an earlier tick; charging it again every tick it
+     * fails to leave would make a slow round strictly deadlier than a fast one.
+     */
+    public static WalkResult penetrate(World world, Vec3d entry, Vec3d direction, int budget,
+                                       double reachBlocks, double crossSectionArea,
+                                       boolean resumesInside) {
         WalkResult result = new WalkResult();
         result.budgetLeft = budget;
         if (world == null || entry == null || direction == null
@@ -84,7 +118,8 @@ public final class StructureDamageEngine {
             return result;
         }
 
-        Walk walk = new Walk(world, entry, direction, result);
+        Walk walk = new Walk(world, entry, direction, result, reachBlocks, crossSectionArea,
+                resumesInside);
         SweptSegment.traverse(entry, walk.farEnd, MAX_VOXELS_EXAMINED, walk);
         return walk.finish();
     }
@@ -101,20 +136,30 @@ public final class StructureDamageEngine {
         /** The far end of the reach, {@link #MAX_PATH_BLOCKS} blocks of RAY along the direction. */
         private final Vec3d farEnd;
 
+        private final double areaFactor;
+        /** True while the first voxel is still to come: it is already paid for, so it is not charged. */
+        private boolean skipThisVoxel;
+        /** How far the far end is, in blocks: what a parameter along the segment is measured against. */
+        private final double reach;
+
         private boolean entered;
         private boolean decided;
         private int consecutiveEmpty;
         private boolean previousWasSolid;
         private Vec3d lastSolidExit;
 
-        private Walk(World world, Vec3d entry, Vec3d direction, WalkResult result) {
+        private Walk(World world, Vec3d entry, Vec3d direction, WalkResult result, double reachBlocks,
+                     double crossSectionArea, boolean resumesInside) {
+            this.skipThisVoxel = resumesInside;
             this.world = world;
             this.entry = entry;
             this.result = result;
+            this.areaFactor = crossSectionArea / ImpactRequest.REFERENCE_AREA;
             double length = Math.sqrt(direction.x * direction.x + direction.y * direction.y
                     + direction.z * direction.z);
             Vec3d unit = length <= 1.0E-9D ? direction : scale(direction, 1.0D / length);
-            this.farEnd = entry.add(scale(unit, MAX_PATH_BLOCKS));
+            this.reach = Math.min(reachBlocks, MAX_PATH_BLOCKS);
+            this.farEnd = entry.add(scale(unit, this.reach));
         }
 
         @Override
@@ -146,7 +191,14 @@ public final class StructureDamageEngine {
                 result.entryPoint = here;
             }
             result.penetrationDepth++;
+            result.distanceWalked = tEnter * reach;
             previousWasSolid = true;
+
+            if (skipThisVoxel) {
+                // The block this bore is standing in, already bought on an earlier tick.
+                skipThisVoxel = false;
+                return false;
+            }
 
             if (isIndestructible(world, pos, state)) {
                 // Nothing gets through this. The budget dies here rather than tunnelling past it.
@@ -155,7 +207,7 @@ public final class StructureDamageEngine {
                 return decide(DamageOutcome.ABSORBED, StopReason.BUDGET_EXHAUSTED, null);
             }
 
-            spendInto(world, pos, state, result);
+            spendInto(world, pos, state, result, areaFactor);
             if (result.budgetLeft <= 0) {
                 return decide(DamageOutcome.ABSORBED, StopReason.BUDGET_EXHAUSTED, null);
             }
@@ -189,10 +241,11 @@ public final class StructureDamageEngine {
     }
 
     /** Spend as much of the remaining budget into one block as its stages will take. */
-    private static void spendInto(World world, BlockPos pos, IBlockState state, WalkResult result) {
+    private static void spendInto(World world, BlockPos pos, IBlockState state, WalkResult result,
+                                  double areaFactor) {
         int maxStage = DamageState.getMaxStage(world, pos);
         int stage = DamageState.getStage(world, pos);
-        int stageCost = stageCost(world, pos);
+        int stageCost = stageCost(world, pos, areaFactor);
 
         boolean advanced = false;
         while (stage < maxStage && result.budgetLeft >= stageCost) {
@@ -222,10 +275,20 @@ public final class StructureDamageEngine {
      * that has been taken is damage the next hit does not have to do again.
      */
     public static int stageCost(World world, BlockPos pos) {
+        return stageCost(world, pos, 1.0D);
+    }
+
+    /**
+     * What one stage costs a body of a given cross-section, as a multiple of the reference one. The
+     * material resists with a pressure; a wider body pushes that pressure over more area and pays
+     * proportionally more for the same depth, which is where sectional density comes from without
+     * anybody writing it down as a rule.
+     */
+    public static int stageCost(World world, BlockPos pos, double areaFactor) {
         double toughness = WeightEngine.INSTANCE.getToughness(world, pos);
         int maxStage = Math.max(1, DamageState.getMaxStage(world, pos));
         double perStage = (STAGE_COST_BASE + toughness * STAGE_COST_TOUGHNESS_MULT) / maxStage;
-        return Math.max(1, (int) Math.ceil(perStage));
+        return Math.max(1, (int) Math.ceil(perStage * Math.max(0.0D, areaFactor)));
     }
 
     /**
@@ -255,6 +318,8 @@ public final class StructureDamageEngine {
         public int blocksStaged;
         public int blocksDestroyed;
         public int penetrationDepth;
+        /** How far along its direction the walk got before it stopped, in blocks. */
+        public double distanceWalked;
         public Vec3d entryPoint;
         public Vec3d exitPoint;
     }
