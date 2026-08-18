@@ -16770,10 +16770,42 @@ public class TestProbeCommand extends CommandBase {
             handleHeatCycle(server, sender, args);
             return;
         }
+        if (args.length >= 5 && "material".equalsIgnoreCase(args[0])) {
+            // What the block at this position IS, thermally: which substance, how much of it, and
+            // therefore how much heat it can take. Volume is reported separately from capacity on
+            // purpose - a block whose substance is unknown still has a size, and reading one number
+            // could not tell "nothing there" from "nobody described this metal".
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                    parseIntOr(args[4], 0));
+            net.minecraft.block.Block block = world.getBlockState(pos).getBlock();
+            zmaster587.advancedRocketry.subsystem.heat.ThermalMaterial material =
+                    zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials.INSTANCE.of(
+                            new net.minecraft.item.ItemStack(block));
+            send(sender, "{\"ok\":true,\"block\":\"" + escapeJson(String.valueOf(block.getRegistryName()))
+                    + "\",\"material\":\"" + escapeJson(material == null ? "" : material.name())
+                    + "\",\"volumeMilliLitres\":"
+                    + zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials
+                            .volumeMillilitres(world, pos)
+                    + ",\"capacity\":"
+                    + zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials
+                            .blockCapacity(world, pos)
+                    + ",\"ceilingKelvin\":" + (material == null ? 0 : material.ceilingKelvin()) + "}");
+            return;
+        }
+        if (args.length >= 5 && "material".equalsIgnoreCase(args[0])) {
+            handleHeatMaterial(server, sender, args);
+            return;
+        }
         if (args.length < 5
                 || !("set".equalsIgnoreCase(args[0]) || "read".equalsIgnoreCase(args[0]))) {
             send(sender, "{\"error\":\"unknown heat subcommand — try set <dim> <x> <y> <z> <amount>"
-                    + " | read <dim> <x> <y> <z> | cycle <dim> <x> <y> <z> <charge> [ticks]\"}");
+                    + " | read <dim> <x> <y> <z> | cycle <dim> <x> <y> <z> <charge> [ticks] | material <dim> <x> <y> <z>\"}");
             return;
         }
         int dim = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -16813,6 +16845,45 @@ public class TestProbeCommand extends CommandBase {
                 + ",\"radiatingCells\":" + (radiator == null ? 0 : radiator.getExchangeCells())
                 + ",\"facing\":\"" + (radiator == null ? "none" : radiator.getRadiatingFacing().getName())
                 + "\",\"rejected\":" + (radiator == null ? 0L : radiator.getRejectedThisTick()) + "}");
+    }
+
+    /**
+     * {@code /artest heat material <dim> <x> <y> <z>} - what the block standing there is worth
+     * thermally: which material the table resolved it to, how much SUBSTANCE is actually there, and
+     * the capacity those two produce.
+     *
+     * <p>The volume is the interesting field and it is why this verb exists. It comes off the block's
+     * own collision boxes, so a slab answers half a cubic metre and a staircase three quarters, while
+     * the block's bounding box would say "one" for both. A test that could only see the capacity could
+     * not tell a wrong material from a wrong volume - they multiply.</p>
+     *
+     * <pre>
+     * {"ok":true,"block":"minecraft:iron_block","material":"iron","volumeMilliLitres":1000000,
+     *  "capacity":5384,"ceilingKelvin":1811}
+     * </pre>
+     *
+     * <p>{@code material} is the empty string where the table knows nothing about the block, and the
+     * capacity is then 0 - absence is a value here, not an error.</p>
+     */
+    private void handleHeatMaterial(MinecraftServer server, ICommandSender sender, String[] args) {
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        zmaster587.advancedRocketry.subsystem.heat.ThermalMaterial material =
+                zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials.INSTANCE.of(
+                        new net.minecraft.item.ItemStack(world.getBlockState(pos).getBlock()));
+        long volume = zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials
+                .volumeMillilitres(world, pos);
+        long capacity = zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials
+                .blockCapacity(world, pos);
+        send(sender, "{\"ok\":true,\"material\":\"" + (material == null ? "" : material.name())
+                + "\",\"volumeMillilitres\":" + volume
+                + ",\"capacity\":" + capacity
+                + ",\"ceilingKelvin\":" + (material == null ? 0 : material.ceilingKelvin()) + "}");
     }
 
     /**

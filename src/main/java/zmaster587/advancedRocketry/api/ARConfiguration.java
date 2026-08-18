@@ -331,6 +331,10 @@ public class ARConfiguration {
     @ConfigProperty
     public int shipHeatDriveRefusalKelvin;
     @ConfigProperty
+    public int shipHeatSlugMarginKelvin;
+    @ConfigProperty
+    public int shipHeatSlugJoulesPerUnit;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -633,6 +637,8 @@ public class ARConfiguration {
         arConfig.shipHeatCrewVeryHotKelvin = config.get(HEAT, "shipHeatCrewVeryHotKelvin", 323, "How hot a compartment's AIR has to get, in kelvin, before the room itself starts hurting the crew - the same hostile atmosphere a scorching planet presents, with the same suit protecting against it. 323 K is 50 degrees C: survivable in a suit, not survivable in shirtsleeves. This is a SHIP's air, measured where a person is standing, which is why it sits far below the temperature at which a whole PLANET is called too hot - that number is an average over a globe with cold latitudes in it. Set it to 0 to switch this rung off; with shipHeat off nothing warms a room and it never fires anyway.", 0, 5000).getInt();
         arConfig.shipHeatCrewSuperheatedKelvin = config.get(HEAT, "shipHeatCrewSuperheatedKelvin", 373, "How hot a compartment's AIR has to get, in kelvin, before it is not merely hostile but lethal - four times the damage of the rung below it. 373 K is boiling water; a suit still buys time, and nothing else does. It sits below the temperature at which things catch fire, so a room burns its crew before it burns itself. Set it to 0 to switch this rung off.", 0, 5000).getInt();
         arConfig.shipHeatDriveRefusalKelvin = config.get(HEAT, "shipHeatDriveRefusalKelvin", 773, "How hot the coolant loop a hyperspace drive is bolted to may get, in kelvin, before the drive refuses to fire. 773 K is 500 degrees C - hundreds of degrees above anything a crew survives, so a ship that trips this was flown with nobody left to care. The refusal is FREE: it is raised before the capacitor burst, so a pilot who is told this has lost nothing but the trip. Set it to 0 to switch the check off entirely.", 0, 5000).getInt();
+        arConfig.shipHeatSlugMarginKelvin = config.get(HEAT, "shipHeatSlugMarginKelvin", 100, "How far below its own melting point a heat slug is charged, in kelvin. This is the margin that keeps a slug a solid object you can eject and pick up again instead of a puddle in the machine, so it is subtracted from every material's usable span. Raise it for a safer, weaker slug.", 0, 5000).getInt();
+        arConfig.shipHeatSlugJoulesPerUnit = config.get(HEAT, "shipHeatSlugJoulesPerUnit", 1000, "How many real joules one heat unit stands for when a slug's capacity is worked out from its material. The materials table is ordinary physics in SI, and this is the single place those joules become the currency the rest of the thermal system deals in - so it scales every slug at once and changes no material's standing relative to another. At the default a litre of iron is worth about five thousand heat units.", 1, Integer.MAX_VALUE).getInt();
         arConfig.solarGeneratorMult = config.get(ENERGY, "solarGeneratorMultiplier", 1, "Power produced per tick by the solar generator.").getInt();
         arConfig.microwaveRecieverMulitplier = (float) config.get(ENERGY, "MicrowaveRecieverMultiplier", 1f, "Multiplier for microwave receiver power output.").getDouble();
         arConfig.defaultItemTimeBlackHole = config.get(ENERGY, "defaultBurnTime", 500, "Burn time in ticks for items not listed in blackHoleTimings.").getInt();
