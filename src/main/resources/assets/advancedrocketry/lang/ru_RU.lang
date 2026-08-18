@@ -568,6 +568,7 @@ tile.gravityDampener.name=Гравитационный демпфер
 key.jumpTrigger=Совершить прыжок (корабль 2-го уровня)
 msg.jumpgate.nodrive=На борту нет генератора поля гиперпространства
 msg.jumpgate.windowundersized=Внимание: окно прыжка не охватывает весь корпус
+msg.jumpgate.driveoverheated=Теплоноситель двигателя перегрет - дождитесь, пока контур сбросит тепло
 msg.jumpgate.nocapacitor=На корабле нет конденсатора прыжка - приводу не из чего стрелять
 msg.jumpgate.capacitortoosmall=Конденсатор не вмещает всплеск этого привода - нужна ёмкость, ждать бесполезно
 msg.jumpgate.capacitorlow=Конденсатор ещё заряжается - на всплеск пока не хватает

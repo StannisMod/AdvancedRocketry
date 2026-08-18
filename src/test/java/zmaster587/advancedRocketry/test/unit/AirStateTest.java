@@ -23,8 +23,15 @@ public class AirStateTest {
     private static final int SAFE_MIN = 160_000;
     private static final int SAFE_MAX = 300_000;
 
+    /** Where the crew rungs sit for these tests, so no assertion depends on the shipped defaults. */
+    private static final int VERY_HOT = 323;
+    private static final int SUPERHEATED = 373;
+
     private int prevMin;
     private int prevMax;
+    private boolean prevShipHeat;
+    private int prevVeryHot;
+    private int prevSuperheated;
 
     @BeforeClass
     public static void bootstrap() {
@@ -36,8 +43,14 @@ public class AirStateTest {
         ARConfiguration config = ARConfiguration.getCurrentConfig();
         prevMin = config.lifeSupportMinPartialO2;
         prevMax = config.lifeSupportMaxPartialO2;
+        prevShipHeat = config.shipHeat;
+        prevVeryHot = config.shipHeatCrewVeryHotKelvin;
+        prevSuperheated = config.shipHeatCrewSuperheatedKelvin;
         config.lifeSupportMinPartialO2 = SAFE_MIN;
         config.lifeSupportMaxPartialO2 = SAFE_MAX;
+        config.shipHeat = true;
+        config.shipHeatCrewVeryHotKelvin = VERY_HOT;
+        config.shipHeatCrewSuperheatedKelvin = SUPERHEATED;
     }
 
     @After
@@ -45,6 +58,14 @@ public class AirStateTest {
         ARConfiguration config = ARConfiguration.getCurrentConfig();
         config.lifeSupportMinPartialO2 = prevMin;
         config.lifeSupportMaxPartialO2 = prevMax;
+        config.shipHeat = prevShipHeat;
+        config.shipHeatCrewVeryHotKelvin = prevVeryHot;
+        config.shipHeatCrewSuperheatedKelvin = prevSuperheated;
+    }
+
+    /** Breathable sea-level air at a stated temperature, in kelvin. */
+    private static AirState earthLikeAt(int kelvin) {
+        return new AirState(790_000, 210_000, 0, kelvin * 1000);
     }
 
     @Test
@@ -139,6 +160,73 @@ public class AirStateTest {
         assertTrue("an oxygen-rich room being flammable is the hazard, not a bug",
                 AtmosphereType.HIGHOXYGEN.allowsCombustion());
         assertTrue(!AtmosphereType.HIGHOXYGEN.isBreathable());
+    }
+
+    // ─── The first rung of the failure ladder: hot air is what hurts the crew ───────────────────
+    //
+    // The subject is the zone's AIR and the consequence is one of the hostile atmospheres a scorching
+    // planet already presents, so the suit that protects there protects here. What these pin is that
+    // the room's temperature decides the rung and its gases only decide which variant of it - never
+    // that a particular number is dangerous, which is config.
+
+    @Test
+    public void airHotEnoughToHurtIsTheSameHostileAtmosphereAScorchingPlanetPresents() {
+        assertSame("a breathable room can still be a room that cooks you",
+                AtmosphereType.VERYHOT, earthLikeAt(VERY_HOT).deriveAtmosphere());
+    }
+
+    @Test
+    public void airJustBelowTheRungIsUnaffectedByHowWarmItIs() {
+        assertSame("the rung is a threshold, not a slope: below it the gases decide alone",
+                AtmosphereType.PRESSURIZEDAIR, earthLikeAt(VERY_HOT - 1).deriveAtmosphere());
+    }
+
+    @Test
+    public void lethallyHotAirIsTheHarsherOfTheTwoRungs() {
+        assertSame(AtmosphereType.SUPERHEATED, earthLikeAt(SUPERHEATED).deriveAtmosphere());
+    }
+
+    @Test
+    public void hotAirWithNothingToBreatheSaysBothThingsAtOnce() {
+        AirState suffocatingAndHot = new AirState(1_000_000, 0, 0, SUPERHEATED * 1000);
+
+        assertSame("the NoO2 variants exist precisely so neither hazard hides the other",
+                AtmosphereType.SUPERHEATEDNOO2, suffocatingAndHot.deriveAtmosphere());
+    }
+
+    @Test
+    public void heatOutranksAnOxygenSurplus() {
+        AirState enrichedAndHot = new AirState(400_000, SAFE_MAX + 1, 0, VERY_HOT * 1000);
+
+        assertSame("a room that is burning its crew is not made safe by its gas mix",
+                AtmosphereType.VERYHOT, enrichedAndHot.deriveAtmosphere());
+    }
+
+    @Test
+    public void aVacuumIsNotHotHoweverHotTheGasThatLeftItWas() {
+        AirState breached = new AirState(0, 0, 0, SUPERHEATED * 1000);
+
+        assertSame("there is no body left in the room to be hot",
+                AtmosphereType.VACUUM, breached.deriveAtmosphere());
+    }
+
+    @Test
+    public void aThresholdOfZeroIsNoRungRatherThanARungEveryRoomTrips() {
+        ARConfiguration config = ARConfiguration.getCurrentConfig();
+        config.shipHeatCrewVeryHotKelvin = 0;
+        config.shipHeatCrewSuperheatedKelvin = 0;
+
+        assertSame("an unloaded or switched-off threshold must not make every room lethal",
+                AtmosphereType.PRESSURIZEDAIR, earthLikeAt(1_000).deriveAtmosphere());
+    }
+
+    @Test
+    public void withShipHeatOffARoomNeverCooksItsCrew() {
+        ARConfiguration config = ARConfiguration.getCurrentConfig();
+        config.shipHeat = false;
+
+        assertSame("the flag that removes the mechanic removes its hazard too",
+                AtmosphereType.PRESSURIZEDAIR, earthLikeAt(1_000).deriveAtmosphere());
     }
 
     @Test

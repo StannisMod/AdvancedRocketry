@@ -6,6 +6,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
+import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
 /**
@@ -149,6 +150,22 @@ public final class JumpGate {
             return 0L;
         }
 
+        /**
+         * How hot the coolant the drive is bolted to is running, in kelvin, or {@code 0} when nothing
+         * measured it - no coolant loop against the generator, or a world where ships carry no heat
+         * at all.
+         *
+         * <p>Zero rather than ambient, and unlike its neighbours it is NOT "the answer a ship with no
+         * drive would give": an unmeasured temperature must not refuse a jump. Every other default
+         * here refuses because the missing thing is a machine the ship genuinely lacks, and a ship
+         * with no capacitor cannot jump however the question is asked. A drive with no thermometer on
+         * it is a different case - the drive is there and it works - so the safe direction reverses,
+         * and a context that predates this clause simply never trips it.</p>
+         */
+        default double driveCoolantKelvin() {
+            return 0.0D;
+        }
+
         /** Energy stored aboard the ship and reachable by the drive. */
         default long storedEnergy() {
             return 0L;
@@ -221,6 +238,8 @@ public final class JumpGate {
     public static final String MSG_NO_DRIVE = "msg.jumpgate.nodrive";
     /** The window does not enclose the whole hull — possible, and it will cost the hull. */
     public static final String MSG_WINDOW_UNDERSIZED = "msg.jumpgate.windowundersized";
+    /** The drive's coolant is too hot for it to fire. Free, and it clears itself once the loop sheds. */
+    public static final String MSG_DRIVE_OVERHEATED = "msg.jumpgate.driveoverheated";
     /** There is no capacitor for the drive to draw from — nothing aboard can ever open a window. */
     public static final String MSG_NO_CAPACITOR = "msg.jumpgate.nocapacitor";
     /**
@@ -328,6 +347,25 @@ public final class JumpGate {
                 // outside when the window closes is simply not coming along in one piece.
                 return ship.hullOutsideWindow() <= 0L ? null
                         : new Objection(Severity.ADVISORY, MSG_WINDOW_UNDERSIZED);
+            }
+        });
+        REGISTERED.get(Stage.DRIVE).add(new Predicate() {
+            @Override
+            public Objection check(ShipContext ship) {
+                // The thermal rung of the failure ladder, and the only one that acts on a machine
+                // rather than on a body: past this temperature the drive will not fire at all.
+                //
+                // HARD rather than advisory, and it belongs HERE rather than at the commit point,
+                // because both halves of that are the same fact - the check is free, so a pilot who
+                // is refused has lost nothing, and a refusal raised after the burst is one he has
+                // already paid for. There is nothing to confirm past: a drive this hot does not
+                // become willing because the pilot means it.
+                int refusalKelvin = ARConfiguration.getCurrentConfig().shipHeatDriveRefusalKelvin;
+                if (ship.drivePower() <= 0L || refusalKelvin <= 0) {
+                    return null; // no drive is already refused above; no threshold means no clause
+                }
+                return ship.driveCoolantKelvin() < refusalKelvin ? null
+                        : new Objection(Severity.HARD, MSG_DRIVE_OVERHEATED);
             }
         });
         REGISTERED.get(Stage.POWER).add(new Predicate() {

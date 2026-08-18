@@ -2821,6 +2821,10 @@ public class TestProbeCommand extends CommandBase {
             info.put("hullMeasured", coverage != null);
             info.put("hullOutsideWindow", coverage == null ? 0L : coverage.uncoveredBlocks());
             info.put("storedEnergy", drive.storedEnergy());
+            // What the thermal refusal actually READ, in thousandths of a kelvin. Reported beside the
+            // verdict on purpose: "allowed:false" alone cannot tell a drive that is too hot from a
+            // drive whose coolant the ship never found, and those are opposite bugs.
+            info.put("driveCoolantMilliK", Math.round(nav.driveCoolantKelvin() * 1000.0D));
             info.put("speedBlocksPerTick", nav.plannedSpeed());
             info.put("transitTicks", nav.plannedTransitTicks());
             info.put("flightEnergyCost", nav.flightEnergyCost());
@@ -10889,7 +10893,14 @@ public class TestProbeCommand extends CommandBase {
                     // What a block of air holds per kelvin. A mixing test asserts a RELATION between
                     // two zones' capacities, and it has to be able to switch the reservoir off
                     // entirely to show that the relation is what carries the result.
-                    "lifeSupportAirHeatCapacity"));
+                    "lifeSupportAirHeatCapacity",
+                    // Where the failure ladder's rungs sit. A test of a rung has to arrange a room or
+                    // a loop on the far side of its threshold, and it must do that by READING the
+                    // threshold: hard-coding one would make the assertion restate a tuned number
+                    // instead of the rule that a room past it turns hostile.
+                    "shipHeatCrewVeryHotKelvin",
+                    "shipHeatCrewSuperheatedKelvin",
+                    "shipHeatDriveRefusalKelvin"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {

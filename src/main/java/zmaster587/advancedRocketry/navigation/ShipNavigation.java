@@ -105,6 +105,11 @@ public final class ShipNavigation implements JumpGate.ShipContext {
     }
 
     @Override
+    public double driveCoolantKelvin() {
+        return drive().coolantKelvin();
+    }
+
+    @Override
     public long storedEnergy() {
         return drive().storedEnergy();
     }

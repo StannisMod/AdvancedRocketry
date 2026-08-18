@@ -4,6 +4,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.navigation.JumpGate;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
@@ -21,6 +22,9 @@ import static org.junit.Assert.assertTrue;
 public class JumpGateTest {
 
     private static final GalacticCoord TARGET = GalacticCoord.ofSectorLocal(9L, 2L, 2L, 0L, 0L, 0L);
+
+    /** Where the thermal refusal sits for these tests, so no assertion rides on the shipped default. */
+    private static final int DRIVE_REFUSAL_KELVIN = 773;
 
     /**
      * A ship that answers exactly what it is told to answer. It starts as a ship that CAN jump —
@@ -40,6 +44,7 @@ public class JumpGateTest {
         long hullOutsideWindow = 0L;
         long storedEnergy = 1_000_000L;
         long flightEnergyCost = 400_000L;
+        double driveCoolantKelvin = 0.0D;
 
         @Override
         public boolean hasNavComputer() {
@@ -100,16 +105,27 @@ public class JumpGateTest {
         public long flightEnergyCost() {
             return flightEnergyCost;
         }
+
+        @Override
+        public double driveCoolantKelvin() {
+            return driveCoolantKelvin;
+        }
     }
+
+    private int prevRefusalKelvin;
 
     @Before
     public void clearRegistrations() {
         JumpGate.reset();
+        ARConfiguration config = ARConfiguration.getCurrentConfig();
+        prevRefusalKelvin = config.shipHeatDriveRefusalKelvin;
+        config.shipHeatDriveRefusalKelvin = DRIVE_REFUSAL_KELVIN;
     }
 
     @After
     public void restoreRegistrations() {
         JumpGate.reset();
+        ARConfiguration.getCurrentConfig().shipHeatDriveRefusalKelvin = prevRefusalKelvin;
     }
 
     @Test
@@ -190,6 +206,74 @@ public class JumpGateTest {
 
         assertTrue("jumping to an unscanned coordinate is reckless, not illegal",
                 JumpGate.check(ship).allowed());
+    }
+
+    // ─── The thermal rung: a drive that is too hot will not fire ────────────────────────────────
+
+    @Test
+    public void aDriveWhoseCoolantIsTooHotRefusesToFire() {
+        FakeShip ship = new FakeShip();
+        ship.driveCoolantKelvin = DRIVE_REFUSAL_KELVIN;
+
+        JumpGate.Verdict verdict = JumpGate.check(ship);
+
+        // HARD and not an advisory: there is nothing for the pilot to mean. A drive this hot does
+        // not become willing because he presses again.
+        assertFalse("past the threshold the window cannot open at all", verdict.allowed());
+        assertEquals(JumpGate.MSG_DRIVE_OVERHEATED, verdict.firstMessage());
+    }
+
+    @Test
+    public void aDriveBelowTheThresholdIsNotSlowedByBeingWarm() {
+        FakeShip ship = new FakeShip();
+        ship.driveCoolantKelvin = DRIVE_REFUSAL_KELVIN - 1;
+
+        assertTrue("the rung is a refusal at a threshold, never a penalty on the way to it",
+                JumpGate.check(ship).allowed());
+    }
+
+    @Test
+    public void aDriveWithNoCoolantAgainstItIsNotRefused() {
+        FakeShip ship = new FakeShip();
+        ship.driveCoolantKelvin = 0.0D;
+
+        // Zero means nobody measured this drive, which is the answer a ship with no coolant loop and
+        // a world with no heat at all both give. Refusing on an unmeasured drive would ground every
+        // ship built before the thermal system existed.
+        assertTrue("an unmeasured drive raises no objection", JumpGate.check(ship).allowed());
+    }
+
+    @Test
+    public void aRefusalClearsItselfOnceTheLoopHasShed() {
+        FakeShip ship = new FakeShip();
+        ship.driveCoolantKelvin = DRIVE_REFUSAL_KELVIN + 400;
+        assertFalse("precondition: the overheated drive is refused", JumpGate.check(ship).allowed());
+
+        ship.driveCoolantKelvin = 300.0D;
+
+        assertTrue("the gate is read-only, so cooling the ship is the whole of the fix",
+                JumpGate.check(ship).allowed());
+    }
+
+    @Test
+    public void aThresholdOfZeroSwitchesTheThermalRungOff() {
+        ARConfiguration.getCurrentConfig().shipHeatDriveRefusalKelvin = 0;
+        FakeShip ship = new FakeShip();
+        ship.driveCoolantKelvin = 5_000.0D;
+
+        assertTrue("no threshold means no clause, not a clause every ship trips",
+                JumpGate.check(ship).allowed());
+    }
+
+    @Test
+    public void aShipWithNoDriveHearsAboutTheDriveRatherThanItsTemperature() {
+        FakeShip ship = new FakeShip();
+        ship.drivePower = 0L;
+        ship.driveCoolantKelvin = DRIVE_REFUSAL_KELVIN + 100;
+
+        // Both clauses are true of this ship, and only one of them is useful to a player standing
+        // in front of a hull with no generator in it.
+        assertEquals(JumpGate.MSG_NO_DRIVE, JumpGate.check(ship).firstMessage());
     }
 
     @Test

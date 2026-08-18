@@ -1695,6 +1695,7 @@ tile.gravityDampener.name=Gravity Dampener
 key.jumpTrigger=Commit jump (tier-2 ship)
 msg.jumpgate.nodrive=No hyperspace field generator aboard
 msg.jumpgate.windowundersized=Warning: the jump window does not enclose the whole hull
+msg.jumpgate.driveoverheated=The drive's coolant is too hot to fire - let the loop shed its heat
 msg.jumpgate.nocapacitor=No jump capacitor aboard - the drive has nothing to fire from
 msg.jumpgate.capacitortoosmall=The capacitor cannot hold this drive's burst - add capacity, waiting will not help
 msg.jumpgate.capacitorlow=Capacitor still charging - not enough for the burst yet

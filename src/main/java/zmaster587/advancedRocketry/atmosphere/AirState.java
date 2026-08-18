@@ -276,6 +276,31 @@ public class AirState {
             return AtmosphereType.VACUUM;
 
         ARConfiguration config = ARConfiguration.getCurrentConfig();
+
+        // Heat comes FIRST, and above every question about oxygen. A room that is cooking the people
+        // in it is not made safe by having the right gas mix, and the existing hostile types already
+        // say both things at once: the NoO2 variants are hot AND unbreathable, which is why the
+        // temperature picks the rung and the oxygen picks the variant rather than the two competing.
+        // The same suit that protects against a scorching planet protects here - there is no second
+        // damage path, by contract.
+        // An unusable oxygen band means "no governor", exactly as it does on the cold path below -
+        // never "and also you cannot breathe": a missing config may not invent a second hazard on
+        // top of the heat.
+        boolean breathableGas = config.lifeSupportMaxPartialO2 <= config.lifeSupportMinPartialO2
+                || oxygen >= config.lifeSupportMinPartialO2;
+        double kelvin = getTemperatureKelvin();
+        // A threshold of zero is no rung at all, never a rung every room trips: the numbers are
+        // config, and a config that has not been loaded reads as zeros. The heat flag disables the
+        // whole ladder for the same reason it disables the loops - with it off nothing warms a room,
+        // and a hazard nothing can cause must not be reachable by leftover state either.
+        if (config.shipHeat) {
+            if (config.shipHeatCrewSuperheatedKelvin > 0
+                    && kelvin >= config.shipHeatCrewSuperheatedKelvin)
+                return breathableGas ? AtmosphereType.SUPERHEATED : AtmosphereType.SUPERHEATEDNOO2;
+            if (config.shipHeatCrewVeryHotKelvin > 0 && kelvin >= config.shipHeatCrewVeryHotKelvin)
+                return breathableGas ? AtmosphereType.VERYHOT : AtmosphereType.VERYHOTNOO2;
+        }
+
         // An un-loaded config leaves both bounds at zero, which would otherwise read as "every
         // zone is oxygen-toxic". No usable band means no governor, not a hazard.
         if (config.lifeSupportMaxPartialO2 <= config.lifeSupportMinPartialO2)

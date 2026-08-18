@@ -325,6 +325,12 @@ public class ARConfiguration {
     @ConfigProperty
     public int shipHeatShieldAttenuation;
     @ConfigProperty
+    public int shipHeatCrewVeryHotKelvin;
+    @ConfigProperty
+    public int shipHeatCrewSuperheatedKelvin;
+    @ConfigProperty
+    public int shipHeatDriveRefusalKelvin;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -624,6 +630,9 @@ public class ARConfiguration {
         arConfig.shipHeatChillerCapacity = config.get(HEAT, "shipHeatChillerCapacity", 200, "How much heat one chiller absorbs per kelvin. A chiller is a lump of metal and refrigerant bolted to its hot loop, so it counts as part of that loop's thermal mass — worth ten pipes at the defaults, which is why a hot side with a chiller on it climbs noticeably slower than its pipes alone would explain.", 0, Integer.MAX_VALUE).getInt();
         arConfig.shipHeatStarFluxReferenceKelvin = config.get(HEAT, "shipHeatStarFluxReferenceKelvin", 278, "The temperature a radiating cell settles at in unshaded starlight as strong as Earth's, in kelvin. This is how much of a star reaches a ship, stated as a temperature so it can be compared with a loop's own directly: a cell in that much sunlight cannot be cooled below this by any amount of area, and a closer or brighter star scales it. Set it to 0 and starlight stops warming ships entirely.", 0, 5000).getInt();
         arConfig.shipHeatShieldAttenuation = config.get(HEAT, "shipHeatShieldAttenuation", 900, "How much of the heat arriving from outside a raised shield keeps off the ship, in thousandths. A shield is sunscreen and never a wall: whatever is written here, the game refuses to let it reach all of it, so a ship parked in a star always heats — slowly, but always. The shield pays for this with its generator's draw, which is itself a heat source, so tanking a star costs you twice.", 0, 1000).getInt();
+        arConfig.shipHeatCrewVeryHotKelvin = config.get(HEAT, "shipHeatCrewVeryHotKelvin", 323, "How hot a compartment's AIR has to get, in kelvin, before the room itself starts hurting the crew - the same hostile atmosphere a scorching planet presents, with the same suit protecting against it. 323 K is 50 degrees C: survivable in a suit, not survivable in shirtsleeves. This is a SHIP's air, measured where a person is standing, which is why it sits far below the temperature at which a whole PLANET is called too hot - that number is an average over a globe with cold latitudes in it. Set it to 0 to switch this rung off; with shipHeat off nothing warms a room and it never fires anyway.", 0, 5000).getInt();
+        arConfig.shipHeatCrewSuperheatedKelvin = config.get(HEAT, "shipHeatCrewSuperheatedKelvin", 373, "How hot a compartment's AIR has to get, in kelvin, before it is not merely hostile but lethal - four times the damage of the rung below it. 373 K is boiling water; a suit still buys time, and nothing else does. It sits below the temperature at which things catch fire, so a room burns its crew before it burns itself. Set it to 0 to switch this rung off.", 0, 5000).getInt();
+        arConfig.shipHeatDriveRefusalKelvin = config.get(HEAT, "shipHeatDriveRefusalKelvin", 773, "How hot the coolant loop a hyperspace drive is bolted to may get, in kelvin, before the drive refuses to fire. 773 K is 500 degrees C - hundreds of degrees above anything a crew survives, so a ship that trips this was flown with nobody left to care. The refusal is FREE: it is raised before the capacitor burst, so a pilot who is told this has lost nothing but the trip. Set it to 0 to switch the check off entirely.", 0, 5000).getInt();
         arConfig.solarGeneratorMult = config.get(ENERGY, "solarGeneratorMultiplier", 1, "Power produced per tick by the solar generator.").getInt();
         arConfig.microwaveRecieverMulitplier = (float) config.get(ENERGY, "MicrowaveRecieverMultiplier", 1f, "Multiplier for microwave receiver power output.").getDouble();
         arConfig.defaultItemTimeBlackHole = config.get(ENERGY, "defaultBurnTime", 500, "Burn time in ticks for items not listed in blackHoleTimings.").getInt();

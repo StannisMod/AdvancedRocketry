@@ -1,7 +1,9 @@
 package zmaster587.advancedRocketry.hyperdrive;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
@@ -12,6 +14,10 @@ import net.minecraftforge.energy.CapabilityEnergy;
 import net.minecraftforge.energy.IEnergyStorage;
 
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
+import zmaster587.advancedRocketry.subsystem.heat.HeatNetwork;
+import zmaster587.advancedRocketry.subsystem.heat.HeatNetworkState;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState;
 import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
 import zmaster587.advancedRocketry.tile.TileShipComponent;
 import zmaster587.advancedRocketry.tile.hyperdrive.TileGravityDampener;
@@ -164,6 +170,47 @@ public final class ShipDrive {
             }
         }
         return remaining <= 0L;
+    }
+
+    /**
+     * How hot the coolant this ship's drive is bolted to is running, in kelvin, or {@code 0} when
+     * nothing is measuring it - no generator aboard, no coolant against it, or a world where ships
+     * carry no heat at all.
+     *
+     * <p>"Bolted to" is adjacency to the machine's whole FOOTPRINT, not to its controller block: a
+     * generator is a controller plus the coils welded to it, and a pipe run laid along the coils is
+     * plainly cooling the drive. Where two loops touch it, the HOTTER one answers - a drive is as hot
+     * as the worst thing it is in contact with, and letting a second cold loop average that away
+     * would make the fix for an overheating drive "bolt on more pipe".</p>
+     *
+     * <p>Zero for an unattached drive is a statement about measurement rather than about safety: the
+     * generator carries no heat of its own today, so there is nothing to read. It is the caller's
+     * business what to do with an unmeasured drive, and the gate's answer is to raise no objection.</p>
+     */
+    public double coolantKelvin() {
+        if (world == null || !HeatNetwork.enabled()) {
+            return 0.0D;
+        }
+        TileHyperdriveGenerator gen = generator();
+        if (gen == null) {
+            return 0.0D;
+        }
+        double hottest = 0.0D;
+        Set<BlockPos> seen = new HashSet<>();
+        for (BlockPos part : gen.footprint()) {
+            for (EnumFacing face : EnumFacing.VALUES) {
+                BlockPos neighbour = part.offset(face);
+                if (!seen.add(neighbour) || !world.isBlockLoaded(neighbour)) {
+                    continue;
+                }
+                SubsystemNetworkState raw =
+                        SubsystemNetworkManager.getState(HeatNetwork.DOMAIN, world, neighbour);
+                if (raw instanceof HeatNetworkState) {
+                    hottest = Math.max(hottest, ((HeatNetworkState) raw).getTemperatureKelvin());
+                }
+            }
+        }
+        return hottest;
     }
 
     /** The window this ship's drive can hold open, in world coordinates. */

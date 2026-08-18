@@ -12,14 +12,14 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Vacuum, suits, and the air a player breathes. Eight scenarios, one client.
+ * Vacuum, suits, and the air a player breathes. Nine scenarios, one client.
  *
  * <p>Every member works the same lever — flip the overworld's atmosphere density and watch what
  * happens to a player who is, or is not, wearing something that protects him — and every one of them
  * reads the outcome on the real client: health as the client renders it, the armour NBT the
  * inventory screen draws.</p>
  *
- * <h2>Why these eight share one harness</h2>
+ * <h2>Why these share one harness</h2>
  *
  * <p>Measured 2026-08-07 at 8 forks, from the result XML: 117.6 + 349.4 + 351.3 + 120.2 s across
  * eight client boots — <b>15.6 minutes</b>.</p>
@@ -552,6 +552,34 @@ public class VacuumAndSuitClientGroupE2ETest extends AbstractSharedClientE2ETest
      * @return the vent's position as {@code dim x y z}, for the probes the scenario then runs
      */
     private String sealStaleZoneAndStandInIt() throws Exception {
+        String at = buildSealedRoomWithVent();
+
+        // Pressurised, and short of oxygen: the three partials still total one atmosphere, so this
+        // is emphatically NOT the vacuum every other scenario here uses - it is a room whose air has
+        // been breathed. 50 000 sits below lifeSupportMinPartialO2's 160 000 default.
+        String setAir = exec("artest vent setair " + at + " 790000 50000 160000");
+        scenario().requireArranged("setair must take: " + setAir, setAir.contains("\"ok\":true"));
+
+        String info = exec("artest vent info " + at);
+        scenario().record("ventInfo", info);
+        scenario().requireArranged("the room must actually BE a zone before anyone stands in it, and"
+                + " it must read as pressurised-but-stale rather than as vacuum: " + info,
+                info.contains("\"airO2\":50000") && info.contains("\"airPressure\":100")
+                        && info.contains("lowO2"));
+
+        standInTheRoomUnhurt();
+        return at;
+    }
+
+    /**
+     * The room itself: a sealed stone box in this scenario's plot with a powered, sealed vent in its
+     * floor. What the air inside it then IS belongs to the caller - a stale zone and an overheated
+     * one are the same room with different contents, and sharing the geometry is what keeps them
+     * comparable.
+     *
+     * @return the vent's position as {@code dim x y z}, for the probes the scenario then runs
+     */
+    private String buildSealedRoomWithVent() throws Exception {
         int dim = plot().dim;
         int vx = plot().x(ROOM_DX), vy = ROOM_Y, vz = plot().z(ROOM_DZ);
         String at = dim + " " + vx + " " + vy + " " + vz;
@@ -575,20 +603,12 @@ public class VacuumAndSuitClientGroupE2ETest extends AbstractSharedClientE2ETest
         exec("artest tile force-tick " + at + " 1");
         exec("artest vent reseal " + at);
         exec("artest tile force-tick " + at + " 5");
+        return at;
+    }
 
-        // Pressurised, and short of oxygen: the three partials still total one atmosphere, so this
-        // is emphatically NOT the vacuum every other scenario here uses — it is a room whose air has
-        // been breathed. 50 000 sits below lifeSupportMinPartialO2's 160 000 default.
-        String setAir = exec("artest vent setair " + at + " 790000 50000 160000");
-        scenario().requireArranged("setair must take: " + setAir, setAir.contains("\"ok\":true"));
-
-        String info = exec("artest vent info " + at);
-        scenario().record("ventInfo", info);
-        scenario().requireArranged("the room must actually BE a zone before anyone stands in it, and"
-                + " it must read as pressurised-but-stale rather than as vacuum: " + info,
-                info.contains("\"airO2\":50000") && info.contains("\"airPressure\":100")
-                        && info.contains("lowO2"));
-
+    /** Puts the player inside the sealed room and proves he arrived there unhurt. */
+    private void standInTheRoomUnhurt() throws Exception {
+        int vx = plot().x(ROOM_DX), vy = ROOM_Y, vz = plot().z(ROOM_DZ);
         // Stand him in the room while still CREATIVE, and check "unhurt" THERE. Creative
         // short-circuits AtmosphereNeedsSuit.isImmune, so the room cannot hurt him yet — which is
         // what makes the check meaningful: it can only fail on arriving in a wall or falling, the
@@ -602,7 +622,6 @@ public class VacuumAndSuitClientGroupE2ETest extends AbstractSharedClientE2ETest
         scenario().record("healthInRoom", health);
         scenario().requireArranged("the player must be standing unhurt INSIDE the sealed room before"
                 + " the window opens; client health=" + health, health >= 20.0);
-        return at;
     }
 
     /**
@@ -616,6 +635,92 @@ public class VacuumAndSuitClientGroupE2ETest extends AbstractSharedClientE2ETest
         double health = health(bot().reportState());
         scenario().record("healthAtWindowOpen", health);
         return health;
+    }
+
+    // ── a zone that is breathable and far too HOT ─────────────────────────────
+
+    /**
+     * The first rung of the thermal failure ladder, on a real client: a compartment whose air has
+     * been driven past the crew threshold hurts the person standing in it.
+     *
+     * <p>The room's air is <b>breathable</b> throughout - the same one atmosphere with the same
+     * oxygen - so nothing here can be confused with this class's other hazards. The only thing that
+     * changes between the control and the subject is the temperature of that air.</p>
+     *
+     * <p>The control leg is what makes the subject a measurement rather than a coincidence: the
+     * player stands in the very same sealed room at cabin temperature, in survival, with
+     * regeneration off, and must come out of it untouched. Without it, "his health fell" is also
+     * what suffocating in a badly built box looks like.</p>
+     */
+    @Test
+    public void overheatedZoneAirHurtsAnUnsuitedCrewman() throws Exception {
+        int originalDensity = snapshotDensity();
+        try {
+            setDensityAndConfirm(100, true);
+            int veryHot = configInt("shipHeatCrewVeryHotKelvin");
+            int ambient = configInt("shipHeatAmbientKelvin");
+            scenario().requireArranged("the crew rung must be switched on, and the cabin must start"
+                    + " below it, or this scenario asks nothing: rung=" + veryHot
+                    + " ambient=" + ambient, veryHot > 0 && ambient < veryHot);
+
+            String at = buildSealedRoomWithVent();
+            setRoomAir(at, ambient * 1000);
+            String cabin = atmosphereInRoom();
+            scenario().requireArranged("premise: a breathable room at cabin temperature must be an"
+                    + " ordinary room: " + cabin, "PressurizedAir".equals(cabin));
+            standInTheRoomUnhurt();
+            exec("artest player clear-armor");
+
+            scenario().measuring("health in the same room while it is merely warm");
+            double healthStart = openSurvivalWindow();
+            bot().waitTicks(80);
+            double healthCold = health(bot().reportState());
+            scenario().record("healthAfterControlWindow", healthCold);
+            assertTrue("control leg: the room itself must not hurt him while it is at cabin"
+                    + " temperature, or the drop below would be about the box and not the heat;"
+                    + " start=" + healthStart + " after=" + healthCold, healthCold >= healthStart);
+
+            scenario().arranging("drive the same room's air past the crew threshold");
+            setRoomAir(at, (veryHot + 10) * 1000);
+            String hostile = atmosphereInRoom();
+            scenario().record("atmosphereWhenHot", hostile);
+            scenario().requireArranged("the overheated room must present a hostile atmosphere before"
+                    + " anyone can be hurt by it: " + hostile, "VeryHot".equals(hostile));
+
+            scenario().asserting("an overheated compartment hurts the crew standing in it");
+            double healthHot = waitForHealthDrop(healthCold);
+
+            assertTrue("a compartment past the crew threshold must hurt the person in it - the room"
+                    + " IS the hazard, and the client must render the damage; before=" + healthCold
+                    + " after=" + healthHot, healthHot < healthCold);
+        } finally {
+            restoreDim(originalDensity);
+        }
+    }
+
+    /** Overwrites the room's air: breathable sea-level gas at a stated temperature, in milliK. */
+    private void setRoomAir(String at, int milliK) throws Exception {
+        String setAir = exec("artest vent setair " + at + " 790000 210000 0 " + milliK);
+        scenario().requireArranged("setair must take: " + setAir, setAir.contains("\"ok\":true"));
+    }
+
+    /** What a person standing in the room breathes, as the handler publishes it. */
+    private String atmosphereInRoom() throws Exception {
+        String resp = exec("artest atmosphere get " + plot().dim + " " + plot().x(ROOM_DX) + " "
+                + (ROOM_Y + 1) + " " + plot().z(ROOM_DZ));
+        Matcher m = Pattern.compile("\"type\":\"([^\"]*)\"").matcher(resp);
+        assertTrue("no atmosphere type in: " + resp, m.find());
+        return m.group(1);
+    }
+
+    /** A tuned threshold read off the server, so no assertion here restates one. */
+    private int configInt(String key) throws Exception {
+        String resp = exec("artest config get " + key);
+        scenario().requireArranged("config get " + key + " failed: " + resp,
+                resp.contains("\"ok\":true"));
+        Matcher m = Pattern.compile("\"value\":(-?\\d+)").matcher(resp);
+        assertTrue("no value in: " + resp, m.find());
+        return Integer.parseInt(m.group(1));
     }
 
     /**
