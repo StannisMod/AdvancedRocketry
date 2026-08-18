@@ -98,6 +98,9 @@ public class XMLPlanetLoader {
     private static final String ATTR_MINSPACING = "minSpacing";
     private static final String ATTR_GALAXYSPACING = "galaxySpacing";
     private static final String ATTR_GALAXYDENSITY = "galaxyDensity";
+    private static final String ATTR_ROGUEABUNDANCE = "rogueAbundance";
+    private static final String ATTR_ROGUEGIANTFRACTION = "rogueGiantFraction";
+    private static final String ATTR_EJECTAFALLOFF = "ejectaFalloff";
     private static final String ATTR_MINSIZE = "minSize";
     private static final String ATTR_MAXSIZE = "maxSize";
     private static final String ELEMENT_PLANET = "planet";
@@ -322,9 +325,17 @@ public class XMLPlanetLoader {
                 galaxyTypes.add(readGalaxyType(child));
             }
         }
+        // The UNBOUND population. Its defaults are measured quantities rather than balance picks, so
+        // an element that says nothing about rogues gets the sky as it is observed to be.
+        GalaxyGenConfig.RogueTuning rogueDefaults = defaults.rogue;
+        GalaxyGenConfig.RogueTuning rogue = new GalaxyGenConfig.RogueTuning(
+                attrDouble(node, ATTR_ROGUEABUNDANCE, rogueDefaults.abundance),
+                attrDouble(node, ATTR_ROGUEGIANTFRACTION, rogueDefaults.giantFraction),
+                attrDouble(node, ATTR_EJECTAFALLOFF, rogueDefaults.ejectaFalloff),
+                rogueDefaults.types);
         // Empty <starType> / <galaxyType> lists fall back to the stock archetypes (config ctor).
         return new GalaxyGenConfig(minSpacing, density, galaxySpacing, galaxyDensity, types,
-                galaxyTypes);
+                galaxyTypes).withRogueTuning(rogue);
     }
 
     /**
@@ -578,6 +589,11 @@ public class XMLPlanetLoader {
         e.setAttribute(ATTR_MINSPACING, Integer.toString(cfg.minSpacing));
         e.setAttribute(ATTR_GALAXYSPACING, Long.toString(cfg.galaxySpacing));
         e.setAttribute(ATTR_GALAXYDENSITY, Double.toString(cfg.galaxyDensity));
+        // Written back for the same reason the tables are: this file is REWRITTEN on every world save,
+        // so anything the reader did not turn into model state is silently lost on the first one.
+        e.setAttribute(ATTR_ROGUEABUNDANCE, Double.toString(cfg.rogue.abundance));
+        e.setAttribute(ATTR_ROGUEGIANTFRACTION, Double.toString(cfg.rogue.giantFraction));
+        e.setAttribute(ATTR_EJECTAFALLOFF, Double.toString(cfg.rogue.ejectaFalloff));
         for (GalaxyGenConfig.StarType t : cfg.starTypes) {
             Element st = doc.createElement(ELEMENT_STARTYPE);
             st.setAttribute(ATTR_TEMP, Integer.toString(t.temperature));

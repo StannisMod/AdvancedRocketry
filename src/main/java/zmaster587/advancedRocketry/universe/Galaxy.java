@@ -65,16 +65,6 @@ public final class Galaxy {
      */
     public static final double EDGE_LEVEL = Math.exp(-1d / DISC_SCALE_FRACTION) / REFERENCE_LEVEL;
 
-    /**
-     * How steeply a galaxy's ejecta thins outside it, as a power of the distance in radii.
-     *
-     * <p>Three, because that is what a population thrown out over a Hubble time and spread through a
-     * growing volume comes to — the same slope the outer parts of a real stellar halo and the
-     * intracluster light are measured at. It is not the disc's exponential: an exponential in units of
-     * the radius is dead within a few of them, and the void is twenty-five across.</p>
-     */
-    private static final double EJECTA_FALLOFF = 3d;
-
     private final long cellX;
     private final long cellY;
     private final long cellZ;
@@ -313,26 +303,32 @@ public final class Galaxy {
      * ejects nothing into itself: inside its own sphere the bound profile is what says how much
      * material is at a point, and adding a second term there would double-count the same stars.</p>
      *
-     * <p>Outside, it falls as {@code (R/r)³} from {@link #EDGE_LEVEL} — anchored at the edge, so a big
+     * <p>Outside, it falls as {@code (R/r)^falloff} from {@link #EDGE_LEVEL} — anchored at the edge, so a big
      * galaxy fills far more of the void than a dwarf and neither needs a normalisation of its own. It
      * is ISOTROPIC while the disc is not: ejection randomises a direction long before a body has
      * crossed the void, so a spiral's poles are not a dead cone. The step at the radius is therefore
      * real, and it is at the one surface this layer already declares as a boundary — the surface where
      * the frame flips and where the star field stops dead.</p>
      */
-    public double ejectaDensityAt(double dxLy, double dyLy, double dzLy) {
+    public double ejectaDensityAt(double dxLy, double dyLy, double dzLy, double falloff) {
         double r = Math.sqrt(dxLy * dxLy + dyLy * dyLy + dzLy * dzLy);
         if (r <= radiusLy) {
             return 0d;
         }
-        return EDGE_LEVEL * Math.pow(radiusLy / r, EJECTA_FALLOFF);
+        return EDGE_LEVEL * Math.pow(radiusLy / r, falloff);
     }
 
-    /** The ejecta halo read at a cell name — the form the generator asks in. */
-    public double ejectaDensityAtSector(long sectorX, long sectorY, long sectorZ) {
+    /**
+     * The ejecta halo read at a cell name — the form the generator asks in.
+     *
+     * <p>The exponent is the CALLER's, out of {@code GalaxyGenConfig.RogueTuning}: a galaxy is a value
+     * drawn from a hash and knows nothing about how the universe is tuned, and giving it a config
+     * would make two galaxies of one seed differ by which config happened to draw them.</p>
+     */
+    public double ejectaDensityAtSector(long sectorX, long sectorY, long sectorZ, double falloff) {
         return ejectaDensityAt(offsetLy(sectorX, centre.sectorX()),
                 offsetLy(sectorY, centre.sectorY()),
-                offsetLy(sectorZ, centre.sectorZ()));
+                offsetLy(sectorZ, centre.sectorZ()), falloff);
     }
 
     /**

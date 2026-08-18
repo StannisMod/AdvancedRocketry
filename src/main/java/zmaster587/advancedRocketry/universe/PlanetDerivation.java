@@ -369,15 +369,21 @@ public final class PlanetDerivation {
      * is not realized into a dimension yet. Its bulk is in the profile for anything that wants it.</p>
      *
      * @param variant disambiguates bodies SHARING a cell — the rogue itself is 0 and its moons follow
+     * @param giantFraction how many unbound worlds kept hydrogen; see
+     *                      {@code GalaxyGenConfig.RogueTuning.giantFraction}. It is NOT the outer-zone
+     *                      chance a bound body past the snow line gets — what unbinds a planet is a
+     *                      scattering encounter, and a giant is the body doing the scattering
      */
-    public static BodyProfile deriveRogue(long seed, GalacticCoord bodyCell, int variant) {
+    public static BodyProfile deriveRogue(long seed, GalacticCoord bodyCell, int variant,
+                                          double giantFraction) {
         GalacticCoord key = bodyCell.cellCentre();
         // Its own draw, because it has no star to have inherited one from. A rogue formed in some
         // system and carries that system's metals; which system is not a thing this layer can know.
         double metallicity = metallicityOf(seed, key);
-        // Colder than any snow line, by construction — so the giant roll is the outer-zone one, which
-        // is the same law every other body past the frost line is drawn by rather than a rate of its own.
-        boolean bulky = isGiantAt(seed, key, variant, 0);
+        // Its OWN rate, and the difference from a bound body's is the physics: a world past the frost
+        // line accretes a giant about a third of the time, while a world thrown out of its system is
+        // overwhelmingly one of the light ones — the giant is what did the throwing.
+        boolean bulky = CellHash.norm(CellHash.ofBody(seed, key, variant, SALT_GIANT)) < giantFraction;
 
         double radius = radiusOf(seed, key, variant, bulky, false);
         double mass = massOf(seed, key, variant, radius, bulky);

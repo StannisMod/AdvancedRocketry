@@ -576,6 +576,15 @@ public class ClusteredGalaxyGeneratorTest {
      * than a single super-cell is what makes the count a reading of the density there instead of one
      * coin toss.
      */
+    /**
+     * How many STAR seats a block of super-cells holds — never how many seats of any kind.
+     *
+     * <p>The difference is load-bearing at the shipped tuning. Free-floating worlds are drawn on the
+     * same lattice at a MEASURED twenty-one per star, which saturates it: past {@code 1/density} every
+     * cube the star draw passed over holds something, so a count of occupied seats is the constant
+     * "all of them" and discriminates neither the density nor the galaxy profile. Both of the tests
+     * below exist to show that those two DO drive the star field, so both must count stars.</p>
+     */
     private static int seatsInBlockAround(ClusteredGalaxyGenerator gen, long offsetCells, long r) {
         Set<String> seen = new HashSet<>();
         for (long x = -r; x <= r; x++) {
@@ -583,7 +592,7 @@ public class ClusteredGalaxyGeneratorTest {
                 for (long z = -r; z <= r; z++) {
                     Optional<GalacticCoord> a = gen.anchorAt(SEED,
                             cell(offsetCells + x * SPACING, y * SPACING, z * SPACING));
-                    if (a.isPresent()) {
+                    if (a.isPresent() && gen.systemAt(SEED, a.get()).get().star().isPresent()) {
                         seen.add(a.get().cellKey());
                     }
                 }
@@ -592,11 +601,18 @@ public class ClusteredGalaxyGeneratorTest {
         return seen.size();
     }
 
+    /**
+     * The STAR seats of a sweep, by cell key — see {@link #seatsInBlockAround} for why it is stars and
+     * not seats of any kind: the unbound draw saturates the lattice at the shipped tuning, so a count
+     * of everything is the constant "every cube" and measures nothing.
+     */
     private static Set<String> occupiedSeats(ClusteredGalaxyGenerator gen, long seed, long spacing,
                                              long r) {
         Set<String> keys = new HashSet<>();
         for (GalacticCoord a : anchors(gen, seed, spacing, r)) {
-            keys.add(a.cellKey());
+            if (gen.systemAt(seed, a).get().star().isPresent()) {
+                keys.add(a.cellKey());
+            }
         }
         return keys;
     }

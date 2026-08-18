@@ -205,7 +205,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             w += t.weight;
         }
         this.totalStarWeight = Math.max(1L, w);
-        this.rogueTypes = GalaxyGenConfig.defaultRogueTypes();
+        this.rogueTypes = this.config.rogue.types;
         long rw = 0L;
         for (GalaxyGenConfig.RogueType t : this.rogueTypes) {
             rw += t.weight;
@@ -331,7 +331,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // A system whose primary is not a star: no companions, no zone, no orbits — the whole
             // second half of the retinue law is about distances FROM a star. What it can still have is
             // moons, so that is what it gets.
-            return rogueBodiesFor(seed, cell, systemId);
+            return rogueBodiesFor(seed, cell, systemId, config.rogue.giantFraction);
         }
         StellarBody star = sys.get().star().get();
         List<SystemBody> bodies = new ArrayList<>();
@@ -399,9 +399,10 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * inner few and nothing else — the same ceiling a rocky world has, applied whatever its bulk,
      * rather than the ceiling its mass would otherwise buy it.</p>
      */
-    private static List<SystemBody> rogueBodiesFor(long seed, GalacticCoord cell, int systemId) {
+    private static List<SystemBody> rogueBodiesFor(long seed, GalacticCoord cell, int systemId,
+                                                   double giantFraction) {
         List<SystemBody> bodies = new ArrayList<>();
-        BodyProfile profile = PlanetDerivation.deriveRogue(seed, cell, 0);
+        BodyProfile profile = PlanetDerivation.deriveRogue(seed, cell, 0, giantFraction);
         // It does not move inside its own system: it IS the system, so its frame is the anchor's.
         bodies.add(SystemBody.fixedAt(cell, SystemBodyKind.ROGUE_PLANET, Constants.INVALID_PLANET,
                 systemId).withRadius(profile.radiusEarths()));
@@ -424,7 +425,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                     SystemContent.MOON_UNIT_BLOCKS);
             // A moon of a rogue is starless too, so it is derived the same way its parent was, one
             // variant along — never through the star-lit law with a star that is not there.
-            BodyProfile moonProfile = PlanetDerivation.deriveRogue(seed, cell, j);
+            BodyProfile moonProfile = PlanetDerivation.deriveRogue(seed, cell, j, giantFraction);
             bodies.add(new SystemBody(cell, frame, law, SystemBodyKind.MOON,
                     Constants.INVALID_PLANET, systemId, SystemBody.ORBIT_UNKNOWN)
                     .withRadius(moonProfile.radiusEarths()));
@@ -699,7 +700,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // Nothing lights this system, so nothing about the body follows from a distance: it is the
             // starless derivation or it is a body whose physics would be read off a star that is not
             // there. A moon of a rogue takes the same branch, which is right — it is starless too.
-            return PlanetDerivation.deriveRogue(seed, body.name(), variant);
+            return PlanetDerivation.deriveRogue(seed, body.name(), variant, config.rogue.giantFraction);
         }
         return PlanetDerivation.derive(seed, anchor.cellCentre(), body.name(), variant, star,
                 body.kind() == SystemBodyKind.MOON, body.orbitalDistance());
@@ -868,7 +869,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         if (!(profile > 0d)) {
             return Optional.empty(); // a galaxy cell with no galaxy in it: the deepest void, and empty
         }
-        double occupancy = Math.min(1d, config.density * GalaxyGenConfig.ROGUE_ABUNDANCE * profile);
+        double occupancy = Math.min(1d, config.density * config.rogue.abundance * profile);
         if (CellHash.norm(lattice.hash(seed, SALT_ROGUE_OCC)) >= occupancy) {
             return Optional.empty();
         }

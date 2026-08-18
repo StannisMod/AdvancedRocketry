@@ -273,7 +273,8 @@ public final class GalaxyField {
             // and this is the hottest path in the layer, taken for every cell of the shipped galaxy.
             return new Material(primary.densityAtSector(sectorX, sectorY, sectorZ), 0d);
         }
-        double unbound = primary.ejectaDensityAtSector(sectorX, sectorY, sectorZ);
+        double falloff = config.rogue.ejectaFalloff;
+        double unbound = primary.ejectaDensityAtSector(sectorX, sectorY, sectorZ, falloff);
         if (!withinRetinueReach(primary, sectorX, sectorY, sectorZ)) {
             return new Material(0d, unbound); // past the retinue: only the primary's own halo reaches
         }
@@ -285,7 +286,7 @@ public final class GalaxyField {
             // material counted twice, and adding them would make the gap between two dwarfs read
             // denser than either dwarf's own edge.
             unbound = Math.max(unbound,
-                    satellite.ejectaDensityAtSector(sectorX, sectorY, sectorZ));
+                    satellite.ejectaDensityAtSector(sectorX, sectorY, sectorZ, falloff));
         }
         return new Material(0d, unbound);
     }

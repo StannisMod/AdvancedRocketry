@@ -218,6 +218,12 @@ public final class GalaxyGenConfig {
      * against. Always contains {@link GalaxyKey#HOME}: a pack that names no galaxy still has one.
      */
     public final List<GalaxyKey> reservedGalaxies;
+    /**
+     * What the UNBOUND population looks like — how many free-floating worlds there are, what they are
+     * made of, and how far a galaxy's ejecta reaches. Never {@code null}; defaults to
+     * {@link RogueTuning#physical()}, i.e. to what is measured.
+     */
+    public final RogueTuning rogue;
 
     /**
      * Each lattice states its EDGE and then its OCCUPANCY, stars first and galaxies second, so the two
@@ -252,6 +258,31 @@ public final class GalaxyGenConfig {
             }
         }
         this.reservedGalaxies = Collections.unmodifiableList(reserved);
+        this.rogue = RogueTuning.physical();
+    }
+
+    private GalaxyGenConfig(GalaxyGenConfig from, RogueTuning rogue) {
+        this.density = from.density;
+        this.minSpacing = from.minSpacing;
+        this.galaxySpacing = from.galaxySpacing;
+        this.galaxyDensity = from.galaxyDensity;
+        this.starTypes = from.starTypes;
+        this.galaxyTypes = from.galaxyTypes;
+        this.clusterTypes = from.clusterTypes;
+        this.reservedGalaxies = from.reservedGalaxies;
+        this.rogue = rogue == null ? RogueTuning.physical() : rogue;
+    }
+
+    /**
+     * The same configuration with the unbound population retuned — the {@code <galaxyGen>} attributes
+     * a pack may state about rogues.
+     *
+     * <p>A named copy rather than four more constructor parameters, and the same shape
+     * {@link #withReservedGalaxies} already uses: what ships is the measured universe, and a pack
+     * states only the part it disagrees with.</p>
+     */
+    public GalaxyGenConfig withRogueTuning(RogueTuning tuning) {
+        return new GalaxyGenConfig(this, tuning);
     }
 
     /**
@@ -368,17 +399,82 @@ public final class GalaxyGenConfig {
     /** Fraction of those cubes that hold a cluster, before the galaxy's own profile scales it. */
     public static final double CLUSTER_DENSITY = 0.35d;
 
-    // ─── The unbound population ────────────────────────────────────────────────
-    // What a lattice cube holds when no star was seated in it. Stated as constants beside the cluster
-    // tier's and for the same reason: it is a whole tier's worth of numbers, none of them yet ratified,
-    // and neither tier is authorable from <galaxyGen> today.
+    /**
+     * The unbound population's tuning: how many free-floating worlds there are, what they are made of,
+     * and how far a galaxy's ejecta reaches.
+     *
+     * <p>Every default here is a MEASURED astronomical quantity rather than a balance choice, because
+     * the rest of this layer already is — the star separation, the galaxy radii and the galaxy
+     * separation are all real. A pack that wants a different sky changes them through
+     * {@code <galaxyGen>}; what ships states what is out there.</p>
+     */
+    public static final class RogueTuning {
+
+        /**
+         * How many unbound worlds the lattice draws for each STAR, at the same point.
+         *
+         * <p><b>21, and it is an observation.</b> Nine years of MOA-II microlensing put the
+         * terrestrial-mass free-floating population at roughly twenty per main-sequence star, and the
+         * worlds this generator draws are overwhelmingly rocky, so that is the matching number. The
+         * older headline of ~1.8 Jupiter-mass objects per star was retracted by OGLE, which caps that
+         * mass range at ~0.25 — see {@link #giantFraction}.</p>
+         *
+         * <p><b>The lattice SATURATES this, and the saturation is the honest reading rather than a
+         * bug.</b> A cube holds at most one seat, so any abundance past {@code 1/density} means "every
+         * territory the stars left empty has something in it", which is exactly what twenty per star
+         * says when a territory is one star's worth of space. Lowering it below that threshold is what
+         * makes the number visible again.</p>
+         */
+        public final double abundance;
+
+        /**
+         * The fraction of unbound worlds massive enough to have kept hydrogen — a giant rather than
+         * a rock.
+         *
+         * <p><b>Far below the ordinary outer-zone giant chance, and for a physical reason</b>: what
+         * unbinds a planet is a scattering encounter, and a giant is the body doing the scattering
+         * rather than the one thrown out. The number is the ratio of the two measured populations —
+         * ~0.25 Jupiter-mass free floaters per star against ~21 terrestrial ones — so about one in
+         * eighty. Inheriting the 0.34 that a bound body past the snow line gets would have produced
+         * half a free-floating giant per star, two orders above what is seen.</p>
+         */
+        public final double giantFraction;
+
+        /**
+         * How steeply a galaxy's ejecta thins outside it, as a power of the distance in radii.
+         *
+         * <p>Three: the slope the outer parts of a stellar halo and the intracluster light are
+         * measured at, which is what a population thrown out over a Hubble time into a growing volume
+         * comes to. Not the disc's exponential — an exponential in units of the radius is dead within
+         * a few of them, and the void is twenty-five across.</p>
+         */
+        public final double ejectaFalloff;
+
+        /** What an unbound seat turns out to hold, by weight (never empty). */
+        public final List<RogueType> types;
+
+        public RogueTuning(double abundance, double giantFraction, double ejectaFalloff,
+                           List<RogueType> types) {
+            this.abundance = (Double.isNaN(abundance) || abundance < 0d) ? 0d : abundance;
+            this.giantFraction = clamp01(giantFraction);
+            this.ejectaFalloff = (Double.isNaN(ejectaFalloff) || ejectaFalloff <= 0d)
+                    ? 3d : ejectaFalloff;
+            this.types = (types == null || types.isEmpty())
+                    ? defaultRogueTypes() : Collections.unmodifiableList(new ArrayList<>(types));
+        }
+
+        /** The measured universe: what the sky actually holds. */
+        public static RogueTuning physical() {
+            return new RogueTuning(21d, 0.012d, 3d, defaultRogueTypes());
+        }
+    }
 
     /**
      * A weighted ROGUE archetype — what an unbound seat turns out to hold. The fourth table of the
      * shape {@link StarType} / {@link GalaxyType} / {@link ClusterType} use, and it exists for the
      * same reason they do: <b>relative abundance is a WEIGHT</b>, so "by falling abundance" is a
      * property of the table rather than a rule somewhere in the generator, and adding a kind of
-     * unbound object later is one row instead of a fourth occupancy knob.
+     * unbound object later is one row instead of another occupancy knob.
      */
     public static final class RogueType {
         public final String name;
@@ -394,36 +490,23 @@ public final class GalaxyGenConfig {
     }
 
     /**
-     * How many unbound seats the lattice draws for each STAR it draws, at the same point.
+     * The stock rogue table, and the ratio in it is measured too.
      *
-     * <p>It multiplies the same {@link #density} against the same profile, which is what makes it an
-     * occupancy FACTOR rather than a density of its own: everything already built — the super-cell
-     * partition, member-cell attribution, the survey's stride, the seat margins — keeps working
-     * untouched, and "more numerous than stars" is one number.</p>
-     *
-     * <p>Above one because free-floating worlds really do outnumber stars; at the LOW end of the
-     * observed band, which runs from comparable to some tens of times, because a lattice cube is a
-     * STAR's territory and seating a rogue in one claims rogues partition space the way stars do.
-     * <b>Measured at the stock density</b>: in a sun-like neighbourhood this seats about as many rogue
-     * worlds as stars, because a cube the star draw already took is not offered twice.</p>
-     */
-    public static final double ROGUE_ABUNDANCE = 1.5d;
-
-    /**
-     * The stock rogue table. A thrown-out WORLD is the ordinary case and a thrown-out STAR is the
-     * find: ejecting a star takes an encounter violent enough to unbind the heaviest thing in a
-     * system, while a planet is unbound by the ordinary jostling of the system it formed in.
+     * <p>A thrown-out WORLD against a thrown-out STAR is ~21 per star against the few per cent of
+     * stars that end up unbound from their galaxy at all — the intragroup population a galaxy group
+     * carries, well below the intracluster fractions a rich cluster shows. So a rogue star is about
+     * one seat in a thousand, which is what makes meeting a whole lit system out in the void an event
+     * rather than routine.</p>
      *
      * <p>A rogue star is a {@link SystemBodyKind#STAR} and nothing else — rogue-ness is a statement
-     * about WHERE it stands, not about what it is, so it is seated as an ordinary system and gets an
-     * ordinary retinue. That is why finding one out here is an event: it is a whole system, in a place
-     * where a system has no business being.</p>
+     * about WHERE it stands, not about what it is — so it is fabricated by the ordinary path and gets
+     * an ordinary retinue.</p>
      */
     public static List<RogueType> defaultRogueTypes() {
         List<RogueType> l = new ArrayList<>();
         //                     name            what is seated                weight
-        l.add(new RogueType("Rogue Planet", SystemBodyKind.ROGUE_PLANET, 200));
-        l.add(new RogueType("Rogue Star", SystemBodyKind.STAR, 3));
+        l.add(new RogueType("Rogue Planet", SystemBodyKind.ROGUE_PLANET, 1050));
+        l.add(new RogueType("Rogue Star", SystemBodyKind.STAR, 1));
         return Collections.unmodifiableList(l);
     }
 
