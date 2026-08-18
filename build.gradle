@@ -163,8 +163,8 @@ if (propertyBool('enable_junit_testing')) {
     sourceSets.test.java.srcDir 'testframework/src/main/java'
 }
 
-// Valkyrien Skies physics engine — vendored as a git subtree under valkyrienskies/
-// and compiled into the main source set. VS is a mandatory part of the mod: its
+// Valkyrien Skies physics engine — vendored as PLAIN FILES under valkyrienskies/ (not a git
+// subtree: only testframework/ is one) and compiled into the main source set. VS is a mandatory part of the mod: its
 // classes (org.valkyrienskies.*) ship inside AR. Its mixins/AT are registered
 // alongside AR's own; its former shaded libraries are declared as ordinary
 // dependencies (see gradle/scripts/dependencies.gradle).

@@ -181,6 +181,21 @@ public class WorldServerShipManager implements IPhysObjectWorld {
     }
 
     private void spawnNewShips() {
+        // Spawn diagnostics. A queued ship that never appears is indistinguishable from outside the
+        // JVM between three causes - the pass never ran, it ran and dropped the ship before
+        // registering it, or the ship registered and was destroyed again - and the abort below prints
+        // to System.err, which the test harness does not forward. These counters name which one it
+        // was; `artest vs spawn-diag` reads them.
+        SpawnDiagnostics.noteEntry(spawnQueue.size());
+        try {
+            spawnQueuedShips();
+        } finally {
+            SpawnDiagnostics.noteReturn(QueryableShipData.get(world).getShips().size());
+        }
+        spawnQueue.clear();
+    }
+
+    private void spawnQueuedShips() {
         for (final QueuedSpawn spawnData : spawnQueue) {
             final BlockPos physicsInfuserPos = spawnData.spawnPos;
             final ShipData toSpawn = spawnData.toSpawn;
@@ -190,6 +205,7 @@ public class WorldServerShipManager implements IPhysObjectWorld {
                 throw new IllegalStateException("Tried spawning a ShipData that was already loaded?\n" + toSpawn);
             }
             final SpatialDetector detector = BlockFinder.getBlockFinderFor(blockBlockFinderType, physicsInfuserPos, world, VSConfig.maxDetectedShipSize + 1, true);
+            SpawnDiagnostics.noteDetector(detector, physicsInfuserPos, world);
             if (VSConfig.showAnnoyingDebugOutput) {
                 System.out.println("Attempting to spawn " + toSpawn + " on the thread " + Thread.currentThread().getName());
             }
@@ -348,7 +364,6 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             // The ship is now resolvable by id: this is the naming edge for a spawn.
             noteLifecycle(toSpawn, spawnData.cause);
         }
-        spawnQueue.clear();
     }
 
     /**
@@ -438,6 +453,14 @@ public class WorldServerShipManager implements IPhysObjectWorld {
     }
 
     private void loadAndUnloadShips() {
+        // Wanting a ship loaded that IS loaded is a SATISFIED request, not an error - and two parties
+        // can want it on the same tick. A tier-2 assembly spawns its ship already loaded, and the
+        // proximity pass a few lines up queues that very ship the moment a player stands near the pad.
+        // The loop below asserts on exactly this state and throws out of the world tick, with nothing
+        // between the throw and the server loop, so the whole dedicated server dies. Enforcing the
+        // precondition here instead turns the illegal double-load into a no-op and changes nothing
+        // else: a queued ship that is genuinely not loaded still loads normally.
+        loadQueue.removeIf(loadedShips::containsKey);
         QueryableShipData queryableShipData = QueryableShipData.get(world);
         // Load the ships that are required immediately.
         for (final UUID toLoadID : loadQueue) {

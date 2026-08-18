@@ -33,6 +33,19 @@ public class ShipSpawnDetector extends SpatialDetector {
             .forEach(blacklist::add);
     }
 
+    /**
+     * How many blocks the spawn blacklist currently holds.
+     *
+     * <p>Exists because {@link #syncWithConfig()} rebuilds the set NON-ATOMICALLY - a clear followed
+     * by a repopulate - so a flood that runs in that window sees a partially built blacklist and
+     * escapes through terrain it would normally refuse. A refused spawn reports this number beside
+     * the flood size, which is what separates "the flood escaped" from "it escaped because the
+     * blacklist was momentarily empty".</p>
+     */
+    public static int blacklistSize() {
+        return blacklist.size();
+    }
+
     private final MutableBlockPos mutablePos = new MutableBlockPos();
 
     ShipSpawnDetector(BlockPos start, World worldIn, int maximum, boolean checkCorners) {

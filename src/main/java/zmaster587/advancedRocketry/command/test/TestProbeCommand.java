@@ -1879,7 +1879,7 @@ public class TestProbeCommand extends CommandBase {
         // terrain near a ship (its box overlaps the ship's world AABB) from being dropped through the
         // floor into the ship's empty subspace.
         // spawn-diag [reset] — READ-ONLY snapshot (or reset) of the VS spawn diagnostics
-        // (VSIntegration.spawn* statics, written by MixinWorldServerShipManager). Localises where a
+        // (VSIntegration.spawn* statics, written by the ship manager itself). Localises where a
         // queued+named tier-2 ship dies (ledger #60): spawnNewShipsRuns=0 -> never processed;
         // runs>0 & maxShips=0 -> processed but addShip skipped/threw; maxShips>=1 -> registered then destroyed.
         if (args.length >= 1 && "spawn-diag".equalsIgnoreCase(args[0])) {

@@ -63,14 +63,36 @@ public class VSBoundaryContainmentTest {
 
     /**
      * The roles allowed to name engine types: the port package (the bridge + the flight backend),
-     * the mixins that weave into engine internals, and the mod entry point that gates/registers the
-     * integration.
+     * the mixins that weave into engine internals, the mod entry point that gates/registers the
+     * integration, and the ONE tile the engine calls back into (below).
      */
     private static boolean mayNameEngineTypes(String relativePath) {
         return relativePath.startsWith(PKG + "integration/vs/")
                 || relativePath.startsWith(PKG + "mixin/")
-                || relativePath.equals(PKG + "AdvancedRocketry.java");
+                || relativePath.equals(PKG + "AdvancedRocketry.java")
+                || relativePath.equals(FORCE_CONTROLLER_TILE);
     }
+
+    /**
+     * The flight computer, which implements the engine's force-controller interface itself.
+     *
+     * <p><b>Why this one file is exempt, and why no wrapper can take its place.</b> The engine
+     * discovers a ship's force controllers by testing the TILE it is handed:
+     * {@code if (tileentity instanceof IPhysicsBlockController)}, in {@code PhysicsObject}'s
+     * set-tile-entity path. It never sees anything else, so a port-side controller object holding a
+     * reference to this tile would simply never be collected. Implementing the interface on the tile
+     * is not a shortcut around the port — it is the only shape the callback has.</p>
+     *
+     * <p><b>This exemption did not add the coupling; it made it visible.</b> Until 2026-08-17 the
+     * interface was welded onto this same class by a mixin over a class this mod compiles itself, so
+     * the file-level scan below counted four importers instead of five while the runtime coupling was
+     * exactly what it is now. Retiring that mixin removed indirection, not a boundary.</p>
+     *
+     * <p>Named as ONE file rather than opening the whole {@code tile/} package: a second tile that
+     * wants an engine type is a design question, and it should fail here so somebody asks it.</p>
+     */
+    private static final String FORCE_CONTROLLER_TILE =
+            PKG + "tile/TileAdvancedFlightComputer.java";
 
     private static List<String> enginetypeImporters(Path sourceRoot) throws IOException {
         List<Path> javaFiles;

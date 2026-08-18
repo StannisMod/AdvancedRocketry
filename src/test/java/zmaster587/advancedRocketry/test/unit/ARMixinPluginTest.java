@@ -41,8 +41,6 @@ public class ARMixinPluginTest {
             "zmaster587.advancedRocketry.mixin.MixinEntityGravity";
     private static final String BLOCK_PLACE =
             "zmaster587.advancedRocketry.mixin.MixinWorldSetBlockState";
-    private static final String SHIP_MANAGER =
-            "zmaster587.advancedRocketry.mixin.MixinWorldServerShipManager";
 
     @Test
     public void worldInfoMixinsApplyWhenPerDimWorldInfoEnabled() {
@@ -93,16 +91,5 @@ public class ARMixinPluginTest {
         // Its two neighbours are NOT dragged along: they only ever served the per-dim clock.
         assertFalse(ARMixinPlugin.shouldApply(false, false, false, WORLD_SERVER_MULTI));
         assertFalse(ARMixinPlugin.shouldApply(false, false, false, PLAYER_LIST));
-    }
-
-    @Test
-    public void valkyrienSkiesMixinGatingIsIndependentOfPerDimWorldInfoFlag() {
-        // The VS ship-load double-load guard is gated by the VS classpath, NOT by the
-        // perDimWorldInfo master flag. Its decision must therefore be the same whether
-        // that flag is on or off — pinning it can't accidentally ride the WorldInfo gate.
-        // (The absolute value depends on whether VS is on the test classpath, which this
-        // assertion deliberately does not assume.)
-        assertTrue(ARMixinPlugin.shouldApply(true, SHIP_MANAGER)
-                == ARMixinPlugin.shouldApply(false, SHIP_MANAGER));
     }
 }

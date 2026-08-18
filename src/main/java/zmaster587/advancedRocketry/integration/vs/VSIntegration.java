@@ -1170,7 +1170,7 @@ public final class VSIntegration {
         return VSBridge.loadedShipCount(world);
     }
 
-    // ---- Spawn diagnostics (ledger #60). Ungated statics written by MixinWorldServerShipManager
+    // ---- Spawn diagnostics. Ungated statics written by the ship manager
     // from inside VS's own spawnNewShips, so an e2e can read WHERE a queued+named tier-2 ship dies:
     // never-processed vs processed-but-never-registered vs registered-then-destroyed. Harness child
     // JVMs have no test mode, so these must be ungated (isTestMode gates log lines only). --------

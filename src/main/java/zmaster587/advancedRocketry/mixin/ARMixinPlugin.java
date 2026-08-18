@@ -14,7 +14,7 @@ import java.util.Set;
 /**
  * Mixin config plugin for {@code mixins.advancedrocketry.json}.
  *
- * <p>Its only job today: gate the three per-dimension WorldInfo mixins
+ * <p>Its only job: gate the three per-dimension WorldInfo mixins
  * ({@link MixinWorldServerMulti} wrapper install, {@code MixinWorldServer}
  * per-dim time / sleep, {@link MixinPlayerList} weather sync) on the
  * {@code perDimWorldInfo} MASTER config flag, so that with the per-dimension
@@ -56,21 +56,6 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
             "zmaster587.advancedRocketry.mixin.MixinPlayerList";
     private static final String MIXIN_WORLD_SERVER =
             "zmaster587.advancedRocketry.mixin.MixinWorldServer";
-
-    /** The flight-controller mixin makes the Advanced Flight Computer tile a Valkyrien Skies
-     *  {@code IPhysicsBlockController}; it references physics-mod types and MUST be skipped
-     *  when that mod is absent, or weaving it aborts the whole (required) config. */
-    private static final String MIXIN_FLIGHT_CONTROLLER =
-            "zmaster587.advancedRocketry.mixin.MixinTileAdvancedFlightComputer";
-
-    /** The ship-load double-load guard mixin targets a Valkyrien Skies class and MUST be
-     *  skipped when that mod is absent, or weaving it aborts the whole (required) config. */
-    private static final String MIXIN_SHIP_MANAGER =
-            "zmaster587.advancedRocketry.mixin.MixinWorldServerShipManager";
-
-    /** A stable physics-mod class the flight-controller mixin needs at weave time. */
-    private static final String VS_CONTROLLER_INTERFACE =
-            "org.valkyrienskies.mod.common.physics.IPhysicsBlockController";
 
     private boolean perDimWorldInfo = true;
     private boolean allowTimeSkipOnPlanets = false;
@@ -153,27 +138,7 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
                 || MIXIN_PLAYER_LIST.equals(mixinClassName)) {
             return perDimWorldInfoEnabled;
         }
-        if (MIXIN_FLIGHT_CONTROLLER.equals(mixinClassName)
-                || MIXIN_SHIP_MANAGER.equals(mixinClassName)) {
-            return isValkyrienSkiesOnClasspath();
-        }
         return true;
-    }
-
-    /**
-     * Whether Valkyrien Skies is on the classpath, tested by resolving a stable VS type
-     * WITHOUT initialising it. Available at coremod time (unlike Forge's {@code Loader}), and
-     * fail-safe: any error means "absent", so the flight-controller mixin is skipped and the
-     * VS-free build is never affected.
-     */
-    private static boolean isValkyrienSkiesOnClasspath() {
-        try {
-            Class.forName(VS_CONTROLLER_INTERFACE, false,
-                    ARMixinPlugin.class.getClassLoader());
-            return true;
-        } catch (Throwable t) {
-            return false;
-        }
     }
 
     @Override
