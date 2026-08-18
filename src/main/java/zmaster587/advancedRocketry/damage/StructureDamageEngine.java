@@ -8,7 +8,8 @@ import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.damage.DamageOutcome;
 import zmaster587.advancedRocketry.api.damage.ImpactRequest;
 import zmaster587.advancedRocketry.api.damage.StopReason;
-import zmaster587.advancedRocketry.util.SweptSegment;
+import zmaster587.advancedRocketry.api.ARConfiguration;
+import zmaster587.advancedRocketry.util.SweptVolume;
 import zmaster587.advancedRocketry.util.WeightEngine;
 
 /**
@@ -120,7 +121,11 @@ public final class StructureDamageEngine {
 
         Walk walk = new Walk(world, entry, direction, result, reachBlocks, crossSectionArea,
                 resumesInside);
-        SweptSegment.traverse(entry, walk.farEnd, MAX_VOXELS_EXAMINED, walk);
+        // The bound scales with the body, because the sweep does: holding a wide round to a ray's
+        // voxel budget would not make it cheaper, it would make it stop looking a few blocks in and
+        // report that it had come out the far side of a hull it was still inside.
+        SweptVolume.traverse(entry, walk.farEnd, walk.radius,
+                MAX_VOXELS_EXAMINED * SweptVolume.candidatesPerSlice(walk.radius), walk);
         return walk.finish();
     }
 
@@ -128,7 +133,7 @@ public final class StructureDamageEngine {
      * One walk's state, told about each block the ray enters. It is an object rather than a loop only
      * because the traversal calls back; every decision is the one the loop made.
      */
-    private static final class Walk implements SweptSegment.Visitor {
+    private static final class Walk implements SweptVolume.LayerVisitor {
 
         private final World world;
         private final Vec3d entry;
@@ -137,6 +142,12 @@ public final class StructureDamageEngine {
         private final Vec3d farEnd;
 
         private final double areaFactor;
+        /**
+         * How wide the body is, in blocks, derived from the cross-section it was priced against —
+         * there is one statement of a body's width and this is read from it, never declared twice.
+         * Capped by config, because the work a sweep does grows with the square of it.
+         */
+        private final double radius;
         /** True while the first voxel is still to come: it is already paid for, so it is not charged. */
         private boolean skipThisVoxel;
         /** How far the far end is, in blocks: what a parameter along the segment is measured against. */
@@ -155,6 +166,8 @@ public final class StructureDamageEngine {
             this.entry = entry;
             this.result = result;
             this.areaFactor = crossSectionArea / ImpactRequest.REFERENCE_AREA;
+            this.radius = Math.min(Math.sqrt(Math.max(0.0D, crossSectionArea) / Math.PI),
+                    ARConfiguration.getCurrentConfig().shotBodyRadiusCap);
             double length = Math.sqrt(direction.x * direction.x + direction.y * direction.y
                     + direction.z * direction.z);
             Vec3d unit = length <= 1.0E-9D ? direction : scale(direction, 1.0D / length);
@@ -162,23 +175,40 @@ public final class StructureDamageEngine {
             this.farEnd = entry.add(scale(unit, this.reach));
         }
 
+        /**
+         * One layer of the body's sweep: the blocks it reaches in one slice of its path.
+         *
+         * <p>The AXIS block still tells the story — whether the body is in material, whether it came
+         * out the far side, how deep it got — because that is where the centre of the body is, and
+         * every one of those is a question about the centre. What the width adds is who else gets
+         * paid: each block of the layer is offered the fraction of the budget it actually covers, so
+         * a body twice as wide spreads what it has over more blocks rather than doing twice the
+         * damage. At the reference cross-section a layer is one block at a share of one, which is
+         * precisely the walk this used to be.</p>
+         */
         @Override
-        public boolean visit(BlockPos pos, double tEnter, net.minecraft.util.EnumFacing entryFace) {
-            Vec3d here = entry.add(scale(farEnd.subtract(entry), tEnter));
+        public boolean visit(SweptVolume.Layer layer) {
+            Vec3d here = entry.add(scale(farEnd.subtract(entry), layer.tEnter));
             if (previousWasSolid) {
-                // The ray left the previous solid block exactly where it entered this one.
+                // The body left the previous solid slice exactly where it entered this one.
                 lastSolidExit = here;
                 previousWasSolid = false;
             }
 
-            if (!world.isBlockLoaded(pos)) {
-                // Not "there is nothing here" — nobody looked. A caller that can retry should.
+            if (!world.isBlockLoaded(layer.axis)) {
+                // Not "there is nothing here" - nobody looked. A caller that can retry should.
                 return decide(entered ? DamageOutcome.ABSORBED : DamageOutcome.NOTHING_STRUCK,
                         StopReason.TARGET_UNLOADED, null);
             }
 
-            IBlockState state = world.getBlockState(pos);
-            if (!isStructure(world, pos, state)) {
+            boolean anySolid = false;
+            for (BlockPos pos : layer.blocks) {
+                if (world.isBlockLoaded(pos) && isStructure(world, pos, world.getBlockState(pos))) {
+                    anySolid = true;
+                    break;
+                }
+            }
+            if (!anySolid) {
                 if (entered && ++consecutiveEmpty >= GAP_TOLERANCE) {
                     return decide(DamageOutcome.EXITED, StopReason.EXITED_FAR_SIDE, lastSolidExit);
                 }
@@ -191,27 +221,58 @@ public final class StructureDamageEngine {
                 result.entryPoint = here;
             }
             result.penetrationDepth++;
-            result.distanceWalked = tEnter * reach;
+            result.distanceWalked = layer.tEnter * reach;
             previousWasSolid = true;
 
             if (skipThisVoxel) {
-                // The block this bore is standing in, already bought on an earlier tick.
+                // The slice this bore is standing in, already bought on an earlier tick.
                 skipThisVoxel = false;
                 return false;
             }
 
-            if (isIndestructible(world, pos, state)) {
-                // Nothing gets through this. The budget dies here rather than tunnelling past it.
-                result.budgetSpent += result.budgetLeft;
-                result.budgetLeft = 0;
-                return decide(DamageOutcome.ABSORBED, StopReason.BUDGET_EXHAUSTED, null);
+            // The pool every share is measured against is what the body had ON REACHING this layer,
+            // not what is left part way through it: the blocks of one layer are met at once, so
+            // charging the second against the first's leavings would make their listed order matter.
+            int poolAtLayer = result.budgetLeft;
+            for (int i = 0; i < layer.blocks.size(); i++) {
+                BlockPos pos = layer.blocks.get(i);
+                if (!world.isBlockLoaded(pos)) {
+                    continue;
+                }
+                IBlockState state = world.getBlockState(pos);
+                if (!isStructure(world, pos, state)) {
+                    continue;
+                }
+                int allowance = Math.min(result.budgetLeft, allowanceFor(poolAtLayer, layer, i));
+                if (isIndestructible(world, pos, state)) {
+                    if (pos.equals(layer.axis)) {
+                        // Nothing gets through this. The budget dies here rather than tunnelling past.
+                        result.budgetSpent += result.budgetLeft;
+                        result.budgetLeft = 0;
+                        return decide(DamageOutcome.ABSORBED, StopReason.BUDGET_EXHAUSTED, null);
+                    }
+                    // Beside the hole rather than in it: it eats its own share and the body goes on.
+                    result.budgetSpent += allowance;
+                    result.budgetLeft -= allowance;
+                    continue;
+                }
+                // Priced against the area THIS block is under, not the whole body: it is handed a
+                // share of the budget, so charging it for the entire cross-section would take the
+                // width out of the round twice and leave a wide shot feebler than any physics says.
+                int spent = spendInto(world, pos, state, result,
+                        areaFactor * layer.shares.get(i), allowance);
+                result.budgetSpent += spent;
+                result.budgetLeft -= spent;
             }
-
-            spendInto(world, pos, state, result, areaFactor);
             if (result.budgetLeft <= 0) {
                 return decide(DamageOutcome.ABSORBED, StopReason.BUDGET_EXHAUSTED, null);
             }
             return false;
+        }
+
+        /** What one block of a layer may be charged: the pool times how much of the body covers it. */
+        private int allowanceFor(int poolAtLayer, SweptVolume.Layer layer, int index) {
+            return Math.max(0, (int) Math.floor(poolAtLayer * layer.shares.get(index)));
         }
 
         private boolean decide(DamageOutcome outcome, StopReason reason, Vec3d exitPoint) {
@@ -240,22 +301,28 @@ public final class StructureDamageEngine {
         }
     }
 
-    /** Spend as much of the remaining budget into one block as its stages will take. */
-    private static void spendInto(World world, BlockPos pos, IBlockState state, WalkResult result,
-                                  double areaFactor) {
+    /**
+     * Spend up to {@code allowance} into one block, as much as its stages will take, and answer what
+     * that came to. The caller owns the running budget — a block is told what it may have, never
+     * handed the purse, which is what lets one layer be divided between several of them.
+     */
+    private static int spendInto(World world, BlockPos pos, IBlockState state, WalkResult result,
+                                 double areaFactor, int allowance) {
         int maxStage = DamageState.getMaxStage(world, pos);
         int stage = DamageState.getStage(world, pos);
         int stageCost = stageCost(world, pos, areaFactor);
 
+        int left = Math.max(0, allowance);
+        int spent = 0;
         boolean advanced = false;
-        while (stage < maxStage && result.budgetLeft >= stageCost) {
-            result.budgetLeft -= stageCost;
-            result.budgetSpent += stageCost;
+        while (stage < maxStage && left >= stageCost) {
+            left -= stageCost;
+            spent += stageCost;
             stage++;
             advanced = true;
         }
         if (!advanced) {
-            return;
+            return spent;
         }
 
         if (stage >= maxStage) {
@@ -268,6 +335,7 @@ public final class StructureDamageEngine {
             DamageState.setStage(world, pos, stage);
             result.blocksStaged++;
         }
+        return spent;
     }
 
     /**

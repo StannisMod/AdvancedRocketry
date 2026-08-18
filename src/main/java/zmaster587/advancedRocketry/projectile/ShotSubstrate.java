@@ -101,6 +101,16 @@ public final class ShotSubstrate {
         return velocity.scale(ratio);
     }
 
+    /**
+     * How wide this shot is for the purpose of MEETING things, capped by config. A body sweeps a
+     * cylinder rather than a line, and the work a step does grows with the square of its width, so an
+     * absurd calibre is bounded here rather than being a way of making the server do arbitrary work.
+     * The declared radius still prices the shot in full: only the geometry is capped.
+     */
+    private static double bodyRadius(Shot shot) {
+        return Math.min(shot.getRadius(), ARConfiguration.getCurrentConfig().shotBodyRadiusCap);
+    }
+
     /** Which kinds are a lump of something travelling, as opposed to energy arriving. */
     private static boolean carriesMass(ImpactKind kind) {
         return kind == ImpactKind.KINETIC || kind == ImpactKind.EXPLOSIVE;
@@ -196,7 +206,7 @@ public final class ShotSubstrate {
             // known to be that hull, and once the round has deflected or come out it is an ordinary
             // body again and asks everything.
             StructureCrossing.Hit structure = StructureCrossing.firstAlong(world, position, segmentEnd,
-                    crossing == 0 ? boringHull : null);
+                    crossing == 0 ? boringHull : null, bodyRadius(shot));
             double structureDistance = structure == null ? -1.0D : structure.distance;
 
             boolean fieldFirst = fieldDistance >= 0.0D

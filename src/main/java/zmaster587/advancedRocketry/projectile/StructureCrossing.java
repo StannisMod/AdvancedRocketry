@@ -6,7 +6,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.damage.StructureDamageEngine;
-import zmaster587.advancedRocketry.util.SweptSegment;
+import zmaster587.advancedRocketry.util.SweptVolume;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 
 import java.util.Map;
@@ -98,6 +98,18 @@ public final class StructureCrossing {
      * in open space needs.</p>
      */
     static Hit firstAlong(World world, Vec3d from, Vec3d to, String onlyHullId) {
+        return firstAlong(world, from, to, onlyHullId, 0.0D);
+    }
+
+    /**
+     * The same question for a body of some WIDTH.
+     *
+     * <p>A ray finds what the centre of a round would meet. A body a block across also meets what it
+     * passes beside — and a grazing hit is exactly the contact a ricochet is made of, so a wide round
+     * tested as a line would be a round that cannot graze anything. The radius costs nothing at the
+     * reference calibre: below half a block the sweep IS the ray.</p>
+     */
+    static Hit firstAlong(World world, Vec3d from, Vec3d to, String onlyHullId, double radius) {
         if (world == null || from == null || to == null) {
             return null;
         }
@@ -107,10 +119,10 @@ public final class StructureCrossing {
         }
 
         if (onlyHullId != null) {
-            return shipFrameHit(world, onlyHullId, from, to, length);
+            return shipFrameHit(world, onlyHullId, from, to, length, radius);
         }
 
-        Hit best = worldFrameHit(world, from, to, length);
+        Hit best = worldFrameHit(world, from, to, length, radius);
         // The segment's own bounding box, min-first: AxisAlignedBB#intersects reads its six doubles
         // as an ordered box and quietly answers "no" for one given the other way round.
         double minX = Math.min(from.x, to.x);
@@ -124,7 +136,7 @@ public final class StructureCrossing {
             if (!ship.getValue().intersects(minX, minY, minZ, maxX, maxY, maxZ)) {
                 continue;
             }
-            Hit hit = shipFrameHit(world, ship.getKey(), from, to, length);
+            Hit hit = shipFrameHit(world, ship.getKey(), from, to, length, radius);
             if (hit != null && (best == null || hit.distance < best.distance)) {
                 best = hit;
             }
@@ -132,7 +144,8 @@ public final class StructureCrossing {
         return best;
     }
 
-    private static Hit worldFrameHit(World world, Vec3d from, Vec3d to, double length) {
+    private static Hit worldFrameHit(World world, Vec3d from, Vec3d to, double length,
+                                     double radius) {
         // Above or below the build height there are no world blocks by construction, and the pose
         // band ships fly in is entirely up there. Skipping the traversal is not an optimisation for
         // its own sake: it is what keeps a shot crossing a cell from touching the chunk system at all.
@@ -141,17 +154,18 @@ public final class StructureCrossing {
         if (maxY < 0.0D || minY > world.getHeight()) {
             return null;
         }
-        return traverse(world, from, to, length, null);
+        return traverse(world, from, to, length, null, radius);
     }
 
-    private static Hit shipFrameHit(World world, String shipId, Vec3d from, Vec3d to, double length) {
+    private static Hit shipFrameHit(World world, String shipId, Vec3d from, Vec3d to, double length,
+                                    double radius) {
         double[] localFrom = VSIntegration.toShipFrameFor(world, shipId, from.x, from.y, from.z);
         double[] localTo = VSIntegration.toShipFrameFor(world, shipId, to.x, to.y, to.z);
         if (localFrom == null || localTo == null) {
             return null;
         }
         return traverse(world, new Vec3d(localFrom[0], localFrom[1], localFrom[2]),
-                new Vec3d(localTo[0], localTo[1], localTo[2]), length, shipId);
+                new Vec3d(localTo[0], localTo[1], localTo[2]), length, shipId, radius);
     }
 
     /**
@@ -161,20 +175,32 @@ public final class StructureCrossing {
      * comparable with the field layer's, which is measured in the world frame.
      */
     private static Hit traverse(World world, Vec3d from, Vec3d to, double worldLength,
-                                final String shipId) {
+                                final String shipId, double radius) {
         final Hit[] found = new Hit[1];
         final Vec3d segFrom = from;
         final Vec3d segTo = to;
-        SweptSegment.traverse(from, to, MAX_VOXELS_PER_SEGMENT, new SweptSegment.Visitor() {
+        SweptVolume.traverse(from, to, radius,
+                MAX_VOXELS_PER_SEGMENT * SweptVolume.candidatesPerSlice(radius),
+                new SweptVolume.LayerVisitor() {
             @Override
-            public boolean visit(BlockPos pos, double tEnter, net.minecraft.util.EnumFacing entryFace) {
-                if (!world.isBlockLoaded(pos)) {
-                    return false; // nobody looked; see the class note
+            public boolean visit(SweptVolume.Layer layer) {
+                BlockPos struck = null;
+                for (BlockPos pos : layer.blocks) {
+                    if (!world.isBlockLoaded(pos)) {
+                        continue; // nobody looked; see the class note
+                    }
+                    if (StructureDamageEngine.isStructure(world, pos, world.getBlockState(pos))) {
+                        // The axis block leads its layer, so a head-on meeting reports exactly the
+                        // block a ray would have found; a side block only wins when the centre of the
+                        // body passed through air, which is what a graze IS.
+                        struck = pos;
+                        break;
+                    }
                 }
-                if (!StructureDamageEngine.isStructure(world, pos, world.getBlockState(pos))) {
+                if (struck == null) {
                     return false;
                 }
-                Vec3d localPoint = segFrom.add(segTo.subtract(segFrom).scale(tEnter));
+                Vec3d localPoint = segFrom.add(segTo.subtract(segFrom).scale(layer.tEnter));
                 Vec3d worldPoint = localPoint;
                 if (shipId != null) {
                     double[] w = VSIntegration.toWorldFrameFor(world, shipId, localPoint.x,
@@ -184,10 +210,34 @@ public final class StructureCrossing {
                     }
                     worldPoint = new Vec3d(w[0], w[1], w[2]);
                 }
-                found[0] = new Hit(tEnter * worldLength, worldPoint, pos, shipId, entryFace);
+                found[0] = new Hit(layer.tEnter * worldLength, worldPoint, struck, shipId,
+                        faceOf(struck, layer));
                 return true;
             }
         });
         return found[0];
+    }
+
+    /**
+     * Which face of the struck block the body came in through. For the block the axis went through it
+     * is the axis's own entry face, as it always was. For one the body only reached SIDEWAYS the axis
+     * face would be a normal about a different block, so the face is the one turned towards the axis
+     * — that is the surface a grazing body actually touches.
+     */
+    private static EnumFacing faceOf(BlockPos struck, SweptVolume.Layer layer) {
+        int dx = struck.getX() - layer.axis.getX();
+        int dy = struck.getY() - layer.axis.getY();
+        int dz = struck.getZ() - layer.axis.getZ();
+        if (dx == 0 && dy == 0 && dz == 0) {
+            return layer.entryFace;
+        }
+        int ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
+        if (ax >= ay && ax >= az) {
+            return dx > 0 ? EnumFacing.WEST : EnumFacing.EAST;
+        }
+        if (ay >= az) {
+            return dy > 0 ? EnumFacing.DOWN : EnumFacing.UP;
+        }
+        return dz > 0 ? EnumFacing.NORTH : EnumFacing.SOUTH;
     }
 }
