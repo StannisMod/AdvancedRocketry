@@ -195,6 +195,45 @@ public class ShotSubstrateE2ETest extends AbstractSharedServerTest {
         exec("artest shot clear 0");
     }
 
+    @Test
+    public void aBeamIsAbsorbedByAChargedShellRatherThanMirroredOffIt() throws Exception {
+        // The same shell, the same energy, the same approach as the bounce above — only the KIND
+        // differs. What the shell does with a strike is decided by what it was told the strike is, so
+        // a substrate that declares every round as a travelling lump of metal makes the shell mirror
+        // light. A beam's energy arrives and stays: there is nothing to send back.
+        exec("artest shot clear 0");
+        int gx = 1040, gz = 912, gy = 96;
+        int ex = gx + 1;
+        clearShieldSite(gx, gy, gz);
+        place("affs:shield_generator", gx, gy, gz);
+        place("affs:field_generator", ex, gy, gz);
+        for (int i = 0; i < 15; i++) {
+            exec("artest energy inject 0 " + gx + " " + gy + " " + gz + " 4000");
+            exec("artest tile force-tick 0 " + gx + " " + gy + " " + gz + " 1");
+            exec("artest shield tick 0");
+        }
+        String emitter = exec("artest shield read 0 " + ex + " " + gy + " " + gz);
+        assertTrue("the emitter never powered, so there is no shell to absorb anything: " + emitter,
+                emitter.contains("\"powered\":true"));
+
+        double cz = gz + 0.5D;
+        double startZ = cz + SHELL_RADIUS + 3.0D;
+        long id = readLong(exec("artest shot fire 0 " + (ex + 0.5D) + " " + (gy + 0.5D) + " " + startZ
+                + " 0 0 -4 2000 300 BEAM"), "id");
+        assertTrue("the launch was refused", id > 0);
+        exec("artest shield tick 0");
+
+        String after = exec("artest shot read 0 " + id);
+        assertTrue("a beam came back off the shell: the substrate declared it as a travelling body,"
+                + " and a shell mirrors a body it can afford: " + after,
+                after.contains("\"present\":false"));
+        assertEquals("the beam ended, but not by being drunk by the shell — a shot that stops for the"
+                + " wrong stated reason is a weapon that cannot report what happened: " + after,
+                "FIELD_ABSORBED", extractString(after, "ended"));
+
+        exec("artest shot clear 0");
+    }
+
     private void clearShieldSite(int gx, int gy, int gz) throws Exception {
         assertTrue("chunk warmup failed", exec("artest chunk warmup 0 " + ((gx - 16) >> 4) + " "
                 + ((gz - 16) >> 4) + " " + ((gx + 16) >> 4) + " " + ((gz + 16) >> 4))

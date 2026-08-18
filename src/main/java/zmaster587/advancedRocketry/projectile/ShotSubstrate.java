@@ -9,6 +9,7 @@ import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.damage.ImpactKind;
 import zmaster587.advancedRocketry.api.projectile.ShotEndReason;
 import zmaster587.advancedRocketry.api.projectile.ShotSpec;
+import zmaster587.advancedRocketry.damage.ImpactKindMapping;
 
 import java.util.List;
 
@@ -103,6 +104,23 @@ public final class ShotSubstrate {
     /** Which kinds are a lump of something travelling, as opposed to energy arriving. */
     private static boolean carriesMass(ImpactKind kind) {
         return kind == ImpactKind.KINETIC || kind == ImpactKind.EXPLOSIVE;
+    }
+
+    /**
+     * How this shot is declared to a shell: at the rate its own kind is billed at, carrying a body
+     * only when there is one to carry.
+     *
+     * <p>Those are two separate questions and they are answered separately. What a shell CHARGES for
+     * comes from the single declared hull-kind to shield-kind mapping, so a beam is billed against
+     * the shell's energy resistance rather than as if it were a slug. Whether a BODY travels is what
+     * decides a mirror off a fully-paid shell, and a beam has nothing to mirror: its energy arrives
+     * and stays there. Declaring a velocity for one would bounce light off a shield.</p>
+     */
+    private static ShieldStrike strikeFor(Shot shot, Vec3d position, Vec3d direction, double reach,
+                                          Vec3d velocity) {
+        ImpactKind kind = shot.getKind();
+        return new ShieldStrike(position, direction, reach, shot.getImpactEnergy(),
+                ImpactKindMapping.toShieldKind(kind), false, carriesMass(kind) ? velocity : null);
     }
 
     /** Advance every shot in this world by one tick. Driven by {@link ShotSubstrateEvents}. */
@@ -226,8 +244,7 @@ public final class ShotSubstrate {
             }
 
             ShieldStrikeResult result = ShieldStrikeService.resolve(world,
-                    ShieldStrike.kineticBody(position, direction, reach, shot.getImpactEnergy(),
-                            velocity));
+                    strikeFor(shot, position, direction, reach, velocity));
             if (!result.isIntercepted()) {
                 // The shell was crossed but paid nothing — it went down between the two questions.
                 // Carry on through where it used to be rather than stopping in mid-air.
