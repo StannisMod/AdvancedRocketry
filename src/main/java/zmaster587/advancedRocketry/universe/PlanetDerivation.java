@@ -1,5 +1,7 @@
 package zmaster587.advancedRocketry.universe;
 
+import java.util.function.DoubleToIntFunction;
+
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.space.GalacticCoord;
@@ -307,11 +309,23 @@ public final class PlanetDerivation {
         double mass = massOf(seed, key, variant, radius, giant);
         int gravityPercent = gravityPercentOf(mass, radius);
         int pressure = pressureOf(seed, key, variant, mass, radius, bareTemp, giant);
-        int temperature = AstronomicalBodyHelper.getAverageTemperature(star,
-                Math.max(1, orbitalDistance), pressure);
+        // A world's ALBEDO is a property of its surface, its surface is what its TYPE says it is, and
+        // the type is admitted by temperature — so the temperature is not one number here but a
+        // FUNCTION of albedo, and each candidate type is admitted at the temperature the world would
+        // have if it were that type. Evaluated once per candidate; nothing iterates, and the physics
+        // stays here rather than moving into the table.
+        //
+        // While this was a single neutral-albedo reading, the derivation and the dimension model
+        // answered one question with two numbers: a `greenhouse` world (albedo 0.75) was reported
+        // 22.7 % warmer than it turned out to be and an `ice` world 13 % (ledger #289).
+        final int orbit = Math.max(1, orbitalDistance);
+        DoubleToIntFunction temperatureForAlbedo =
+                albedo -> AstronomicalBodyHelper.getAverageTemperature(star, orbit, pressure, albedo);
 
-        PlanetTypePreset preset = PlanetTypes.drawType(pressure, temperature, gravityPercent, giant,
-                CellHash.ofBody(seed, key, variant, SALT_TYPE));
+        PlanetTypePreset preset = PlanetTypes.drawType(pressure, temperatureForAlbedo, gravityPercent,
+                giant, CellHash.ofBody(seed, key, variant, SALT_TYPE));
+        int temperature = temperatureForAlbedo.applyAsInt(
+                preset == null ? AstronomicalBodyHelper.EARTH_ALBEDO : preset.albedo());
         TerrainOption terrain = PlanetTypes.drawTerrain(preset,
                 CellHash.ofBody(seed, key, variant, SALT_TERRAIN));
 
@@ -371,8 +385,11 @@ public final class PlanetDerivation {
         int pressure = bulky ? DimensionProperties.MAX_ATM_PRESSURE : DimensionProperties.MIN_ATM_PRESSURE;
         int temperature = residualTemperature(mass, radius);
 
-        PlanetTypePreset preset = PlanetTypes.drawType(pressure, temperature, gravityPercent, bulky,
-                CellHash.ofBody(seed, key, variant, SALT_TYPE));
+        // Albedo does not enter here, and that is a statement rather than a shortcut: albedo is the
+        // fraction of INCIDENT light a surface throws back, and nothing shines on this world. Its heat
+        // is its own, so every candidate type is admitted at the same temperature.
+        PlanetTypePreset preset = PlanetTypes.drawType(pressure, albedo -> temperature, gravityPercent,
+                bulky, CellHash.ofBody(seed, key, variant, SALT_TYPE));
         TerrainOption terrain = PlanetTypes.drawTerrain(preset,
                 CellHash.ofBody(seed, key, variant, SALT_TERRAIN));
 

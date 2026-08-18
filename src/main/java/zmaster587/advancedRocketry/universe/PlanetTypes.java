@@ -3,10 +3,13 @@ package zmaster587.advancedRocketry.universe;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.DoubleToIntFunction;
 import java.util.function.Predicate;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 
 /**
  * The catalogue of {@link PlanetTypePreset planet types} and the two draws that use it: which type a
@@ -100,12 +103,29 @@ public final class PlanetTypes {
 
     // ─── The draws ─────────────────────────────────────────────────────────────
 
-    /** Every preset whose declared region admits this world. May be empty (an authoring gap). */
-    public static List<PlanetTypePreset> candidates(int pressure, int temperatureKelvin,
+    /**
+     * Every preset whose declared region admits this world. May be empty (an authoring gap).
+     *
+     * <p><b>Each candidate is tested at the temperature the world would have IF IT WERE THAT TYPE.</b>
+     * A preset states its surface, a surface has an albedo, and the albedo is part of what sets the
+     * temperature — so admitting every candidate at one temperature and then applying the winner's
+     * albedo produced worlds outside their own declared band: an {@code ocean} preset admitting
+     * 255&ndash;380 K would be handed to a world that its own albedo of 0.10 then warms to 393 K.</p>
+     *
+     * <p>It is not circular and it does not iterate: the caller hands in a FUNCTION from albedo to
+     * temperature, so each candidate is evaluated once, against its own number. That also keeps the
+     * LAW out of this class — it stays a table matcher and never learns what a star is or how one
+     * warms a world.</p>
+     *
+     * @param temperatureForAlbedo what this world's surface temperature would be at a given albedo
+     */
+    public static List<PlanetTypePreset> candidates(int pressure,
+                                                    DoubleToIntFunction temperatureForAlbedo,
                                                     int gravityPercent, boolean gasGiant) {
         List<PlanetTypePreset> out = new ArrayList<>();
         for (PlanetTypePreset p : presets) {
-            if (p.admits(pressure, temperatureKelvin, gravityPercent, gasGiant)) {
+            if (p.admits(pressure, temperatureForAlbedo.applyAsInt(p.albedo()), gravityPercent,
+                    gasGiant)) {
                 out.add(p);
             }
         }
@@ -121,15 +141,21 @@ public final class PlanetTypes {
      * substituted and no preset is invented: the answer is {@code null}, and the caller reports the
      * world as {@link #UNCLASSIFIED}. A silent substitution would hide the authoring gap forever.</p>
      */
-    public static PlanetTypePreset drawType(int pressure, int temperatureKelvin, int gravityPercent,
-                                            boolean gasGiant, long hash) {
-        List<PlanetTypePreset> admitting = candidates(pressure, temperatureKelvin, gravityPercent, gasGiant);
+    public static PlanetTypePreset drawType(int pressure,
+                                            DoubleToIntFunction temperatureForAlbedo,
+                                            int gravityPercent, boolean gasGiant, long hash) {
+        List<PlanetTypePreset> admitting = candidates(pressure, temperatureForAlbedo, gravityPercent,
+                gasGiant);
         if (admitting.isEmpty()) {
+            // Reported at the NEUTRAL reading, which is the one number that describes the world rather
+            // than one of the types that declined it — an author widening a range needs to know where
+            // the world actually sits, not where the last candidate would have put it.
+            int neutral = temperatureForAlbedo.applyAsInt(AstronomicalBodyHelper.EARTH_ALBEDO);
             if (SystemContent.reportOnce("noPlanetType:" + gasGiant + ':' + pressure / 50 + ':'
-                    + temperatureKelvin / 25 + ':' + gravityPercent / 25)) {
+                    + neutral / 25 + ':' + gravityPercent / 25)) {
                 LOGGER.warn("no planet type admits a world at pressure {}, {} K, gravity {}% (gasGiant={})"
                         + " - it will be reported as '{}'. Widen a <planetType> range to cover it.",
-                        pressure, temperatureKelvin, gravityPercent, gasGiant, UNCLASSIFIED);
+                        pressure, neutral, gravityPercent, gasGiant, UNCLASSIFIED);
             }
             return null;
         }

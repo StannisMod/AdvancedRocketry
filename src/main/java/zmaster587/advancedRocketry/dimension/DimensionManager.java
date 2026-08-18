@@ -87,7 +87,7 @@ public class DimensionManager implements IGalaxy {
         overworldProperties = new DimensionProperties(0);
         overworldProperties.setAtmosphereDensityDirect(100);
         //Temperature in Kelvin, 286 is 13 Degrees C
-        overworldProperties.averageTemperature = 286;
+        overworldProperties.setAverageTemp(286);
         overworldProperties.gravitationalMultiplier = 1f;
         overworldProperties.orbitalDist = 100;
         overworldProperties.skyColor = new float[]{1f, 1f, 1f};
@@ -97,7 +97,7 @@ public class DimensionManager implements IGalaxy {
 
         defaultSpaceDimensionProperties = new DimensionProperties(SpaceObjectManager.WARPDIMID, false);
         defaultSpaceDimensionProperties.setAtmosphereDensityDirect(0);
-        defaultSpaceDimensionProperties.averageTemperature = 0;
+        defaultSpaceDimensionProperties.setAverageTemp(0);
         defaultSpaceDimensionProperties.gravitationalMultiplier = 0.1f;
         defaultSpaceDimensionProperties.orbitalDist = 100;
         defaultSpaceDimensionProperties.skyColor = new float[]{0f, 0f, 0f};
@@ -772,7 +772,7 @@ public class DimensionManager implements IGalaxy {
                 if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().MoonId != Constants.INVALID_PLANET) {
                     DimensionProperties dimensionProperties = new DimensionProperties(zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().MoonId);
                     dimensionProperties.setAtmosphereDensityDirect(0);
-                    dimensionProperties.averageTemperature = 20;
+                    dimensionProperties.setAverageTemp(20);
                     dimensionProperties.rotationalPeriod = 128000;
                     dimensionProperties.gravitationalMultiplier = .166f; //Actual moon value
                     dimensionProperties.setName("Luna");

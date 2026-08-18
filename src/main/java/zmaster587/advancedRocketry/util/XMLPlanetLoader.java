@@ -820,7 +820,7 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_BASEORBITTHETA, Math.toDegrees(properties.baseOrbitTheta)));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_PHI, properties.orbitalPhi));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_RETROGRADE, properties.isRetrograde));
-        nodePlanet.appendChild(createTextNode(doc, AVG_TEMPERATURE, properties.averageTemperature));
+        nodePlanet.appendChild(createTextNode(doc, AVG_TEMPERATURE, properties.getAverageTemp()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_PERIOD, properties.rotationalPeriod));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_ATMDENSITY, properties.getAtmosphereDensity()));
         // Custom weather properties
@@ -1579,8 +1579,13 @@ public class XMLPlanetLoader {
         //Star may not be registered at this time, use ID version instead
         properties.setStar(star.getId());
 
-        //Set temperature
-        properties.averageTemperature = AstronomicalBodyHelper.getAverageTemperature(star, properties.getSolarOrbitalDistance(), properties.getAtmosphereDensity());
+        // Set temperature. From the LOCAL star object, not through properties.getStar(): the star is
+        // not in the catalogue yet (see the line above), so the lookup would come back null here and
+        // the world would be born at the temperature of deep space. The albedo is the world's own, so
+        // an authored planet and a derived one are warmed by the same law (ledger #289).
+        properties.setAverageTemp(AstronomicalBodyHelper.getAverageTemperature(star,
+                properties.getSolarOrbitalDistance(), properties.getAtmosphereDensity(),
+                properties.getAlbedo()));
 
         //If no biomes are specified add some!
         if (properties.getBiomes().isEmpty())

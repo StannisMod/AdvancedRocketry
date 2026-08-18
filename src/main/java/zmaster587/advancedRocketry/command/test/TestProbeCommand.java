@@ -5238,7 +5238,7 @@ public class TestProbeCommand extends CommandBase {
                     + "\",\"orbitalDist\":" + props.getOrbitalDist() + ",\"mass\":" + props.getMass()
                     + ",\"radius\":" + props.getRadius() + ",\"gravity\":"
                     + Math.round(props.getGravitationalMultiplier() * 100f) + ",\"pressure\":"
-                    + props.getAtmosphereDensity() + ",\"temperature\":" + props.averageTemperature
+                    + props.getAtmosphereDensity() + ",\"temperature\":" + props.getAverageTemp()
                     + ",\"oxygen\":" + props.hasOxygen + ",\"locked\":" + props.isTidallyLocked()
                     + ",\"metallicity\":" + props.getMetallicity() + ",\"gasGiant\":"
                     + props.isGasGiant() + ",\"terrainSource\":\"" + props.getTerrainSource()
@@ -5998,7 +5998,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("thunderStartLength", props.getThunderStartLength());
             info.put("rainMarker", props.getRainMarker());
             info.put("thunderMarker", props.getThunderMarker());
-            info.put("averageTemperature", props.averageTemperature);
+            info.put("averageTemperature", props.getAverageTemp());
             info.put("genType", props.getGenType());
             IBlockState ocean = props.getOceanBlock();
             // null is meaningful — vanilla water fallback — so emit explicitly.
@@ -6022,11 +6022,11 @@ public class TestProbeCommand extends CommandBase {
                         + ",\"kelvin\":" + kelvin + "}");
                 return;
             }
-            props.averageTemperature = kelvin;
+            props.setAverageTemp(kelvin);
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
             out.put("dim", dim);
-            out.put("averageTemperature", props.averageTemperature);
+            out.put("averageTemperature", props.getAverageTemp());
             out.put("hasOxygen", props.hasOxygen);
             out.put("atmosphereDensity", props.getAtmosphereDensity());
             out.put("atmosphere", props.getAtmosphere().getUnlocalizedName());

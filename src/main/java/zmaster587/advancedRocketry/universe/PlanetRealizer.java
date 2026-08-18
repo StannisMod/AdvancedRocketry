@@ -203,7 +203,11 @@ public final class PlanetRealizer {
         props.orbitTheta = props.baseOrbitTheta;
 
         props.setAtmosphereDensityDirect(profile.pressure());
-        props.averageTemperature = profile.temperatureKelvin();
+        // STATED, never recomputed: the profile's number is the one a telescope already reported, and
+        // materialization is the moment it becomes the world's. The albedo is applied below, and after
+        // the derivation's second pass a recompute would reproduce this exact value anyway — which is
+        // the invariant, not a coincidence to lean on.
+        props.setAverageTemp(profile.temperatureKelvin());
         props.hasOxygen = profile.hasOxygen();
         props.setBulk(profile.massEarths(), profile.radiusEarths());
         props.setTidallyLocked(profile.tidallyLocked());

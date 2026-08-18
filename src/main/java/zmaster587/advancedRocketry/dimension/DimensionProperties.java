@@ -103,8 +103,17 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     //Used in solar panels
     public double peakInsolationMultiplier;
     public double peakInsolationMultiplierWithoutAtmosphere;
-    //Stored in Kelvin
-    public int averageTemperature;
+    /**
+     * This world's surface temperature in KELVIN — a DERIVED quantity, cached here.
+     *
+     * <p><b>Private, and it is the point.</b> It used to be a public field that
+     * {@link #getAverageTemp()} ASSIGNED on every call, while a dozen readers inside this class took
+     * the field directly — so what any of them saw depended on whether anything had happened to call
+     * the accessor first, and the value NBT had faithfully restored was discarded by the first read
+     * after a load. One door in ({@link #setAverageTemp}), one door out, and the recompute now happens
+     * where an INPUT changes rather than where the answer is asked for.</p>
+     */
+    private int averageTemperature;
     public int rotationalPeriod;
     //Stored in radians
     public double orbitTheta;
@@ -1026,6 +1035,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         int prevAtm = this.atmosphereDensity;
         this.atmosphereDensity = atmosphereDensity;
+
+        // The ONE input that changes while a world is in play — the terraformer thickens or thins the
+        // air, and the greenhouse term moves with it. Everything else a temperature is derived from
+        // (the stars, the orbit, the albedo) is fixed when the world is materialized, and is STATED
+        // through setAverageTemp rather than recomputed here: a load path that recomputed would be
+        // running before its own inputs had all been read.
+        recalculateTemperature();
 
         load_terraforming_helper(true);
 
@@ -2428,22 +2444,33 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
      */
     @Override
     public int getAverageTemp() {
-        averageTemperature = AstronomicalBodyHelper.getAverageTemperature(this.getStar(),
-                this.getSolarOrbitalDistance(), this.getAtmosphereDensity(), this.albedo);
-
-        /*
-        int temp = averageTemperature;
-        float pressure = (float) (atmosphereDensity + 1) / (float) 100;
-        pressure = (float) Math.max(0.01, pressure);
-        float water_can_exist_value = 400;
-        float planetvalue = temp / pressure;
-
-        if (planetvalue < water_can_exist_value) {
-            water_can_exist = true;
-        } else water_can_exist = false;
-        */
-
         return averageTemperature;
+    }
+
+    /**
+     * State this world's surface temperature, in KELVIN.
+     *
+     * <p>The one door in. A caller that MATERIALIZES a world — realization from a derived profile, an
+     * XML load, a probe fixture — states the number it already has; everything else changes an INPUT
+     * and lets {@link #recalculateTemperature()} follow.</p>
+     */
+    public void setAverageTemp(int kelvin) {
+        this.averageTemperature = kelvin;
+    }
+
+    /**
+     * Recompute the surface temperature from this world's current inputs — its stars, its orbit, its
+     * atmosphere and its albedo.
+     *
+     * <p>Called where an input CHANGES, never where the answer is read. On a world that was
+     * materialized from a derived profile this is a no-op by construction: {@code PlanetDerivation}
+     * ends on this same call with this same albedo, so a recompute reproduces the number a telescope
+     * already reported. That equality is the contract, and it is what stopped a scanned world from
+     * cooling down on the way there.</p>
+     */
+    public void recalculateTemperature() {
+        setAverageTemp(AstronomicalBodyHelper.getAverageTemperature(getStar(),
+                getSolarOrbitalDistance(), getAtmosphereDensity(), albedo));
     }
 
     public IBlockState getOceanBlock() {

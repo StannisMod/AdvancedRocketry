@@ -77,6 +77,49 @@ public class PlanetDerivationTest {
     }
 
     /**
+     * <b>The scan and the landing describe the same world.</b>
+     *
+     * <p>{@code BodyProfile}'s own javadoc states this contract and nothing pinned it. A derived
+     * temperature is what a telescope reports from across the system; the realized dimension then
+     * recomputes one from the star, the orbit, the atmosphere and the world's ALBEDO — and the
+     * derivation used to end on the neutral-albedo overload, so the two disagreed by
+     * {@code ((1 − a)/0.7)^¼} for every world whose type states an albedo of its own. Measured on the
+     * shipped table: a {@code greenhouse} world (a = 0.75) landed 22.7 % colder than it scanned and an
+     * {@code ice} world 13 % (ledger #289).</p>
+     *
+     * <p>What this pins is not the second pass but the AGREEMENT: whatever law either side uses, the
+     * number a profile carries has to be the number the dimension model produces from that profile's
+     * own inputs. It is asserted exactly, because "the same world" admits no tolerance.</p>
+     */
+    @Test
+    public void theTemperatureAScanReportsIsTheTemperatureTheWorldHas() {
+        int compared = 0;
+        Set<String> albedosSeen = new HashSet<>();
+        for (long c = 0; c < 400; c++) {
+            GalacticCoord anchor = cell(9000 + c, 0, 0);
+            StellarBody s = c % 2 == 0 ? sol() : star(45, 0.7f);
+            for (BodyProfile profile : system(SEED + c, anchor, s, 6)) {
+                double albedo = profile.preset() == null
+                        ? zmaster587.advancedRocketry.util.AstronomicalBodyHelper.EARTH_ALBEDO
+                        : profile.preset().albedo();
+                albedosSeen.add(Double.toString(albedo));
+                // Exactly the call DimensionProperties.recalculateTemperature makes on a world
+                // materialized from this profile: its star, its orbit, its air, its own albedo.
+                int asTheWorldWillReadIt =
+                        zmaster587.advancedRocketry.util.AstronomicalBodyHelper.getAverageTemperature(
+                                s, Math.max(1, profile.orbitalDistance()), profile.pressure(), albedo);
+                assertEquals("a " + profile.typeName() + " world (albedo " + albedo + ") scanned at "
+                                + profile.temperatureKelvin() + " K must not land at another temperature",
+                        profile.temperatureKelvin(), asTheWorldWillReadIt);
+                compared++;
+            }
+        }
+        assertTrue("the sweep must actually derive worlds", compared > 100);
+        assertTrue("and it must cross types whose albedo is NOT Earth's, or it proves nothing about "
+                + "the defect it exists for - saw " + albedosSeen, albedosSeen.size() > 2);
+    }
+
+    /**
      * A world's DAY is drawn, and it is not a function of its gravity.
      *
      * <p>The law this replaced was {@code (1/g)^3 * DEFAULT}: spin computed from SURFACE GRAVITY, which
@@ -527,7 +570,7 @@ public class PlanetDerivationTest {
 
         Map<String, Integer> counts = new HashMap<>();
         for (int i = 0; i < 5000; i++) {
-            PlanetTypePreset p = PlanetTypes.drawType(100, 280, 100, false,
+            PlanetTypePreset p = PlanetTypes.drawType(100, albedo -> 280, 100, false,
                     i * 0x9E3779B97F4A7C15L);
             counts.merge(p.name(), 1, Integer::sum);
         }
@@ -545,7 +588,7 @@ public class PlanetDerivationTest {
                 .pressure(0, 10).temperature(0, 10).gravity(0, 10).build());
         PlanetTypes.setPresets(table);
         assertEquals("silently substituting a preset would hide the coverage gap for ever",
-                null, PlanetTypes.drawType(900, 900, 300, false, 1L));
+                null, PlanetTypes.drawType(900, albedo -> 900, 300, false, 1L));
     }
 
     /** A star archetype that varies across the sweep, so no test measures one kind of system only. */

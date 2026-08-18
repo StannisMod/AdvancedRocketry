@@ -99,7 +99,7 @@ public class PlanetGenerateCommand extends ARCommand {
         props.setBulk(profile.massEarths(), profile.radiusEarths());
         props.gravitationalMultiplier = profile.gravityPercent() / 100f;
         props.setAtmosphereDensityDirect(profile.pressure());
-        props.averageTemperature = profile.temperatureKelvin();
+        props.setAverageTemp(profile.temperatureKelvin());
         props.initDefaultAttributes();
         if (moon) {
             props.setParentPlanet(parent);
