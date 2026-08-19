@@ -55,7 +55,10 @@ public class RenderPlanetUIEntity extends Render<EntityUIPlanet> implements IRen
         if (properties == null)
             return;
 
-        float sizeScale = Math.max(properties.gravitationalMultiplier * properties.gravitationalMultiplier * entity.getScale(), .5f);
+        // Scaled by the body's RADIUS, not by gravity squared: gravity is derived from mass and radius,
+        // so sizing by g² sizes by mass²/radius⁴ and draws a dense small world larger than a big light
+        // one. A radius is what a drawn size is.
+        float sizeScale = Math.max((float) Math.max(properties.getRadius(), 0.5d) * entity.getScale(), .5f);
 
         GL11.glPushMatrix();
         GL11.glTranslatef((float) x, (float) y + sizeScale * 0.03f, (float) z);
@@ -187,7 +190,9 @@ public class RenderPlanetUIEntity extends Render<EntityUIPlanet> implements IRen
             //Draw Mass indicator
             Minecraft.getMinecraft().renderEngine.bindTexture(planetUIFG);
             GlStateManager.color(1, 1, 1, 0.8f);
-            renderMassIndicator(buffer, Math.min(properties.gravitationalMultiplier / 2f, 1f));
+            // The MASS indicator reads the mass. It read gravity, which is a different quantity and
+            // has been separately stored since mass became a primary property.
+            renderMassIndicator(buffer, (float) Math.min(properties.getMass() / 2d, 1d));
 
             //Draw background
             GlStateManager.color(1, 1, 1, 1);

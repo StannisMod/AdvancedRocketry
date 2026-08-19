@@ -716,6 +716,143 @@ public class ClusteredGalaxyGeneratorTest {
         return n;
     }
 
+    // ── a body's size is what its neighbours are measured against ─────────────
+
+    @Test
+    public void aMoonStandsOutsideItsParent() {
+        // The defect this closes: a moon's orbit was an absolute length (4 000–26 000 blocks) chosen
+        // when a planet had no radius. Bodies then got one — an Earth is 25 513 blocks across and a
+        // Jupiter 280 643 — so essentially every moon was seated INSIDE its parent, and a giant's by an
+        // order of magnitude.
+        //
+        // The assertion is geometric and takes no number from production: at a fixed tick, the
+        // separation between a moon and its parent must exceed the parent's own radius. A test that
+        // pinned "2.5 radii" would pin the tuning; this pins that a moon is a thing you can see from
+        // the world it goes round.
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(defaultsCfg());
+        long tick = 12_345L;
+        int checkedMoons = 0;
+        int checkedParents = 0;
+
+        for (long seed = 1L; seed <= 6L; seed++) {
+            for (GalacticCoord anchor : anchors(gen, seed, SPACING, 2)) {
+                List<SystemBody> bodies = gen.bodiesFor(seed, anchor);
+                for (SystemBody moon : bodies) {
+                    if (moon.kind() != SystemBodyKind.MOON) {
+                        continue;
+                    }
+                    SystemBody parent = null;
+                    for (SystemBody candidate : bodies) {
+                        if (candidate != moon && candidate.definesFrame()
+                                && candidate.name().cellKey().equals(moon.name().cellKey())) {
+                            parent = candidate;
+                            break;
+                        }
+                    }
+                    if (parent == null || parent.radiusEarths() <= 0d) {
+                        continue;
+                    }
+                    checkedParents++;
+                    zmaster587.advancedRocketry.space.BlockDelta m = moon.inCellOffsetAt(tick);
+                    zmaster587.advancedRocketry.space.BlockDelta p = parent.inCellOffsetAt(tick);
+                    double ddx = (double) (m.dx() - p.dx());
+                    double ddy = (double) (m.dy() - p.dy());
+                    double ddz = (double) (m.dz() - p.dz());
+                    double separation = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+                    double parentRadiusBlocks =
+                            parent.radiusEarths() * AstronomicalBodyHelper.EARTH_RADIUS_BLOCKS;
+                    assertTrue("a moon must stand outside the world it orbits: separation "
+                                    + Math.round(separation) + " blocks against a parent radius of "
+                                    + Math.round(parentRadiusBlocks) + " (" + parent.kind() + " at "
+                                    + parent.name().cellKey() + ")",
+                            separation > parentRadiusBlocks);
+                    checkedMoons++;
+                }
+            }
+        }
+        System.out.println("checked " + checkedMoons + " moons against " + checkedParents + " parents");
+        assertTrue("arrangement: the sweep must find moons to check, or this proves nothing",
+                checkedMoons >= 10);
+    }
+
+    // ── the constants say what they mean ──────────────────────────────────────
+
+    @Test
+    public void theFieldStandsAsFarApartAsTheConstantSaysItDoes() {
+        // MEAN_STAR_SEPARATION_LY is a MEASURED astronomical quantity, so the lattice owes it as an
+        // OUTPUT, not as an input it happens to be spelled with. It used to be consumed as the cube
+        // edge, which is a different quantity: a cube of edge e filled with probability p puts its
+        // neighbours e/p^(1/3) apart, so the field stood 42 % further apart than the constant claimed
+        // and nothing said so. This test is the thing that would have said so.
+        GalaxyGenConfig config = GalaxyGenConfig.defaults();
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
+
+        int span = 8; // a 17-cube of territories: enough seats for the ratio to settle
+        int territories = 0;
+        int seated = 0;
+        for (int i = -span; i <= span; i++) {
+            for (int j = -span; j <= span; j++) {
+                for (int k = -span; k <= span; k++) {
+                    territories++;
+                    // STARS, not systems. The unbound population seats a rogue world in essentially
+                    // every territory a star left empty, so counting systems measures occupancy 1.0
+                    // and says nothing about how far apart the STARS stand — which is the quantity
+                    // MEAN_STAR_SEPARATION_LY is about. (Measured here first: 4913 of 4913.)
+                    // Through the ANCHOR: systemAt answers on the seat cell alone, and a territory's
+                    // corner is not its seat.
+                    Optional<GalacticCoord> anchor = gen.anchorAt(SEED,
+                            cell((long) i * config.minSpacing, (long) j * config.minSpacing,
+                                    (long) k * config.minSpacing));
+                    if (!anchor.isPresent()) {
+                        continue;
+                    }
+                    Optional<PlanetarySystem> here = gen.systemAt(SEED, anchor.get());
+                    if (here.isPresent() && here.get().star().isPresent()) {
+                        seated++;
+                    }
+                }
+            }
+        }
+        assertTrue("arrangement: the sweep must find a populated star field", seated > territories / 10);
+
+        double occupancy = seated / (double) territories;
+        double separation = UniverseScale.meanSeparationLy(config.minSpacing, occupancy);
+        double claimed = UniverseScale.MEAN_STAR_SEPARATION_LY;
+        System.out.println("swept " + territories + " territories, seated " + seated
+                + " (occupancy " + occupancy + ") -> mean separation " + separation + " ly against "
+                + claimed);
+
+        // A band, not a number: the galaxy's own profile scales the occupancy even at the centre, so
+        // the produced separation sits a little above the bare lattice's. What is pinned is that the
+        // constant DESCRIBES the field — a return to consuming it as an edge lands ~42 % out and red.
+        assertTrue("the field must stand about as far apart as MEAN_STAR_SEPARATION_LY claims: "
+                        + separation + " ly against " + claimed,
+                separation > claimed * 0.85d && separation < claimed * 1.2d);
+    }
+
+    @Test
+    public void aBlueStarIsAFindAndARedDwarfIsTheSky() {
+        // The weights are an observed census by NUMBER, so what they owe is the ORDER OF MAGNITUDE
+        // between classes, not any particular value. They read 40/25/20/10/5 before — a blue star in
+        // one system out of twenty, against an observed one in seven hundred and sixty, while the
+        // table's own comment called them rare.
+        List<GalaxyGenConfig.StarType> table = GalaxyGenConfig.defaults().starTypes;
+        assertEquals("arrangement: the stock table is the five-class one", 5, table.size());
+
+        for (int i = 1; i < table.size(); i++) {
+            assertTrue("a hotter class must never be commoner than a cooler one: "
+                            + table.get(i - 1).temperature + " weighted " + table.get(i - 1).weight
+                            + " against " + table.get(i).temperature + " weighted " + table.get(i).weight,
+                    table.get(i).weight < table.get(i - 1).weight);
+        }
+
+        GalaxyGenConfig.StarType coolest = table.get(0);
+        GalaxyGenConfig.StarType hottest = table.get(table.size() - 1);
+        assertTrue("a red dwarf must outnumber a blue star by at least two orders, as observed: "
+                        + coolest.weight + " against " + hottest.weight,
+                coolest.weight >= hottest.weight * 100);
+    }
+
     // ── the derivation is part of the world model ─────────────────────────────
 
     /** A derivation that differs from version 1 in one law, and delegates the rest. */
@@ -1056,13 +1193,22 @@ public class ClusteredGalaxyGeneratorTest {
             }
         }
 
+        /** One fixed instant, so an orbiting body has a POSITION the corpus can compare. */
+        private static final long OBSERVED_TICK = 12_345L;
+
         private static String renderBody(GalacticCoord anchor, SystemBody body) {
+            // The in-cell OFFSET is rendered, and it has to be: a moon carries its PARENT's orbital
+            // distance in orbitalDistance() and stands in its parent's cell, so identity and radius
+            // alone leave a moon's position entirely unobserved — the corpus stayed byte-identical
+            // across a change that moved every moon in the universe.
+            zmaster587.advancedRocketry.space.BlockDelta at = body.inCellOffsetAt(OBSERVED_TICK);
             return "  body " + anchor.cellKey() + ' ' + body.name().cellKey()
                     + " kind=" + body.kind()
                     + " orbit=" + body.orbitalDistance()
                     + " radius=" + Double.toString(body.radiusEarths())
                     + " starId=" + body.starId()
-                    + " frame=" + body.definesFrame();
+                    + " frame=" + body.definesFrame()
+                    + " at=" + at.dx() + ',' + at.dy() + ',' + at.dz();
         }
 
         private static String renderDerivation(ClusteredGalaxyGenerator g, long seed,

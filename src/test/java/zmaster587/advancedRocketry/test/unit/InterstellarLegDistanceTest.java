@@ -193,11 +193,21 @@ public class InterstellarLegDistanceTest {
 
     /** The distance from the system nearest the origin to ITS nearest neighbour, in light years. */
     private static Double nearestNeighbourLightYears(ClusteredGalaxyGenerator gen, long seed) {
-        Map<GalacticCoord, PlanetarySystem> found = gen.systemsInRegion(seed,
+        Map<GalacticCoord, PlanetarySystem> all = gen.systemsInRegion(seed,
                 cell(-SEARCH_RADIUS_CELLS, -SEARCH_RADIUS_CELLS, -SEARCH_RADIUS_CELLS),
                 cell(SEARCH_RADIUS_CELLS, SEARCH_RADIUS_CELLS, SEARCH_RADIUS_CELLS));
-        GalacticCoord home = nearestTo(found.keySet(), cell(0L, 0L, 0L));
-        GalacticCoord neighbour = home == null ? null : nearestTo(found.keySet(), home);
+        // STAR systems only. Since the void was populated an unbound world sits in nearly every
+        // territory the stars left empty, so a leg measured over all seats is the lattice EDGE and not
+        // the star separation this band is declared against. A jump is aimed at what a telescope
+        // found, which is a star.
+        java.util.Set<GalacticCoord> found = new java.util.LinkedHashSet<>();
+        for (Map.Entry<GalacticCoord, PlanetarySystem> e : all.entrySet()) {
+            if (e.getValue().star().isPresent()) {
+                found.add(e.getKey());
+            }
+        }
+        GalacticCoord home = nearestTo(found, cell(0L, 0L, 0L));
+        GalacticCoord neighbour = home == null ? null : nearestTo(found, home);
         if (neighbour == null) {
             return null;
         }

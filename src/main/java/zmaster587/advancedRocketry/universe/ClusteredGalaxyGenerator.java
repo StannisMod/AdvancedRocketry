@@ -155,6 +155,19 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private static final int MAX_MOONS_GIANT = 5;
     private static final double MOON_COUNT_BIAS = 1.9d;
     /** A moon's orbit about its parent, in the parent-relative units the moon ephemeris is written in. */
+    /**
+     * How far a moon orbits, in PARENT RADII — the band real satellite systems occupy, and the only
+     * form of this number that survives a body having a size.
+     *
+     * <p>It used to be an absolute length ({@code MOON_MIN_ORBIT}..{@code +MOON_ORBIT_SPAN} units of
+     * 200 blocks, i.e. 4 000–26 000 blocks) chosen when a planet had no radius at all. Once bodies got
+     * one, an Earth stood 25 513 blocks across and a Jupiter 280 643 — so essentially every moon was
+     * seated INSIDE its parent, and a giant's by an order of magnitude. A multiple cannot express that
+     * failure: 2.5 radii is outside the surface whatever the body turns out to be.</p>
+     */
+    private static final double MOON_MIN_PARENT_RADII = 2.5d;
+    private static final double MOON_MAX_PARENT_RADII = 12d;
+
     private static final int MOON_MIN_ORBIT = 20;
     private static final int MOON_ORBIT_SPAN = 110;
 
@@ -451,8 +464,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         }
         CellFrame frame = CellFrame.staticAt(cell);
         for (int j = 1; j <= moons; j++) {
-            int moonOrbit = MOON_MIN_ORBIT + (int) (CellHash.norm(
-                    CellHash.ofBody(seed, cell, j, SALT_ROGUE_MOONRAD)) * MOON_ORBIT_SPAN);
+            int moonOrbit = moonOrbitUnits(profile.radiusEarths(),
+                    CellHash.norm(CellHash.ofBody(seed, cell, j, SALT_ROGUE_MOONRAD)));
             double theta = CellHash.norm(CellHash.ofBody(seed, cell, j, SALT_ROGUE_MOONANG))
                     * 2d * Math.PI;
             double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
@@ -687,6 +700,22 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * where its planet is. How far the moon sits from the planet lives in its ephemeris, which is the
      * thing that actually positions it.</p>
      */
+
+    /**
+     * A moon's orbit, in {@link SystemContent#MOON_UNIT_BLOCKS} units, drawn as a multiple of its
+     * PARENT's radius.
+     *
+     * @param parentRadiusEarths the parent's radius; a body with none stated falls back to one Earth,
+     *                           which is what an unstated bulk describes everywhere else in this layer
+     * @param u                  the draw, in [0, 1)
+     */
+    private static int moonOrbitUnits(double parentRadiusEarths, double u) {
+        double radiusBlocks = Math.max(0.05d, parentRadiusEarths) * AstronomicalBodyHelper.EARTH_RADIUS_BLOCKS;
+        double factor = MOON_MIN_PARENT_RADII + u * (MOON_MAX_PARENT_RADII - MOON_MIN_PARENT_RADII);
+        long units = Math.round(radiusBlocks * factor / (double) SystemContent.MOON_UNIT_BLOCKS);
+        return (int) Math.max(1L, Math.min(Integer.MAX_VALUE, units));
+    }
+
     private void addMoons(List<SystemBody> bodies, long seed, GalacticCoord anchor, GalacticCoord parent,
                           CellFrame parentFrame, int parentOrbit, StellarBody star, int starId,
                           BodyProfile parentProfile) {
@@ -705,8 +734,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                 ? parentProfile.massEarths()
                 : Math.max(0.05d, parentProfile.gravityPercent() / 100d);
         for (int j = 1; j <= moons; j++) {
-            int moonOrbit = MOON_MIN_ORBIT + (int) (CellHash.norm(
-                    CellHash.ofBody(seed, parent, j, SALT_MOONRAD)) * MOON_ORBIT_SPAN);
+            int moonOrbit = moonOrbitUnits(parentProfile.radiusEarths(),
+                    CellHash.norm(CellHash.ofBody(seed, parent, j, SALT_MOONRAD)));
             double theta = CellHash.norm(CellHash.ofBody(seed, parent, j, SALT_MOONANG)) * 2d * Math.PI;
             double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
                     * AstronomicalBodyHelper.getMoonOrbitalPeriod(moonOrbit, (float) parentMass);

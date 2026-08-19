@@ -45,7 +45,22 @@ public final class GalaxyGenConfig {
      */
     public static final long DEFAULT_GALAXY_SPACING = UniverseScale.DEFAULT_GALAXY_SPACING_CELLS;
 
-    /** Fraction of galaxy cells that actually hold a galaxy, before the cosmic web weights them. */
+    /**
+     * Fraction of galaxy cells that actually hold a galaxy, before the cosmic web weights them.
+     *
+     * <p><b>A knob, and deliberately not an observation — unlike its neighbours in this file.</b> The
+     * star separation, the galaxy radii and the rogue abundance are all measured quantities; this one
+     * is a chance-per-cube standing in for a number density astronomy states per unit volume, and
+     * nothing here derives it from a catalogue. It is stated as a knob so the next reader does not
+     * mistake it for a reading.
+     *
+     * <p><b>And it is doing double duty</b>, which is the part worth knowing: half of what it means is
+     * "structure we have not built". The cosmic web is a deliberate deferral — {@code webDensity} is
+     * the constant 1 — so the clumping that should come from the web is folded into this single
+     * uniform chance. Deriving it properly is not a matter of finding a better number; it needs the
+     * correlated noise the web needs, and until that exists a measured value would be no more honest
+     * than this one.
+     */
     public static final double DEFAULT_GALAXY_DENSITY = 0.5d;
 
     /** A weighted star archetype: a temperature (drives colour) and a size range. */
@@ -371,17 +386,50 @@ public final class GalaxyGenConfig {
 
     /** A sparse, strongly-clustered default galaxy. */
     public static GalaxyGenConfig defaults() {
-        return new GalaxyGenConfig(DEFAULT_MIN_SPACING, 0.35d, DEFAULT_GALAXY_SPACING,
-                DEFAULT_GALAXY_DENSITY, defaultStarTypes(), defaultGalaxyTypes());
+        // The occupancy is READ from the metric rather than repeated here: it is half of what decides
+        // the mean star separation, and a second copy of it would move the field without moving the
+        // constant that claims to state where the field is.
+        return new GalaxyGenConfig(DEFAULT_MIN_SPACING, UniverseScale.DEFAULT_STAR_OCCUPANCY,
+                DEFAULT_GALAXY_SPACING, DEFAULT_GALAXY_DENSITY, defaultStarTypes(), defaultGalaxyTypes());
     }
 
+    /**
+     * The stock star table, weighted by the OBSERVED abundance of each class rather than by a feel for
+     * how often one should turn up.
+     *
+     * <p>Weights are per ten thousand systems, from a solar-neighbourhood census BY NUMBER — which is
+     * the census that matters here, because this table is sampled once per seat. (A census by
+     * luminosity or by mass gives almost the opposite ordering, and is what makes a blue star feel
+     * common: it dominates every photograph of the sky while being nearly absent from the volume.)</p>
+     *
+     * <table>
+     *   <caption>class, share by number, weight</caption>
+     *   <tr><td>M red dwarf</td><td>~76 %</td><td>7600</td></tr>
+     *   <tr><td>K orange</td><td>~12 %</td><td>1200</td></tr>
+     *   <tr><td>G sun-like</td><td>~7.6 %</td><td>760</td></tr>
+     *   <tr><td>F/A white</td><td>~3.6 %</td><td>360</td></tr>
+     *   <tr><td>B blue</td><td>~0.13 %</td><td>13</td></tr>
+     * </table>
+     *
+     * <p>They do not sum to 10 000, and that is correct rather than sloppy: the remaining ~0.7 % is
+     * white and brown dwarfs, which this table does not model, and O stars at ~3&times;10<sup>-5</sup> %
+     * are below the resolution of any weight an integer can carry. Weights are relative; a missing
+     * class is simply absent, not redistributed.
+     *
+     * <p><b>What this changed.</b> The previous table read 40/25/20/10/5, i.e. a blue star in one
+     * system out of twenty against an observed one in seven hundred and sixty — <b>38&times; too
+     * common</b>, against its own comment calling them rare. It flowed downstream too: a star's
+     * temperature and size set its habitable zone, so an over-bright field made warm orbits commoner
+     * everywhere.
+     */
     private static List<StarType> defaultStarTypes() {
         List<StarType> l = new ArrayList<>();
-        l.add(new StarType(40, 0.6f, 1.0f, 40));   // cool red dwarfs — most common
-        l.add(new StarType(70, 0.8f, 1.2f, 25));   // orange
-        l.add(new StarType(100, 0.9f, 1.4f, 20));  // sol-like yellow
-        l.add(new StarType(150, 1.1f, 1.8f, 10));  // white
-        l.add(new StarType(220, 1.4f, 2.6f, 5));   // hot blue giants — rare
+        //                     temp  size band     weight (per 10 000 systems, observed)
+        l.add(new StarType(40, 0.6f, 1.0f, 7600));  // M — red dwarfs, three quarters of every sky
+        l.add(new StarType(70, 0.8f, 1.2f, 1200));  // K — orange
+        l.add(new StarType(100, 0.9f, 1.4f, 760));  // G — sun-like
+        l.add(new StarType(150, 1.1f, 1.8f, 360));  // F/A — white
+        l.add(new StarType(220, 1.4f, 2.6f, 13));   // B — blue, one system in ~760
         return Collections.unmodifiableList(l);
     }
 
@@ -470,7 +518,14 @@ public final class GalaxyGenConfig {
     /** Edge of the cube that holds at most one cluster, in light years. */
     public static final double CLUSTER_SPACING_LY = 300d;
 
-    /** Fraction of those cubes that hold a cluster, before the galaxy's own profile scales it. */
+    /**
+     * Fraction of those cubes that hold a cluster, before the galaxy's own profile scales it.
+     *
+     * <p>A KNOB, not a reading — the same class as {@link #DEFAULT_GALAXY_DENSITY}: a chance per cube
+     * standing in for a number density astronomy states per unit volume. Said out loud so the next
+     * reader does not take it for an observation the way the star separation, the galaxy radii and the
+     * rogue abundance beside it are.
+     */
     public static final double CLUSTER_DENSITY = 0.35d;
 
     /**

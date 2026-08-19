@@ -480,32 +480,42 @@ public class TelescopeRegionScanTest {
     public void aSystemAScanReportedIsFrozenAgainstALaterRetune() {
         // The promise the whole schema-versioning rests on: what the player has SEEN stops moving.
         // A survey answers out of the derivation, so without a pin the system on his crystal is a
-        // function of the pack's current knobs — and he finds that out by flying there.
+        // function of the world's parameters — and he finds that out by flying there.
+        //
+        // The "different universe" is a different SEED rather than a retuned config, and that choice is
+        // the point. Two earlier forms of this test used a config retune and both went vacuous without
+        // saying so: the first picked the ORIGIN, whose territory carries lattice index (0,0,0) whatever
+        // the edge is, and the second picked an anchor the retune happened not to move. A seed change
+        // re-derives everything by construction, so the discriminator below cannot quietly stop
+        // discriminating.
         GalaxyGenConfig config = GalaxyGenConfig.defaults();
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(config));
         UniverseRegistry.setStarLookup(TelescopeRegionScanTest::star);
         UniverseRegistry registry = new UniverseRegistry();
         registry.bindWorldSeed(0xC0FFEEL);
 
-        GalacticCoord looked = cell(0, 0, 0);
-        GalacticCoord neverLooked = cell(3 * STEP, 0, 0);
-        GalacticCoord lookedAnchor = registry.anchorForCell(looked).orElse(null);
-        GalacticCoord otherAnchor = registry.anchorForCell(neverLooked).orElse(null);
-        assertNotNull("arrangement: the looked-at cell must hold a system", lookedAnchor);
-        assertNotNull("arrangement: the control cell must hold a system", otherAnchor);
-        String lookedBefore = describe(registry, lookedAnchor);
-        String otherBefore = describe(registry, otherAnchor);
+        GalacticCoord looked = cell(7 * STEP, 3 * STEP, -5 * STEP);
+        GalacticCoord anchor = registry.anchorForCell(looked).orElse(null);
+        assertNotNull("arrangement: the looked-at cell must hold a system", anchor);
+        String before = describe(registry, anchor);
 
         CrystalMemory crystal = new CrystalMemory();
         assertTrue("arrangement: the look must report something",
                 TelescopeScan.resolveCell(registry, looked, crystal, 7_000L, dimId -> "Body-" + dimId) > 0);
 
-        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(retuned()));
+        // A different universe under the same registry.
+        registry.bindWorldSeed(0xDEADBEEFL);
 
-        assertNotEquals("arrangement: the retune must actually move an untouched system, or this test "
-                        + "proves nothing", otherBefore, describe(registry, otherAnchor));
-        assertEquals("a system a telescope reported must survive a retune of the universe it was "
-                        + "derived from", lookedBefore, describe(registry, lookedAnchor));
+        assertEquals("a system a telescope reported must survive a change to the universe it was "
+                + "derived from", before, describe(registry, anchor));
+
+        // The discriminator: the new universe must genuinely describe something else at that anchor,
+        // or the assertion above would hold with no pin at all.
+        String derivedNow = new ClusteredGalaxyGenerator(config).systemAt(0xDEADBEEFL, anchor)
+                .map(sys -> sys.systemId() + "/" + sys.primaryKind() + "/" + sys.name())
+                .orElse("none");
+        assertNotEquals("arrangement: the new seed must derive something else at this anchor, or the "
+                + "freeze is untested", before.substring(0, before.indexOf('[')), derivedNow);
     }
 
     @Test

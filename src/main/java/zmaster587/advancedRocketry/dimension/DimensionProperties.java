@@ -2750,12 +2750,35 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         return this.canGenerateCaves;
     }
 
+    /**
+     * How big this world is drawn in the planet view.
+     *
+     * <p><b>It follows the body's RADIUS, which is what a drawn size is.</b> It used to be
+     * {@code max(g², 0.5)} — a size synthesised from gravity, which is not a size — and that was a
+     * necessary approximation only while a planet had no radius of its own. It has had one since mass
+     * and radius became primary properties, and gravity is now DERIVED from them, so sizing by gravity
+     * squared means sizing by mass²/radius⁴: a dense small world drew larger than a big light one.</p>
+     *
+     * <p>The floor and the per-kind factors are unchanged, so an Earth-sized world (radius 1) draws
+     * exactly as it did — what moves is everything that is not Earth-sized.</p>
+     */
     public float getRenderSizePlanetView() {
-        return (isMoon() ? 8f : 10f) * Math.max(this.getGravitationalMultiplier() * this.getGravitationalMultiplier(), .5f) * 100;
+        return (isMoon() ? 8f : 10f) * renderRadiusFactor() * 100;
     }
 
+    /** The same, in the solar view, where a moon is drawn much smaller against its system. */
     public float getRenderSizeSolarView() {
-        return (isMoon() ? 0.2f : 1f) * Math.max(this.getGravitationalMultiplier() * this.getGravitationalMultiplier(), .5f) * 100;
+        return (isMoon() ? 0.2f : 1f) * renderRadiusFactor() * 100;
+    }
+
+    /**
+     * The body's radius in Earth radii, floored — the one quantity both views scale by. A world with
+     * no stated bulk falls back to one Earth radius, which is what an unstated bulk describes
+     * everywhere else in this layer.
+     */
+    private float renderRadiusFactor() {
+        double r = getRadius();
+        return (float) Math.max(r > 0d ? r : 1d, 0.5d);
     }
 
     // Relative to parent

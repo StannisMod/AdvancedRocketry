@@ -37,11 +37,34 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 public final class UniverseScale {
 
     /**
-     * Mean distance between neighbouring star seats, in light years. Real stellar neighbourhoods run
-     * 4&ndash;5 light years between neighbours; the lattice is stratified rather than Poisson, so the
-     * mean neighbour distance it produces comes out somewhat above this edge.
+     * Mean distance between neighbouring star seats, in light years — and the lattice is now built to
+     * PRODUCE it rather than to use it as a cube edge.
+     *
+     * <p>4.23 is the observed figure for a solar neighbourhood, and it is the quantity this layer
+     * actually means; the cube edge is machinery underneath it. Until 2026-08-19 this number was
+     * consumed directly as {@link #DEFAULT_SPACING_CELLS}, i.e. as the EDGE, which is a different
+     * quantity: a cube of edge {@code e} occupied with probability {@code p} puts its neighbours
+     * {@code e / p^(1/3)} apart, so the field stood <b>6.0 ly</b> apart at the shipped occupancy while
+     * this constant said 4.23. Measured on the shipped generator before the fix: 4913 territories
+     * around the origin seated 1574 systems, occupancy 0.320, mean separation 6.18 ly — 42 % above
+     * what the name promised, and the javadoc attributed the excess to the lattice being stratified
+     * when the dominant term was the occupancy.</p>
+     *
+     * <p>See {@link #DEFAULT_STAR_OCCUPANCY} for the knob that closes the gap, and
+     * {@link #DEFAULT_SPACING_CELLS} for the edge that now follows from both.</p>
      */
     public static final double MEAN_STAR_SEPARATION_LY = 4.23d;
+
+    /**
+     * What fraction of star territories hold a system at a galaxy's densest point — the lattice's fill,
+     * and a balance knob rather than an observation.
+     *
+     * <p>It lives here beside the separation because the two together decide the edge, and a knob that
+     * silently changes a measured quantity belongs next to the quantity it changes. A pack may still
+     * override the occupancy through {@code <galaxyGen density="...">}; what it cannot do is move the
+     * separation without saying so, because the separation is what the edge is derived from.</p>
+     */
+    public static final double DEFAULT_STAR_OCCUPANCY = 0.35d;
 
     /**
      * The guaranteed clear space around a system, in AU: two stars never stand closer than this,
@@ -72,13 +95,32 @@ public final class UniverseScale {
     public static final long SEAT_MARGIN_CELLS = cellsForOrbitUnits(MAX_NAMED_ORBIT_UNITS);
 
     /**
-     * Default edge of the cube that holds at most one system, in cells. Derived from
-     * {@link #MEAN_STAR_SEPARATION_LY}; a balance knob, overridable from the universe generator's
-     * configuration, and never a contract.
+     * Default edge of the cube that holds at most one system, in cells — <b>machinery, derived from the
+     * two quantities that mean something</b>: the separation the field should show and the fraction of
+     * territories that hold anything.
+     *
+     * <p>{@code edge = separation × occupancy^(1/3)}, the inverse of the relation in
+     * {@link #MEAN_STAR_SEPARATION_LY}: a sparser lattice needs a smaller cube to put its neighbours the
+     * same distance apart. At the shipped 4.23 ly and 0.35 that is 2.98 ly of edge, down from the 4.23
+     * this used to take verbatim — a finer partition, and the field lands where the constant says.</p>
+     *
+     * <p>The clear space a seat needs is unaffected and remains far below the new edge:
+     * {@link #SEPARATION_FLOOR_AU} is 10 000 AU = 0.158 ly, i.e. about 5 % of this edge rather than the
+     * 3.7 % it was. A balance knob, overridable from the generator's configuration, never a contract.</p>
      */
     public static final int DEFAULT_SPACING_CELLS = (int) Math.min(Integer.MAX_VALUE,
-            Math.max(1L, Math.round(MEAN_STAR_SEPARATION_LY
+            Math.max(1L, Math.round(MEAN_STAR_SEPARATION_LY * Math.cbrt(DEFAULT_STAR_OCCUPANCY)
                     * AstronomicalBodyHelper.BLOCKS_PER_LIGHT_YEAR / (double) GalacticCoord.CELL)));
+
+    /**
+     * The mean separation a lattice of {@code edgeCells} at occupancy {@code occupancy} actually
+     * produces, in light years — the relation stated once, so a caller can ask instead of re-deriving.
+     */
+    public static double meanSeparationLy(long edgeCells, double occupancy) {
+        double edgeLy = lightYearsForCells(edgeCells);
+        double p = Math.min(1d, Math.max(1e-9d, occupancy));
+        return edgeLy / Math.cbrt(p);
+    }
 
     // ─── The galaxy lattice ────────────────────────────────────────────────────
     // One level up, and the same scheme: a cube that holds at most one galaxy, and a galaxy seated

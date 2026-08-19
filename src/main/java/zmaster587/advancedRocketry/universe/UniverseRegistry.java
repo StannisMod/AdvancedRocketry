@@ -614,6 +614,28 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
      * Server-side convenience for the dimension lifecycle: forget {@code dimId}'s recorded name on
      * whatever registry is reachable. A no-op with no server (a client, a unit test).
      */
+    /**
+     * The bodies standing in {@code cell}, resolved through the running server's registry — for
+     * callers that hold an ADDRESS and no way to reach a registry, which is most of the space layer's
+     * entry path. An empty list when there is no server, no registry, or nothing there.
+     */
+    public static List<SystemBody> bodiesAtOnServer(GalacticCoord cell) {
+        if (cell == null) {
+            return Collections.emptyList();
+        }
+        UniverseRegistry reg;
+        try {
+            reg = get(net.minecraftforge.fml.common.FMLCommonHandler.instance()
+                    .getMinecraftServerInstance());
+        } catch (Throwable noServer) {
+            // No Forge bootstrap at all — a pure unit context. "There is no server, so there is
+            // nothing standing in that cell" is the honest answer here and the caller's own fallback
+            // (the flat ring) is the right behaviour, so this is not swallowed error handling.
+            return Collections.emptyList();
+        }
+        return (reg == null) ? Collections.<SystemBody>emptyList() : reg.systemBodiesAt(cell);
+    }
+
     public static void forgetNameOnServer(int dimId) {
         UniverseRegistry reg = get(net.minecraftforge.fml.common.FMLCommonHandler.instance()
                 .getMinecraftServerInstance());

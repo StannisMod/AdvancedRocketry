@@ -50,6 +50,9 @@ public final class SystemContent {
     static final long ORBIT_UNIT_BLOCKS = AstronomicalBodyHelper.BLOCKS_PER_ORBIT_UNIT;
     /** Blocks per unit of a moon's (parent-relative) orbital distance — moons cluster near their planet. */
     static final long MOON_UNIT_BLOCKS = 200L;
+
+    /** The floor an authored moon is lifted to, in parent radii — see {@link #moonLawOf}. */
+    static final double MOON_MIN_PARENT_RADII = 2.5d;
     /** Cells kept clear of the super-cell faces when clamping a body cell into its system's box. */
     static final int BOX_MARGIN_CELLS = 2;
 
@@ -197,7 +200,17 @@ public final class SystemContent {
     private static BodyEphemeris moonLawOf(DimensionProperties moon, DimensionProperties parent) {
         double periodTicks = TICKS_PER_DAY * AstronomicalBodyHelper.getMoonOrbitalPeriod(
                 moon.getOrbitalDist(), (float) parent.getOrbitalMass());
-        return BodyEphemeris.orbit(moon.getOrbitalDist(), moon.baseOrbitTheta, moon.orbitalPhi,
+        // A FLOOR rather than a replacement: an authored pack keeps the spacing it wrote, unless what
+        // it wrote would put the moon inside its parent. That became possible only when bodies got a
+        // real radius — an Earth is 25 513 blocks across, so an authored orbit of 100 units (20 000
+        // blocks) is under the surface. The pack's intent is kept where it is expressible.
+        int authored = moon.getOrbitalDist();
+        double parentRadiusBlocks = Math.max(0.05d, parent.getRadius())
+                * AstronomicalBodyHelper.EARTH_RADIUS_BLOCKS;
+        long floorUnits = Math.round(parentRadiusBlocks * MOON_MIN_PARENT_RADII
+                / (double) MOON_UNIT_BLOCKS);
+        int orbit = (int) Math.max(authored, Math.max(1L, Math.min(Integer.MAX_VALUE, floorUnits)));
+        return BodyEphemeris.orbit(orbit, moon.baseOrbitTheta, moon.orbitalPhi,
                 moon.isRetrograde, periodTicks, MOON_UNIT_BLOCKS);
     }
 
