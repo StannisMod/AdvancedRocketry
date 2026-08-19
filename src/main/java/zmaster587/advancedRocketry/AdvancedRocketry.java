@@ -1230,6 +1230,7 @@ public class AdvancedRocketry {
 
         // Async weather fix
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.subsystem.heat.HotSlugPhysics());
         // Re-seat a returning player on the ship deck he logged out on: being aboard a ship
         // survives a relog, at any ship attitude.
         // Safe without VS on the classpath: every ship call inside goes through the
