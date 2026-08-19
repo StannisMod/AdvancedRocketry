@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -103,6 +104,85 @@ public class ShotBoresOverTimeE2ETest extends AbstractSharedServerTest {
                 + " two zeroes", narrowDepth > 0);
     }
 
+    /**
+     * A round that cannot get through comes to REST inside, and the hole it is making GROWS while it
+     * does. The second half is the one worth a server test: a bore that deepened all at once and then
+     * sat there would satisfy every "it is still present" assertion in this class and still be the
+     * instant resolution penetration-over-time replaced. So the depth is read TWICE while the round
+     * is in the air, and the claim is that the second reading is deeper.
+     */
+    @Test
+    public void aRoundThatCannotGetThroughRestsInsideAndItsCraterGrowsWhileItDoes() throws Exception {
+        int wallX = 1500;
+        prepare(wallX);
+        buildWall(wallX, 10);
+
+        // Enough to eat several blocks, nowhere near enough for ten: it must run out INSIDE.
+        int budget = budgetForBlocks(wallX, 3.5D);
+        long id = fire(wallX - 3.5D, BORE_SPEED, budget, 0.25D);
+        assertTrue("the substrate refused the shot", id >= 0);
+
+        // First reading: taken the moment it has spent anything at all, so it is certainly inside.
+        String biting = awaitEnergyBelow(id, budget);
+        assertTrue("the round ended in the tick it met the wall", isPresent(biting));
+        int firstDepth = awaitDepthAtLeast(wallX, 1);
+        assertTrue("nothing was damaged after the round started paying: " + stageAt(wallX),
+                firstDepth >= 1);
+
+        // Second reading: deeper, while the same round is still in the air. Polled rather than timed —
+        // this server ticks at its own rate and a sleep would be pinning the wall clock.
+        int secondDepth = awaitDepthAtLeast(wallX, firstDepth + 1);
+        assertTrue("the bore stopped at " + firstDepth + " blocks and never deepened while the round"
+                + " was still inside: then the crater was cut in one go and the round merely lingered"
+                + " — which is the behaviour penetration-over-time replaces", secondDepth > firstDepth);
+
+        assertTrue("a round with a fraction of the wall's price came out the far side", awaitGone(id));
+        assertEquals("the round stopped, but not by coming to rest in what it was drilling: " + read(id),
+                "STRUCTURE_IMPACT", endedOf(read(id)));
+    }
+
+    /**
+     * A round richer than the plate goes THROUGH it, and is worth less and slower on the far side —
+     * and, the part that has no other way of being observed, its continuation is not refused as a
+     * duplicate of its own first impact. Two thin plates with a gap: one round, both damaged. A dedup
+     * memory keyed on the shot rather than on the impact would let the first plate be hit and silently
+     * drop everything the same round did afterwards, and no single-plate test can tell.
+     */
+    @Test
+    public void aRoundThroughAThinHullLeavesSlowerAndItsOwnContinuationIsNotRefused() throws Exception {
+        int firstX = 1540;
+        int secondX = firstX + 4;
+        prepare(firstX);
+        assertTrue("could not clear the gap", exec("artest fill " + DIM + " " + firstX + " " + (Y - 1)
+                + " " + (Z - 1) + " " + (secondX + 2) + " " + (Y + 1) + " " + (Z + 1)
+                + " minecraft:air").contains("\"ok\":true"));
+        place("minecraft:stone", firstX);
+        place("minecraft:stone", secondX);
+
+        // Rich enough for both plates and then some: this test is about what a round DOES on the far
+        // side, so it must not be a test about running out.
+        int budget = budgetForBlocks(firstX, 6.0D);
+        double muzzleSpeed = 2.0D;
+        long id = fire(firstX - 3.0D, muzzleSpeed, budget, 0.25D);
+        assertTrue("the substrate refused the shot", id >= 0);
+
+        String past = awaitPastX(id, secondX + 1.0D);
+        assertTrue("the round never got past the second plate while still in the air: " + past,
+                isPresent(past));
+        assertTrue("the round left the plate with everything it arrived with (" + energyOf(past)
+                + " of " + budget + "): going through has to cost something", energyOf(past) < budget);
+        assertTrue("the round left the plate at its muzzle speed (" + speedOf(past) + " of "
+                + muzzleSpeed + "): spending energy on depth costs a body its speed",
+                speedOf(past) < muzzleSpeed);
+
+        assertTrue("the first plate is untouched, so this round never went through anything: "
+                + stageAt(firstX), stageOf(stageAt(firstX)) > 0 || destroyed(firstX));
+        assertTrue("the SECOND plate is untouched by a round that flew past it with budget in hand ("
+                + stageAt(secondX) + "): the round's own continuation was refused as a duplicate of"
+                + " its first impact, which is the one failure a single-plate test cannot see",
+                stageOf(stageAt(secondX)) > 0 || destroyed(secondX));
+    }
+
     // ---- driving
 
     private long fire(double x, double speed, int energy, double radius) throws Exception {
@@ -146,6 +226,43 @@ public class ShotBoresOverTimeE2ETest extends AbstractSharedServerTest {
             Thread.sleep(150L);
         }
         return !isPresent(read(id));
+    }
+
+    /** Poll until the bore is at least this deep, or the budget of patience runs out. */
+    private int awaitDepthAtLeast(int wallX, int wanted) throws Exception {
+        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+        int depth = boreDepth(wallX);
+        while (System.currentTimeMillis() < deadline && depth < wanted) {
+            Thread.sleep(120L);
+            depth = boreDepth(wallX);
+        }
+        return depth;
+    }
+
+    /** Poll until the round is past {@code x}, so what is read is a body on the FAR side. */
+    private String awaitPastX(long id, double x) throws Exception {
+        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+        String state = read(id);
+        while (System.currentTimeMillis() < deadline && isPresent(state) && xOf(state) < x) {
+            Thread.sleep(100L);
+            state = read(id);
+        }
+        return state;
+    }
+
+    private static double xOf(String json) {
+        Matcher m = Pattern.compile("\"x\":(-?[\\d.eE+-]+)").matcher(json);
+        return m.find() ? Double.parseDouble(m.group(1)) : Double.NEGATIVE_INFINITY;
+    }
+
+    private static double speedOf(String json) {
+        Matcher m = Pattern.compile("\"speed\":(-?[\\d.eE+-]+)").matcher(json);
+        return m.find() ? Double.parseDouble(m.group(1)) : -1.0D;
+    }
+
+    private static String endedOf(String json) {
+        Matcher m = Pattern.compile("\"ended\":\"([^\"]*)\"").matcher(json);
+        return m.find() ? m.group(1) : null;
     }
 
     /** How many blocks deep into the wall took damage: the bore's own length. */
