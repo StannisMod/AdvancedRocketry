@@ -335,6 +335,8 @@ public class ARConfiguration {
     @ConfigProperty
     public int shipHeatSlugJoulesPerUnit;
     @ConfigProperty
+    public int shipHeatMeltCheckTicks;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -639,6 +641,7 @@ public class ARConfiguration {
         arConfig.shipHeatDriveRefusalKelvin = config.get(HEAT, "shipHeatDriveRefusalKelvin", 773, "How hot the coolant loop a hyperspace drive is bolted to may get, in kelvin, before the drive refuses to fire. 773 K is 500 degrees C - hundreds of degrees above anything a crew survives, so a ship that trips this was flown with nobody left to care. The refusal is FREE: it is raised before the capacitor burst, so a pilot who is told this has lost nothing but the trip. Set it to 0 to switch the check off entirely.", 0, 5000).getInt();
         arConfig.shipHeatSlugMarginKelvin = config.get(HEAT, "shipHeatSlugMarginKelvin", 100, "How far below its own melting point a heat slug is charged, in kelvin. This is the margin that keeps a slug a solid object you can eject and pick up again instead of a puddle in the machine, so it is subtracted from every material's usable span. Raise it for a safer, weaker slug.", 0, 5000).getInt();
         arConfig.shipHeatSlugJoulesPerUnit = config.get(HEAT, "shipHeatSlugJoulesPerUnit", 1000, "How many real joules one heat unit stands for when a slug's capacity is worked out from its material. The materials table is ordinary physics in SI, and this is the single place those joules become the currency the rest of the thermal system deals in - so it scales every slug at once and changes no material's standing relative to another. At the default a litre of iron is worth about five thousand heat units.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.shipHeatMeltCheckTicks = config.get(HEAT, "shipHeatMeltCheckTicks", 20, "How often a coolant loop looks at what it is cooking, in ticks. This is the melting rung: past a material's own limit the block stops being damaged and is gone. Checking is the expensive half - it walks the loop and its neighbours - so this is the freshness of that answer rather than a balance number. Raising it does not make a ship safer, only slower to lose its hull.", 1, 1200).getInt();
         arConfig.solarGeneratorMult = config.get(ENERGY, "solarGeneratorMultiplier", 1, "Power produced per tick by the solar generator.").getInt();
         arConfig.microwaveRecieverMulitplier = (float) config.get(ENERGY, "MicrowaveRecieverMultiplier", 1f, "Multiplier for microwave receiver power output.").getDouble();
         arConfig.defaultItemTimeBlackHole = config.get(ENERGY, "defaultBurnTime", 500, "Burn time in ticks for items not listed in blackHoleTimings.").getInt();

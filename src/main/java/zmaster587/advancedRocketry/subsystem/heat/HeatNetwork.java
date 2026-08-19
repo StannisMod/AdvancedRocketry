@@ -257,6 +257,15 @@ public final class HeatNetwork {
         stored = Math.max(0L, stored - rejected);
         distribute(mass, capacity, stored);
 
+        // The failure ladder's last rung, and it runs HERE because this is where the loop's
+        // temperature exists. Not every tick: the sweep walks the loop and its neighbours, so it is
+        // paced - and phased off the loop's own anchor rather than off world time alone, so a ship
+        // with several loops does not spend all of them on the same tick.
+        double loopKelvin = temperature(stored, capacity);
+        if (where != null && meltingDue(world, where)) {
+            HullMelting.sweep(world, state.getMemberPositions(), loopKelvin, environment);
+        }
+
         state.setThermalState(stored, capacity, temperature(stored, capacity),
                 (int) Math.min(Integer.MAX_VALUE, generated));
         state.setExchangeState(rejected, pumped.movedOut, pumped.delivered, state.takePumpedIn(),
@@ -584,6 +593,17 @@ public final class HeatNetwork {
             }
         }
         return Math.min(stored, net);
+    }
+
+    /**
+     * Whether this loop's melting sweep falls on this tick. The phase comes from the loop's own
+     * anchor, which is a stable identity it already has, so two loops on one ship land on different
+     * ticks instead of stacking into the same one.
+     */
+    private static boolean meltingDue(World world, BlockPos anchor) {
+        int interval = HullMelting.checkIntervalTicks();
+        int phase = Math.floorMod(anchor.hashCode(), interval);
+        return Math.floorMod(world.getTotalWorldTime() + phase, interval) == 0L;
     }
 
     /**

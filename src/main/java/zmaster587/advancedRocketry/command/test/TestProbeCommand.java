@@ -10900,7 +10900,12 @@ public class TestProbeCommand extends CommandBase {
                     // instead of the rule that a room past it turns hostile.
                     "shipHeatCrewVeryHotKelvin",
                     "shipHeatCrewSuperheatedKelvin",
-                    "shipHeatDriveRefusalKelvin"));
+                    "shipHeatDriveRefusalKelvin",
+                    // How often the melting rung looks. A test drives the domain through a probe,
+                    // and world time does not advance inside one probe call - so the interval is
+                    // set to 1 to make the sweep run on the tick the test asks for rather than on
+                    // whichever tick the phase happens to land on.
+                    "shipHeatMeltCheckTicks"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
