@@ -88,6 +88,27 @@ public final class ShipMassFrame {
         return inertia;
     }
 
+    /**
+     * The same ship, with its centre of mass expressed about an origin {@code (dx, dy, dz)} further
+     * back — i.e. every coordinate shifted by {@code +(dx, dy, dz)}.
+     *
+     * <p><b>Why a frame needs this at all.</b> A frame is only meaningful about a stated origin, and
+     * the origin a hull is most cheaply MEASURED about is not the one the physics record is KEPT in.
+     * The record's centre of mass is in the ship's own subspace address space, which for a real craft
+     * is millions of blocks from zero; accumulating second moments about a point that far away spends
+     * most of a double's precision on a constant that cancels at the end. Measuring about something
+     * near the hull and translating the answer costs one addition and keeps every intermediate at the
+     * scale of the ship.</p>
+     *
+     * <p>Only the centre moves. The inertia tensor is already expressed <em>about the centre of
+     * mass</em>, and that is invariant under translation — which is the property that makes this safe
+     * and is worth pinning rather than assuming.</p>
+     */
+    public ShipMassFrame translated(double dx, double dy, double dz) {
+        return new ShipMassFrame(structuralMass, contentMass, crewMass,
+                new Vector3d(centreOfMass).add(dx, dy, dz), inertia);
+    }
+
     @Override
     public String toString() {
         return "ShipMassFrame{total=" + getTotalMass() + "kg (structural=" + structuralMass

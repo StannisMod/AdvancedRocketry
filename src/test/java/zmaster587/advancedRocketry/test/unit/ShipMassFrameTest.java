@@ -35,6 +35,46 @@ public class ShipMassFrameTest {
                 .build();
     }
 
+    /**
+     * Translating a frame moves its centre of mass and leaves its inertia alone.
+     *
+     * <p>This is the property that lets a hull be MEASURED near itself and REPORTED in the address
+     * space the physics record keeps — a ship's own subspace, which starts past five million blocks
+     * along X. Accumulating second moments about a point that far away spends most of a double's
+     * precision on a constant that cancels at the end; measuring locally and translating does not.</p>
+     *
+     * <p>The inertia leg is the load-bearing half: the tensor is expressed <em>about the centre of
+     * mass</em>, so it must be invariant here. If it ever stopped being, every craft's handling would
+     * silently depend on where its shipyard happened to be allocated.</p>
+     */
+    @Test
+    public void translatingMovesTheCentreAndLeavesTheInertiaAlone() {
+        ShipMassFrame local = new ShipMassFrameBuilder()
+                .add(MassContributor.ofBlock(-1.5D, 0.0D, 0.0D, 800.0D, Kind.STRUCTURAL))
+                .add(MassContributor.ofBlock(2.5D, 0.0D, 0.0D, 200.0D, Kind.STRUCTURAL))
+                .build();
+
+        double dx = 5120000.0D, dy = 128.0D, dz = 51200.0D;
+        ShipMassFrame moved = local.translated(dx, dy, dz);
+
+        assertEquals("translation must not invent or lose mass",
+                local.getTotalMass(), moved.getTotalMass(), EPS);
+        assertEquals("the centre moves by exactly the offset, at a real shipyard distance",
+                local.getCentreOfMass().x() + dx, moved.getCentreOfMass().x(), 1.0e-6D);
+        assertEquals(local.getCentreOfMass().y() + dy, moved.getCentreOfMass().y(), 1.0e-6D);
+        assertEquals(local.getCentreOfMass().z() + dz, moved.getCentreOfMass().z(), 1.0e-6D);
+
+        Matrix3d before = new Matrix3d(local.getInertia());
+        Matrix3d after = new Matrix3d(moved.getInertia());
+        assertEquals("inertia about the centre of mass cannot depend on where the centre IS",
+                before.m00(), after.m00(), EPS);
+        assertEquals(before.m11(), after.m11(), EPS);
+        assertEquals(before.m22(), after.m22(), EPS);
+        assertEquals(before.m01(), after.m01(), EPS);
+        assertEquals(before.m02(), after.m02(), EPS);
+        assertEquals(before.m12(), after.m12(), EPS);
+    }
+
     @Test
     public void totalIsExactlyTheThreeCategories() {
         ShipMassFrame frame = new ShipMassFrameBuilder()

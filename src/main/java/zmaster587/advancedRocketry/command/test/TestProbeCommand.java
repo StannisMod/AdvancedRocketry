@@ -702,6 +702,22 @@ public class TestProbeCommand extends CommandBase {
                     + zmaster587.advancedRocketry.util.MotionTrace.clientSummary() + "}");
             return;
         }
+        // mass-drift reset — forget every recorded recompute and disagreement.
+        // mass-drift — what the AUTHORITATIVE hull recompute found: how many ran, how many found no
+        // hull to weigh, and every disagreement with the incremental path (with its sign). A drift on
+        // an assembly or a paste means a trigger is missing; it is recorded rather than thrown,
+        // because the recompute runs inside the world tick and a throw there kills the server instead
+        // of reporting the number.
+        if (args.length >= 1 && "mass-drift".equalsIgnoreCase(args[0])) {
+            if (args.length >= 2 && "reset".equalsIgnoreCase(args[1])) {
+                zmaster587.advancedRocketry.integration.vs.ShipMassTrigger.reset();
+                send(sender, "{\"ok\":true,\"reset\":true}");
+                return;
+            }
+            send(sender, "{\"ok\":true,"
+                    + zmaster587.advancedRocketry.integration.vs.ShipMassTrigger.summary() + "}");
+            return;
+        }
         // lifecycle reset — forget every recorded ship-was-named announcement.
         // lifecycle <shipUuid> — what was announced FOR THAT SHIP: one count per cause, the durable
         // id it was announced under, and `seen` saying whether the recorder has heard of it at all.
