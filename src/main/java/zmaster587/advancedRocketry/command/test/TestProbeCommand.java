@@ -274,7 +274,16 @@ public class TestProbeCommand extends CommandBase {
      *       launch was refused, which is a real answer and not an error);</li>
      *   <li>{@code list <dim>} — every shot in flight in that world;</li>
      *   <li>{@code read <dim> <id>} — one shot, or {@code present:false} once it has ended;</li>
-     *   <li>{@code clear <dim>} — drop everything in flight there (scenario isolation).</li>
+     *   <li>{@code clear <dim>} — drop everything in flight there (scenario isolation);</li>
+     *   <li>{@code trace <dim> [id] [limit]} — what each step DECIDED: the shield distance and the
+     *       structure distance as the step saw them, so "the wall was never found" and "the impact
+     *       was refused" stop looking alike. Earliest entries first, and {@code matched} says how
+     *       many there were;</li>
+     *   <li>{@code traceclear <dim>} — a clean instrument for one scenario; the ring is shared and
+     *       outlives any single test;</li>
+     *   <li>{@code crossing <dim> <x0> <y0> <z0> <x1> <y1> <z1>} — the control query: does production
+     *       itself say this segment is blocked, and what does each voxel along it look like. Asks
+     *       {@code StructureCrossing} rather than re-deriving an answer beside it.</li>
      * </ul>
      *
      * <p>There is deliberately no "step one shot" verb: shots advance through the world tick, so a
@@ -284,7 +293,7 @@ public class TestProbeCommand extends CommandBase {
      */
     private void handleShot(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length == 0) {
-            send(sender, "{\"error\":\"usage: /artest shot fire|list|read|clear ...\"}");
+            send(sender, "{\"error\":\"usage: /artest shot fire|list|read|clear|trace|traceclear|crossing ...\"}");
             return;
         }
         String sub = args[0].toLowerCase(java.util.Locale.ROOT);
@@ -358,6 +367,60 @@ public class TestProbeCommand extends CommandBase {
             int before = registry.count();
             registry.clear();
             send(sender, "{\"ok\":true,\"cleared\":" + before + "}");
+            return;
+        }
+        if ("trace".equals(sub)) {
+            long only = args.length >= 3 ? parseLongOr(args[2], -1L) : -1L;
+            int limit = args.length >= 4 ? parseIntOr(args[3], 24) : 24;
+            send(sender, "{\"ok\":true,\"trace\":"
+                    + zmaster587.advancedRocketry.projectile.ShotCrossingTrace.summaryJson(only, limit)
+                    + "}");
+            return;
+        }
+        if ("traceclear".equals(sub)) {
+            zmaster587.advancedRocketry.projectile.ShotCrossingTrace.reset();
+            send(sender, "{\"ok\":true,\"cleared\":true}");
+            return;
+        }
+        if ("crossing".equals(sub) && args.length >= 8) {
+            net.minecraft.util.math.Vec3d from = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            net.minecraft.util.math.Vec3d to = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            // Production's own answer, not a re-derivation: a probe that re-implemented "is there
+            // structure here" would be a second opinion, and the whole question is whose is wrong.
+            boolean blocked = zmaster587.advancedRocketry.projectile.StructureCrossing
+                    .isBlocked(world, from, to);
+            final StringBuilder voxels = new StringBuilder();
+            final int[] listed = new int[1];
+            final net.minecraft.world.WorldServer scanned = world;
+            zmaster587.advancedRocketry.util.SweptVolume.traverse(from, to, 0.0D, 4096,
+                    new zmaster587.advancedRocketry.util.SweptVolume.LayerVisitor() {
+                @Override
+                public boolean visit(zmaster587.advancedRocketry.util.SweptVolume.Layer layer) {
+                    net.minecraft.util.math.BlockPos pos = layer.axis;
+                    boolean loaded = scanned.isBlockLoaded(pos);
+                    net.minecraft.block.state.IBlockState state = loaded
+                            ? scanned.getBlockState(pos) : null;
+                    boolean structure = loaded && zmaster587.advancedRocketry.damage
+                            .StructureDamageEngine.isStructure(scanned, pos, state);
+                    if (listed[0] < 32) {
+                        if (listed[0] > 0) {
+                            voxels.append(',');
+                        }
+                        voxels.append("{\"x\":").append(pos.getX()).append(",\"y\":").append(pos.getY())
+                                .append(",\"z\":").append(pos.getZ())
+                                .append(",\"loaded\":").append(loaded)
+                                .append(",\"block\":\"")
+                                .append(state == null ? "" : state.getBlock().getRegistryName())
+                                .append("\",\"structure\":").append(structure).append('}');
+                    }
+                    listed[0]++;
+                    return structure; // stop where production would have stopped
+                }
+            });
+            send(sender, "{\"ok\":true,\"blocked\":" + blocked + ",\"walked\":" + listed[0]
+                    + ",\"voxels\":[" + voxels + "]}");
             return;
         }
         send(sender, "{\"error\":\"unknown shot subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
@@ -1270,6 +1333,25 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"cleared\":" + before + "}");
             return;
         }
+        if (args.length >= 3 && "impact-memory".equalsIgnoreCase(args[0])) {
+            // impact-memory <dim> <impactId> — is this identity already spent, and since when. A
+            // refusal reports only that it was seen; WHEN it was seen is what names the other caller.
+            int memDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer memWorld = server.getWorld(memDim);
+            if (memWorld == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + memDim + "}");
+                return;
+            }
+            long askedId = parseLongOr(args[2], 0L);
+            Long at = zmaster587.advancedRocketry.damage.ShipDamageService.rememberedTickOf(memWorld, askedId);
+            send(sender, "{\"ok\":true,\"impactId\":" + askedId
+                    + ",\"remembered\":" + (at != null)
+                    + ",\"at\":" + (at == null ? "null" : at.toString())
+                    + ",\"now\":" + memWorld.getTotalWorldTime()
+                    + ",\"size\":" + zmaster587.advancedRocketry.damage.ShipDamageService
+                            .rememberedImpactCount() + "}");
+            return;
+        }
         if (args.length >= 5 && "stage".equalsIgnoreCase(args[0])) {
             // stage <dim> <x> <y> <z> — the unified stage reader, whichever home owns it.
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -1402,7 +1484,15 @@ public class TestProbeCommand extends CommandBase {
                     // keep KINETIC; the reply echoes what was used so a typo is visible
                 }
             }
-            long impactId = args.length >= 11 ? (long) parseDoubleOr(args[10], 0) : world.getTotalWorldTime();
+            // A hand-declared identity is moved into a band production never mints. Production hands
+            // out 1, 2, 3 ... from the world's own counter, and a test that picks "7000" is picking a
+            // number that counter will reach on a long-lived shared server — at which point the test's
+            // impact is refused as a repeat of a shot's, spends nothing, and reads as a gun that did
+            // no damage. The offset is injective over the non-negative values anyone passes, so a
+            // repeated declaration is still a repeat, which is what the dedup tests are about.
+            long declaredId = args.length >= 11 ? (long) parseDoubleOr(args[10], 0)
+                    : world.getTotalWorldTime();
+            long impactId = Long.MIN_VALUE + Math.max(0L, declaredId);
 
             zmaster587.advancedRocketry.api.damage.DamageReport report =
                     zmaster587.advancedRocketry.damage.ShipDamageService.apply(world,
@@ -1412,6 +1502,10 @@ public class TestProbeCommand extends CommandBase {
             Map<String, Object> info = new LinkedHashMap<>();
             info.put("ok", true);
             info.put("kind", kind.name());
+            // Both, because they are two different facts: what the caller asked for, and the identity
+            // the service was actually given. A probe that reported only the first would be hiding the
+            // one a memory query has to be made with.
+            info.put("declaredId", declaredId);
             info.put("impactId", impactId);
             // Which target the service resolved, and how many ships even offered themselves. Without
             // these a miss cannot be told apart from a hit on the wrong thing: the report names no

@@ -210,6 +210,18 @@ public final class ShotSubstrate {
                     crossing == 0 ? boringHull : null, bodyRadius(shot));
             double structureDistance = structure == null ? -1.0D : structure.distance;
 
+            if (ShotCrossingTrace.enabled()) {
+                // The two distances as this step saw them, before anything is decided from them. A
+                // round that crossed a wall unmarked and one whose impact was refused are the same
+                // picture from outside; they differ here, and only here.
+                ShotCrossingTrace.crossing(shot.getId(), shot.getAge(),
+                        crossing == 0 ? boringHull : null, position, segmentEnd, bodyRadius(shot),
+                        fieldDistance, structureDistance,
+                        structure == null ? null : structure.block.getX() + "," + structure.block.getY()
+                                + "," + structure.block.getZ() + " "
+                                + world.getBlockState(structure.block).getBlock().getRegistryName());
+            }
+
             boolean fieldFirst = fieldDistance >= 0.0D
                     && (structureDistance < 0.0D || fieldDistance <= structureDistance);
             boolean structureFirst = structureDistance >= 0.0D && !fieldFirst;
@@ -229,10 +241,12 @@ public final class ShotSubstrate {
                 // is standing in that block, and it paid for it then.
                 boolean resuming = structure.distance <= CROSSING_EPSILON * 2.0D;
                 // The seam is handed the BODY's facts, not this shot: the same armour has to answer a
-                // bolt and a held beam, and neither of those is a record in this registry. Minting the
-                // impact identity here is what keeps a bore across several ticks from being refused as
-                // a duplicate of its own first contact.
-                TravellingBody body = new TravellingBody(shot.nextImpactId(), velocity, shot.getKind(),
+                // bolt and a held beam, and neither of those is a record in this registry. A fresh
+                // identity per contact is what keeps a bore across several ticks from being refused as
+                // a duplicate of its own first one — and it comes from the WORLD's counter rather than
+                // from this shot, so that no amount of boring can walk it into another round's.
+                TravellingBody body = new TravellingBody(ShotRegistry.get(world).nextImpactId(),
+                        velocity, shot.getKind(),
                         shot.getImpactEnergy(), shot.getRadius());
                 ContactResolver.Resolution contact = ContactResolver.resolve(world, body, structure,
                         reachInside, resuming);

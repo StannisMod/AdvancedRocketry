@@ -56,13 +56,6 @@ public final class Shot {
     private int age;
     private int impactEnergy;
 
-    /**
-     * How many impacts this shot has already declared. It is part of the impact identity so that a
-     * shot which strikes twice — a shell it was let through, then the hull behind it — is not refused
-     * the second time by the damage service's duplicate memory.
-     */
-    private int impactSequence;
-
     Shot(long id, ShotSpec spec) {
         this.id = id;
         this.radius = spec.getRadius();
@@ -78,12 +71,11 @@ public final class Shot {
         this.impactEnergy = spec.getImpactEnergy();
         this.hullId = null;
         this.age = 0;
-        this.impactSequence = 0;
     }
 
     private Shot(long id, double radius, double mass, ImpactKind kind, UUID owner, String faction,
                  String guidance, ShotEnvironment environment, int lifetimeTicks, Vec3d position,
-                 Vec3d velocity, String hullId, int age, int impactEnergy, int impactSequence) {
+                 Vec3d velocity, String hullId, int age, int impactEnergy) {
         this.id = id;
         this.radius = radius;
         this.mass = mass;
@@ -98,7 +90,6 @@ public final class Shot {
         this.hullId = hullId;
         this.age = age;
         this.impactEnergy = impactEnergy;
-        this.impactSequence = impactSequence;
     }
 
     public long getId() {
@@ -198,15 +189,6 @@ public final class Shot {
         this.age++;
     }
 
-    /**
-     * An identity for the next impact this shot declares, distinct from every other impact by any
-     * shot in this world. The dimension is not mixed in: the damage service is asked about one world
-     * at a time and two worlds cannot share a shot.
-     */
-    long nextImpactId() {
-        return (id << 8) ^ (impactSequence++);
-    }
-
     NBTTagCompound writeToNBT() {
         NBTTagCompound nbt = new NBTTagCompound();
         nbt.setLong("id", id);
@@ -237,7 +219,6 @@ public final class Shot {
         }
         nbt.setInteger("age", age);
         nbt.setInteger("energy", impactEnergy);
-        nbt.setInteger("impactSeq", impactSequence);
         return nbt;
     }
 
@@ -259,7 +240,7 @@ public final class Shot {
                 new Vec3d(nbt.getDouble("posX"), nbt.getDouble("posY"), nbt.getDouble("posZ")),
                 new Vec3d(nbt.getDouble("velX"), nbt.getDouble("velY"), nbt.getDouble("velZ")),
                 nbt.hasKey("hull") ? nbt.getString("hull") : null,
-                nbt.getInteger("age"), nbt.getInteger("energy"), nbt.getInteger("impactSeq"));
+                nbt.getInteger("age"), nbt.getInteger("energy"));
     }
 
     private static UUID parseUuid(String value) {

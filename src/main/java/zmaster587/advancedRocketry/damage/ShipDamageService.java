@@ -53,16 +53,27 @@ public final class ShipDamageService {
 
     /**
      * Recently applied impact identities → the tick they were applied on. Written only from here.
-     * <b>It outlives a scenario</b>: on a server shared by several tests, an id used by one is still
-     * refused for the next, so a test that reuses ids must call {@link #clearRecentImpacts()} between
-     * them rather than assume a fresh service.
+     *
+     * <p>Keyed by DIMENSION as well as identity. Identities are minted per world, so two worlds hand
+     * out the same numbers as a matter of course; a memory shared between them would refuse a round
+     * in one world for an impact declared in another, and the refusal is silent — the budget comes
+     * back whole and the round flies on through the hull it was aimed at.</p>
+     *
+     * <p><b>It outlives a scenario</b>: on a server shared by several tests, an id used by one is
+     * still refused for the next, so a test that reuses ids must call {@link #clearRecentImpacts()}
+     * between them rather than assume a fresh service.</p>
      */
-    private static final Map<Long, Long> RECENT_IMPACTS = new LinkedHashMap<Long, Long>() {
+    private static final Map<String, Long> RECENT_IMPACTS = new LinkedHashMap<String, Long>() {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, Long> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
             return size() > IMPACT_MEMORY_MAX;
         }
     };
+
+    /** One world's identity space, kept apart from every other world's. */
+    private static String memoryKey(World world, long impactId) {
+        return world.provider.getDimension() + ":" + impactId;
+    }
 
     private ShipDamageService() {
     }
@@ -135,6 +146,15 @@ public final class ShipDamageService {
      */
     public static void clearRecentImpacts() {
         RECENT_IMPACTS.clear();
+    }
+
+    /**
+     * The tick an identity was remembered on, or {@code null} when it is not remembered at all.
+     * Diagnostics: a refusal reports only that the id was seen, and "seen when, and how long ago"
+     * is what separates a genuine retry from one caller's ids colliding with another's.
+     */
+    public static Long rememberedTickOf(World world, long impactId) {
+        return world == null ? null : RECENT_IMPACTS.get(memoryKey(world, impactId));
     }
 
     /** How many identities are currently remembered (diagnostics and tests). */
@@ -219,18 +239,19 @@ public final class ShipDamageService {
     }
 
     private static boolean isDuplicate(World world, long impactId) {
-        Long appliedAt = RECENT_IMPACTS.get(impactId);
+        String key = memoryKey(world, impactId);
+        Long appliedAt = RECENT_IMPACTS.get(key);
         if (appliedAt == null) {
             return false;
         }
         if (world.getTotalWorldTime() - appliedAt > IMPACT_MEMORY_TICKS) {
-            RECENT_IMPACTS.remove(impactId);
+            RECENT_IMPACTS.remove(key);
             return false;
         }
         return true;
     }
 
     private static void remember(World world, long impactId) {
-        RECENT_IMPACTS.put(impactId, world.getTotalWorldTime());
+        RECENT_IMPACTS.put(memoryKey(world, impactId), world.getTotalWorldTime());
     }
 }

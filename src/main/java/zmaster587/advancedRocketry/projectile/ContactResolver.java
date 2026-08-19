@@ -204,6 +204,16 @@ public final class ContactResolver {
                         reachBlocks, areaOf(contact.getRadius()));
         DamageReport report = ShipDamageService.apply(world, request);
 
+        if (ShotCrossingTrace.enabled()) {
+            ShotCrossingTrace.impact(body.getImpactId(), contact.getPos(), contact.getEnergy(),
+                    reachBlocks, resumingBore, report.getOutcome().name(),
+                    report.getStopReason() == null ? null : report.getStopReason().name(),
+                    report.getBudgetSpent(), report.getBudgetLeft(), report.getDistanceWalked(),
+                    report.getBlocksStaged(), report.getBlocksDestroyed(),
+                    ShipDamageService.rememberedTickOf(world, body.getImpactId()),
+                    world.getTotalWorldTime());
+        }
+
         int residual = report.getBudgetLeft();
         if (residual <= 0) {
             return new Resolution(ContactResult.stopped(), report.getDistanceWalked());

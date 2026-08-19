@@ -53,6 +53,22 @@ public class ShotRegistry extends WorldSavedData {
 
     private long nextId = 1L;
 
+    /**
+     * The next identity an impact declared in this world will be remembered by.
+     *
+     * <p>Minted HERE rather than by the shot that declares the impact, and that is the whole point:
+     * an identity built out of a shot's own id and a counter has to reserve a field for each, and a
+     * counter that outgrows its field walks into the neighbouring one. A round that bored for a few
+     * hundred ticks then minted the identities a LATER round was going to mint, and the later round's
+     * impacts were refused as duplicates of impacts it never made — it crossed a stone wall spending
+     * nothing, because a refusal hands the budget back whole.</p>
+     *
+     * <p>One counter per world cannot do that: it is handed out once and never again. It is
+     * deliberately NOT reset by {@link #clear()} — the dedup memory that reads these identities
+     * outlives any one scenario, so re-minting from one would be re-creating the collision by hand.</p>
+     */
+    private long nextImpactId = 1L;
+
     public ShotRegistry() {
         super(DATA_NAME);
     }
@@ -83,6 +99,35 @@ public class ShotRegistry extends WorldSavedData {
         }
         long id = nextId++;
         shots.put(id, new Shot(id, spec));
+        markDirty();
+        return id;
+    }
+
+    /**
+     * An identity for one declared impact. Persisted with the registry, so a restart does not start
+     * handing out identities the dedup memory may still be holding.
+     *
+     * <h3>It counts up and never cycles, and cycling is what it is avoiding</h3>
+     * <p>What uniqueness is actually needed FOR is the dedup memory's window: an identity is
+     * remembered for a bounded number of ticks and then forgotten, so what this must not do is repeat
+     * inside that window. Reusing a number the service has already let go of is harmless. The scheme
+     * this replaced failed at exactly that scale — it repeated within seconds of one round's flight —
+     * which is why the answer here is a counter that never comes back round rather than a wider one
+     * that comes back round later.</p>
+     *
+     * <p>Exhaustion is not a practical bound: at the substrate's own ceiling — every slot of
+     * {@code maxShotsPerWorld} occupied, every round boring its maximum crossings, every tick — the
+     * default configuration spends a {@code long} in the order of ten million years. A configuration
+     * that raises the shot cap to its own maximum would need a couple of years of continuously
+     * saturated fire, which is a server that has already fallen over for other reasons.</p>
+     *
+     * <p><b>If it ever did overflow</b> it would land in the negatives, where hand-declared probe
+     * identities live (see the {@code /artest damage impact} verb). That is stated so it is a known
+     * neighbour rather than a surprise; it is not guarded against, because reaching it means the
+     * count above was wrong by a factor nothing here can produce.</p>
+     */
+    public long nextImpactId() {
+        long id = nextImpactId++;
         markDirty();
         return id;
     }
@@ -195,6 +240,7 @@ public class ShotRegistry extends WorldSavedData {
     public void readFromNBT(NBTTagCompound nbt) {
         shots.clear();
         nextId = Math.max(1L, nbt.getLong("nextId"));
+        nextImpactId = Math.max(1L, nbt.getLong("nextImpactId"));
         NBTTagList list = nbt.getTagList("shots", 10);
         for (int i = 0; i < list.tagCount(); i++) {
             Shot shot = Shot.readFromNBT(list.getCompoundTagAt(i));
@@ -210,6 +256,7 @@ public class ShotRegistry extends WorldSavedData {
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         nbt.setLong("nextId", nextId);
+        nbt.setLong("nextImpactId", nextImpactId);
         NBTTagList list = new NBTTagList();
         for (Shot shot : shots.values()) {
             list.appendTag(shot.writeToNBT());

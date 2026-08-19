@@ -70,15 +70,6 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
         int budget = budgetForBlocks(SLUG_Z, 20.0D);
         assertTrue("the wall has no price, so no budget here means anything", budget > 0);
 
-        // A round is fired and discarded before the ones this test is about, and it is not
-        // superstition: the FIRST shot fired into a freshly built arrangement passes through it with
-        // its budget untouched, while every shot after it behaves. That is a live defect in the
-        // substrate, not in the columns — the same point struck by a hand-fired impact is bored four
-        // blocks deep, so the damage side is sound — and this test's subject is which COLUMN a kind is
-        // priced from. A test that went red for somebody else's bug would say nothing about its own
-        // claim, which is the most expensive kind of red to read.
-        awaitGone(fire(SLUG_Z, 10, "KINETIC"));
-
         long slug = fire(SLUG_Z, budget, "KINETIC");
         long beam = fire(BEAM_Z, budget, "BEAM");
         assertTrue("both shots must be admitted or the comparison is about one of them",
