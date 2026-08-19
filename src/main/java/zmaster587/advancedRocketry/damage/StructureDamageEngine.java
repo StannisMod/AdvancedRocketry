@@ -58,13 +58,6 @@ public final class StructureDamageEngine {
      */
     private static final int GAP_TOLERANCE = 6;
 
-    /**
-     * The least of its voxel a block is ever treated as filling. A pane is not a wall and should not
-     * cost like one, but nothing is free either: a body still has to break the thing off its mounting,
-     * and a floor here is what stops a torch or a tripwire from being a hole in a hull.
-     */
-    private static final double MIN_OCCUPANCY = 0.1D;
-
     /** One whole voxel at the origin — the box a block is asked to report its collision shape within. */
     private static final AxisAlignedBB FULL_VOXEL = new AxisAlignedBB(0.0D, 0.0D, 0.0D, 1.0D, 1.0D, 1.0D);
 
@@ -419,7 +412,7 @@ public final class StructureDamageEngine {
     }
 
     /**
-     * How much of its voxel this block actually fills, in {@code [MIN_OCCUPANCY, 1]}.
+     * How much of its voxel this block actually fills, in {@code [0, 1]}.
      *
      * <h3>Why a price has to know this at all</h3>
      * <p>The law is an energy per unit of VOLUME removed — that is the whole of why the mechanical and
@@ -437,6 +430,18 @@ public final class StructureDamageEngine {
      * states its real shape, box by box, so that is what is summed. Overlapping boxes would double
      * count, which is why the sum is clamped: over-counting can only ever produce "a full cube", the
      * answer we started from.</p>
+     *
+     * <h3>There is no floor under it, and nothing is free anyway</h3>
+     * <p>A floor was tried and removed: it was a MULTIPLIER, so it priced "the least a block can cost"
+     * out of that block's own material, and what it was meant to represent — the work of breaking a
+     * thing off its mounting — has nothing to do with what the thing is made of. What actually keeps a
+     * near-empty voxel from being free is {@code STAGE_COST_BASE}, which is material-independent and
+     * already inside the product: a standing torch answers 0.024 here and still costs 6 against the
+     * 1000 a full block of stone costs. Below that the price itself floors at 1.</p>
+     *
+     * <p>The floor's stated reason — that a torch must not be a hole in a hull — does not survive
+     * being looked at: a voxel holding a torch is a voxel holding no hull block. The hole is the
+     * builder's, and pricing it dearly does not fill it.</p>
      */
     private static double occupancyOf(World world, BlockPos pos) {
         if (world == null || pos == null) {
@@ -451,17 +456,19 @@ public final class StructureDamageEngine {
                 volume += (box.maxX - box.minX) * (box.maxY - box.minY) * (box.maxZ - box.minZ);
             }
             if (volume > 0.0D) {
-                return Math.max(MIN_OCCUPANCY, Math.min(1.0D, volume));
+                return Math.min(1.0D, volume);
             }
             // No collision at all — a torch, a plant, a tripwire. It is still SOMETHING, so it falls
             // back to the shape it draws itself with rather than to nothing.
             AxisAlignedBB drawn = state.getBoundingBox(world, pos);
             if (drawn == null) {
-                return MIN_OCCUPANCY;
+                // It states no shape at all. The price floors at 1 rather than at nothing, which is
+                // the whole of what "still SOMETHING" needs to mean here.
+                return 0.0D;
             }
             double drawnVolume = (drawn.maxX - drawn.minX) * (drawn.maxY - drawn.minY)
                     * (drawn.maxZ - drawn.minZ);
-            return Math.max(MIN_OCCUPANCY, Math.min(1.0D, drawnVolume));
+            return Math.min(1.0D, drawnVolume);
         } catch (RuntimeException blockDidNotLikeBeingAsked) {
             // A block may compute its shape from neighbours it expects to be loaded. It costs a full
             // cube rather than throwing, which is the answer that changes nothing.

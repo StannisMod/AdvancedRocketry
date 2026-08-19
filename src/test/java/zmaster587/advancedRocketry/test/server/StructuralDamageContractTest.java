@@ -141,6 +141,40 @@ public class StructuralDamageContractTest extends AbstractSharedServerTest {
                 + "its crew nothing.\niron=" + iron, ironDestroyed < glassDestroyed);
     }
 
+    /**
+     * Two blocks of ONE material, differing only in how much of their voxel they fill: a wool block
+     * and a wool carpet. The carpet must cost far less — and must still cost something.
+     *
+     * <p>The law is an energy per unit of VOLUME removed, so the material is deliberately held fixed:
+     * a comparison across materials would pass on the toughness table alone and say nothing about
+     * volume. A carpet fills a sixteenth of its voxel, and for as long as a block was priced as a full
+     * cubic metre it cost what a solid block of wool costs to shoot through.</p>
+     *
+     * <p>The second half is the one that used to be held by a floor under the occupancy, and is now
+     * held by the price itself: the base term of the law is material-independent and the price rounds
+     * up to at least one. So "almost no material" lands at "almost free", never at "free" — which is
+     * what stops a body walking an arbitrarily long run of decoration for nothing.</p>
+     */
+    @Test
+    public void aBlockIsPricedByHowMuchOfItsVoxelItFillsAndNeverAtNothing() throws Exception {
+        int blockX = 1200, blockZ = 1300;
+        int carpetX = 1200, carpetZ = 1320;
+        buildWall("minecraft:wool", blockX, blockZ, 1);
+        buildWall("minecraft:carpet", carpetX, carpetZ, 1);
+
+        String solid = stage(blockX, blockZ);
+        String thin = stage(carpetX, carpetZ);
+        long solidCost = readLong(solid, "stageCost");
+        long thinCost = readLong(thin, "stageCost");
+
+        assertTrue("a carpet costs what a solid block of the same wool costs (carpet=" + thinCost
+                + " block=" + solidCost + "): then a block is priced as a full cubic metre of material"
+                + " however little of its voxel it fills, and the law stops being about volume."
+                + " carpet=" + thin + " block=" + solid, thinCost < solidCost);
+        assertTrue("a carpet costs nothing at all (" + thin + "): then a body crosses any length of"
+                + " decoration for free, and the price has no lower end", thinCost >= 1);
+    }
+
     /** The unified stage reader at a wall's first block: stage, max stage, and what a stage costs there. */
     private String stage(int x, int z) throws Exception {
         return exec("artest damage stage " + DIM + " " + x + " " + Y + " " + z);
