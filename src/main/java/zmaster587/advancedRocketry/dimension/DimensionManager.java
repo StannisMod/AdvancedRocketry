@@ -923,14 +923,20 @@ public class DimensionManager implements IGalaxy {
             zmaster587.advancedRocketry.universe.UniverseRegistry.stageAnchors(dimCouplingList.anchorCoords, resetFromXml);
         }
 
-        // Install the procedural galaxy generator when the pack opts in via <galaxyGen>; otherwise reset to
-        // the authored-anchors-only default. The generator is a JVM-global, so reset every load so a world
-        // without <galaxyGen> never inherits a previous world's generator.
+        // Hand the pack's <galaxyGen> knobs to the universe layer. The generator built from them is
+        // installed for real at populate(), because WHICH world model interprets these knobs is a
+        // property of the SAVE (its schema stamp) and the save is not reachable here — worlds are not
+        // loaded yet. The pack states the parameters; the world states the version.
+        //
+        // The provisional install below keeps this window behaving exactly as it did before the stamp
+        // existed: the generator is a JVM-global, so it is reset every load and a world without
+        // <galaxyGen> never inherits a previous world's generator. populate() then replaces it with the
+        // generator the save is actually owed, before anything derives.
         zmaster587.advancedRocketry.universe.GalaxyGenConfig galaxyGenConfig =
                 (dimCouplingList != null) ? dimCouplingList.galaxyGenConfig : null;
-        zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(galaxyGenConfig == null
-                ? null
-                : new zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator(galaxyGenConfig));
+        zmaster587.advancedRocketry.universe.UniverseRegistry.stageGalaxyConfig(galaxyGenConfig);
+        zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(
+                zmaster587.advancedRocketry.universe.UniverseSchemas.current().generator(galaxyGenConfig));
         // C129: registration authority on load was planetDefs.xml only (the loop
         // above), while per-dim persisted state lives in temp.dat (loadedPlanets).
         // A dim present in temp.dat but absent from a hand-edited / restored /

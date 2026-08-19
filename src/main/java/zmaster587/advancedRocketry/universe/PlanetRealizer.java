@@ -142,7 +142,8 @@ public final class PlanetRealizer {
             return Constants.INVALID_PLANET;
         }
 
-        BodyProfile profile = PlanetDerivation.derive(registry.worldSeed(), anchor, target.name(), variant,
+        BodyProfile profile = UniverseRegistry.getGenerator().derivation()
+                .derive(registry.worldSeed(), anchor, target.name(), variant,
                 star, target.kind() == SystemBodyKind.MOON, target.orbitalDistance());
         DimensionProperties props = materialize(dimId, profile, star, target, parentBody);
 

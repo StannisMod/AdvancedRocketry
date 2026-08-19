@@ -151,6 +151,19 @@ public final class TelescopeScan {
         if (!anchor.isPresent()) {
             return 0;
         }
+        // A LOOK IS A TOUCH. Everything below hands the operator something durable — an address he can
+        // fly to, a body he can name — out of a derivation that a later seed, config or generator edit
+        // would answer differently. Pinning first freezes the system into the save before a word of it
+        // is written down, so what the crystal holds and what the sky holds cannot come apart.
+        //
+        // The unit is the whole SYSTEM and not the bodies enumerated, because a system is what a pin
+        // can key: an obscured look still yields the address and the primary kind, and those are the
+        // system's identity. Freezing bodies the operator has not resolved yet is the conservative
+        // direction — they are what he will find when he gets there.
+        //
+        // Idempotent and free for anything already authored or pinned, so a re-scan of known sky and
+        // the many member cells of one system cost one pin between them.
+        registry.pinSystem(anchor.get());
         int written = 0;
         boolean namedSomething = false;
         if (!isObscured(registry, observer, anchor.get())) {

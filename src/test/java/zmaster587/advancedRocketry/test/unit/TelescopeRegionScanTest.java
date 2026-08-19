@@ -21,6 +21,7 @@ import zmaster587.advancedRocketry.universe.UniverseRegistry;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -447,6 +448,115 @@ public class TelescopeRegionScanTest {
         assertTrue("a survey asked the generator " + counting.queries + " questions for " + looks
                         + " looks — something on this path is enumerating rather than resolving",
                 counting.queries <= budget);
+    }
+
+    // ── a look is a touch ─────────────────────────────────────────────────────
+
+    /** How a system reads to a test: what it is, and where each of its bodies stands. */
+    private static String describe(UniverseRegistry registry, GalacticCoord anchor) {
+        StringBuilder sb = new StringBuilder();
+        // Asked through systemForCoord, which answers pinned OR derived. starIdForCoord reads the
+        // override store alone, so it would report the PIN rather than the system and turn "this system
+        // did not move" into "this system is now in the store", which is a different claim.
+        sb.append(registry.systemForCoord(anchor)
+                .map(s -> s.systemId() + "/" + s.primaryKind() + "/" + s.name())
+                .orElse("none"));
+        java.util.List<String> bodies = new java.util.ArrayList<>();
+        for (SystemBody b : registry.systemBodiesAt(anchor)) {
+            bodies.add(b.name().cellKey() + ':' + b.kind() + ':' + b.radiusEarths());
+        }
+        java.util.Collections.sort(bodies);
+        return sb.append(bodies).toString();
+    }
+
+    /** The same universe with one knob moved — everything untouched is derived differently under it. */
+    private static GalaxyGenConfig retuned() {
+        return new GalaxyGenConfig(GalaxyGenConfig.DEFAULT_MIN_SPACING, 0.9d,
+                GalaxyGenConfig.DEFAULT_GALAXY_SPACING, GalaxyGenConfig.DEFAULT_GALAXY_DENSITY,
+                null, null);
+    }
+
+    @Test
+    public void aSystemAScanReportedIsFrozenAgainstALaterRetune() {
+        // The promise the whole schema-versioning rests on: what the player has SEEN stops moving.
+        // A survey answers out of the derivation, so without a pin the system on his crystal is a
+        // function of the pack's current knobs — and he finds that out by flying there.
+        GalaxyGenConfig config = GalaxyGenConfig.defaults();
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(config));
+        UniverseRegistry.setStarLookup(TelescopeRegionScanTest::star);
+        UniverseRegistry registry = new UniverseRegistry();
+        registry.bindWorldSeed(0xC0FFEEL);
+
+        GalacticCoord looked = cell(0, 0, 0);
+        GalacticCoord neverLooked = cell(3 * STEP, 0, 0);
+        GalacticCoord lookedAnchor = registry.anchorForCell(looked).orElse(null);
+        GalacticCoord otherAnchor = registry.anchorForCell(neverLooked).orElse(null);
+        assertNotNull("arrangement: the looked-at cell must hold a system", lookedAnchor);
+        assertNotNull("arrangement: the control cell must hold a system", otherAnchor);
+        String lookedBefore = describe(registry, lookedAnchor);
+        String otherBefore = describe(registry, otherAnchor);
+
+        CrystalMemory crystal = new CrystalMemory();
+        assertTrue("arrangement: the look must report something",
+                TelescopeScan.resolveCell(registry, looked, crystal, 7_000L, dimId -> "Body-" + dimId) > 0);
+
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(retuned()));
+
+        assertNotEquals("arrangement: the retune must actually move an untouched system, or this test "
+                        + "proves nothing", otherBefore, describe(registry, otherAnchor));
+        assertEquals("a system a telescope reported must survive a retune of the universe it was "
+                        + "derived from", lookedBefore, describe(registry, lookedAnchor));
+    }
+
+    @Test
+    public void aLookIntoTheVoidFreezesNothing() {
+        // The pin must follow the REPORT, not the look: freezing empty sky would fill the save with
+        // snapshots of nothing and take space out of the pack author's hands for no promise made.
+        UniverseRegistry registry = threeSystems();
+        CrystalMemory crystal = new CrystalMemory();
+
+        TelescopeScan.resolveCell(registry, cell(400 * STEP, 0, 0), crystal, 7_000L,
+                dimId -> "Body-" + dimId);
+
+        assertEquals("a look at nothing must write no snapshot into the save", 0, pinnedCount(registry));
+    }
+
+    @Test
+    public void whatASurveyFreezesIsMeasuredNotAssumed() {
+        // A pin snapshots a whole system, so a wide sweep is a write. The cost is stated here as a
+        // NUMBER rather than asserted to be small: the bound below is a tripwire against an order of
+        // magnitude, and the printed figures are what a decision about survey width is made from.
+        GalaxyGenConfig config = GalaxyGenConfig.defaults();
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(config));
+        UniverseRegistry.setStarLookup(TelescopeRegionScanTest::star);
+        UniverseRegistry registry = new UniverseRegistry();
+        registry.bindWorldSeed(0xC0FFEEL);
+
+        RegionScan.Tuning live = new RegionScan.Tuning(100d, 1, 512, 100, 50d, 4, config.minSpacing);
+        RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, live.maxRangeSteps(), 0L, live);
+        int looks = scan.totalCells();
+        CrystalMemory crystal = new CrystalMemory();
+
+        long startedAt = System.nanoTime();
+        TelescopeScan.resolveBatch(registry, scan, 0, looks, crystal, 7_000L, dimId -> "Body-" + dimId);
+        long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+
+        NBTTagCompound tag = new NBTTagCompound();
+        registry.writeToNBT(tag);
+        int pins = pinnedCount(registry);
+        int bytes = tag.toString().length();
+        System.out.println("survey of " + looks + " looks froze " + pins + " systems in " + elapsedMs
+                + " ms; the universe save renders as " + bytes + " chars");
+
+        assertTrue("a survey must not freeze more systems than it had looks (" + pins + " pins for "
+                + looks + " looks)", pins <= looks);
+        assertTrue("arrangement: the sweep must have frozen something", pins > 0);
+    }
+
+    private static int pinnedCount(UniverseRegistry registry) {
+        NBTTagCompound tag = new NBTTagCompound();
+        registry.writeToNBT(tag);
+        return tag.getTagList("pinnedSystems", 10).tagCount();
     }
 
     @Test

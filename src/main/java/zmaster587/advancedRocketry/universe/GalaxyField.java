@@ -101,10 +101,13 @@ public final class GalaxyField {
     private static final double MAX_PECULIAR_SPEED_KM_S = 600d;
 
     private final GalaxyGenConfig config;
+    /** The metric this field measures with — its schema's, not a global one. */
+    private final IUniverseLaws laws;
     private final long totalGalaxyWeight;
     private final long totalHomeWeight;
 
-    public GalaxyField(GalaxyGenConfig config) {
+    public GalaxyField(GalaxyGenConfig config, IUniverseLaws laws) {
+        this.laws = (laws == null) ? UniverseLawsV0.INSTANCE : laws;
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
         long all = 0L; // accumulated in long so a few near-Integer.MAX weights cannot overflow the sum
         long home = 0L;
@@ -381,9 +384,9 @@ public final class GalaxyField {
         double offZ = distanceLy * sinEl * Math.sin(heading);
 
         GalacticCoord centre = GalacticCoord.ofSectorLocal(
-                primary.centre().sectorX() + UniverseScale.cellsAt(offX),
-                primary.centre().sectorY() + UniverseScale.cellsAt(offY),
-                primary.centre().sectorZ() + UniverseScale.cellsAt(offZ), 0L, 0L, 0L);
+                primary.centre().sectorX() + laws.cellsAt(offX),
+                primary.centre().sectorY() + laws.cellsAt(offY),
+                primary.centre().sectorZ() + laws.cellsAt(offZ), 0L, 0L, 0L);
 
         double tilt = Math.acos(2d * CellHash.norm(
                 CellHash.of(ownSeed, gx, gy, gz, SALT_SATELLITE_TILT)) - 1d);
@@ -396,7 +399,7 @@ public final class GalaxyField {
                 * 2d * Math.PI;
 
         return new Galaxy(gx, gy, gz, ordinal, centre, type, radiusLy, tilt, node, pitch, phase,
-                primary.peculiarVelocity());
+                primary.peculiarVelocity(), laws);
     }
 
     /**
@@ -434,14 +437,14 @@ public final class GalaxyField {
      * Whether a point is close enough to {@code primary} for any of its satellites to reach it. One
      * sphere test that rejects the whole retinue, so the void inside a cube costs nothing.
      */
-    private static boolean withinRetinueReach(Galaxy primary, long sectorX, long sectorY,
+    private boolean withinRetinueReach(Galaxy primary, long sectorX, long sectorY,
                                               long sectorZ) {
-        double reach = UniverseScale.retinueReachLy(primary.radiusLy());
-        double dx = UniverseScale.lightYearsForCells(
+        double reach = laws.retinueReachLy(primary.radiusLy());
+        double dx = laws.lightYearsForCells(
                 (double) (sectorX - primary.centre().sectorX()));
-        double dy = UniverseScale.lightYearsForCells(
+        double dy = laws.lightYearsForCells(
                 (double) (sectorY - primary.centre().sectorY()));
-        double dz = UniverseScale.lightYearsForCells(
+        double dz = laws.lightYearsForCells(
                 (double) (sectorZ - primary.centre().sectorZ()));
         return dx * dx + dy * dy + dz * dz <= reach * reach;
     }
@@ -526,7 +529,7 @@ public final class GalaxyField {
         return Optional.of(new Galaxy(gx, gy, gz, 0,
                 seatOf(seed, gx, gy, gz, radiusLy, tilt, node, home), type,
                 radiusLy, tilt, node, pitch, phase,
-                peculiarVelocityOf(seed, gx, gy, gz, radiusLy, home)));
+                peculiarVelocityOf(seed, gx, gy, gz, radiusLy, home), laws));
     }
 
     /**
@@ -549,8 +552,8 @@ public final class GalaxyField {
         double u = CellHash.norm(CellHash.of(seed, gx, gy, gz, SALT_GALAXY_SPEED));
         double kmPerSecond = MIN_PECULIAR_SPEED_KM_S
                 + u * (MAX_PECULIAR_SPEED_KM_S - MIN_PECULIAR_SPEED_KM_S);
-        double speed = Math.min(UniverseScale.lightYearsPerTick(kmPerSecond),
-                driftBudgetLy(radiusLy) / (double) Cosmology.DRIFT_HORIZON_TICKS);
+        double speed = Math.min(laws.lightYearsPerTick(kmPerSecond),
+                driftBudgetLy(radiusLy) / (double) laws.driftHorizonTicks());
 
         // Isotropic: cos(elevation) uniform, not the elevation itself, or the draws would pile up at
         // the poles of whatever axis happened to be written first.
@@ -566,8 +569,8 @@ public final class GalaxyField {
      * whole group travels together, so the budget is the group's reach and not the primary's radius.
      */
     private double driftBudgetLy(double radiusLy) {
-        double halfCellLy = UniverseScale.lightYearsForCells(config.galaxySpacing / 2d);
-        return Math.max(0d, halfCellLy - UniverseScale.retinueReachLy(radiusLy));
+        double halfCellLy = laws.lightYearsForCells(config.galaxySpacing / 2d);
+        return Math.max(0d, halfCellLy - laws.retinueReachLy(radiusLy));
     }
 
     // ─── The intergalactic regime ──────────────────────────────────────────────
@@ -606,8 +609,8 @@ public final class GalaxyField {
      * is orders past what a block {@code long} holds, and the layer never asks one to hold it. The
      * cell NAME carries the magnitude (a sector triple) and this vector carries the rest.</p>
      */
-    public static LightYearVector comovingPositionAt(GalacticCoord cell, long tick) {
-        return LightYearVector.ofCell(cell).scale(Cosmology.scaleFactorAt(tick));
+    public LightYearVector comovingPositionAt(GalacticCoord cell, long tick) {
+        return LightYearVector.ofCell(cell, laws).scale(laws.scaleFactorAt(tick));
     }
 
     /**
@@ -659,12 +662,12 @@ public final class GalaxyField {
                     * 2d * Math.PI;
             LightYearVector offset = Galaxy.planeDirection(tilt, node, angle)
                     .scale(-UniverseScale.HOME_GALAXY_ORIGIN_FRACTION * radiusLy);
-            return GalacticCoord.ofSectorLocal(UniverseScale.cellsAt(offset.x()),
-                    UniverseScale.cellsAt(offset.y()), UniverseScale.cellsAt(offset.z()),
+            return GalacticCoord.ofSectorLocal(laws.cellsAt(offset.x()),
+                    laws.cellsAt(offset.y()), laws.cellsAt(offset.z()),
                     0L, 0L, 0L);
         }
         long s = config.galaxySpacing;
-        long margin = Math.min(UniverseScale.cellsForLightYears(UniverseScale.retinueReachLy(radiusLy)),
+        long margin = Math.min(laws.cellsForLightYears(laws.retinueReachLy(radiusLy)),
                 Math.max(0L, (s - 1L) / 2L));
         long band = Math.max(1L, s - 2L * margin);
         // The index came from a real sector, so a cell corner is bounded by that sector and the

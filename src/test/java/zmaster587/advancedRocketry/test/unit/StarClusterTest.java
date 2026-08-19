@@ -10,6 +10,7 @@ import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.StarCluster;
+import zmaster587.advancedRocketry.universe.UniverseLawsV0;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -158,7 +159,7 @@ public class StarClusterTest {
     private static Galaxy galaxyOfRadius(double radiusLy) {
         return new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN, cfg().galaxyTypes.get(0), radiusLy,
                 0d, 0d, Math.toRadians(20d), 0d,
-                zmaster587.advancedRocketry.universe.LightYearVector.ZERO);
+                zmaster587.advancedRocketry.universe.LightYearVector.ZERO, UniverseLawsV0.INSTANCE);
     }
 
     @Test

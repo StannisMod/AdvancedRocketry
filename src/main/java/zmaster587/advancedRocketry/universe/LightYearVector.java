@@ -32,11 +32,17 @@ public final class LightYearVector {
     }
 
     /** The position a cell NAME stands at in the static frame, in light years. */
-    public static LightYearVector ofCell(GalacticCoord cell) {
+    /**
+     * A cell's position as a vector in light years, measured by {@code laws}.
+     *
+     * <p>The metric is a PARAMETER because a cell is worth a different number of light years under a
+     * different schema, and this type is a plain value that must not decide which schema it belongs to.
+     */
+    public static LightYearVector ofCell(GalacticCoord cell, IUniverseLaws laws) {
         return new LightYearVector(
-                UniverseScale.lightYearsForCells(cell.sectorX()),
-                UniverseScale.lightYearsForCells(cell.sectorY()),
-                UniverseScale.lightYearsForCells(cell.sectorZ()));
+                laws.lightYearsForCells(cell.sectorX()),
+                laws.lightYearsForCells(cell.sectorY()),
+                laws.lightYearsForCells(cell.sectorZ()));
     }
 
     public double x() {

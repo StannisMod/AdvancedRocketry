@@ -317,6 +317,27 @@ commands.advancedrocketry.dev.dumpbiomes.usage=dumpBiomes - Dumps biome info to 
 commands.advancedrocketry.dev.dumpbiomes.success=The file 'BiomeDump.txt' has been written to the instance directory
 commands.advancedrocketry.dev.runtests.usage=runTests - Runs rocket tests for debug only!
 
+msg.advancedrocketry.universe.alpha=This world uses universe generator %s - an ALPHA. The leading zero means the world model may be replaced in a later release rather than extended, so this world is not guaranteed a way forward. Only what you have already seen is frozen.
+commands.advancedrocketry.universe.usage=/stellurgy universe help - the world model this save was generated under
+commands.advancedrocketry.universe.unavailable=The universe registry is not available on this world
+commands.advancedrocketry.universe.status.usage=status - report the world model, the pack's configuration, and how much sky is frozen
+commands.advancedrocketry.universe.status.schema=World model: schema %s (this build ships %s)
+commands.advancedrocketry.universe.status.alpha=Generator %s is an ALPHA: a leading zero means this world model may be REPLACED in a later release, not extended.
+commands.advancedrocketry.universe.status.stable=Generator %s is a stable release.
+commands.advancedrocketry.universe.status.config=Configuration: world %s, pack %s
+commands.advancedrocketry.universe.status.agrees=The pack states the same universe this world was generated under.
+commands.advancedrocketry.universe.status.differs=The pack states a DIFFERENT universe. Restore the previous <galaxyGen>, or run /stellurgy universe upgrade to accept it.
+commands.advancedrocketry.universe.status.frozen=Frozen by being seen: %s systems
+commands.advancedrocketry.universe.status.released=Models this build can still read: %s
+commands.advancedrocketry.universe.status.armed=An upgrade is armed: the next start will accept one change to <galaxyGen>.
+commands.advancedrocketry.universe.upgrade.usage=upgrade [confirm] - freeze everything already seen, then accept the pack's current universe
+commands.advancedrocketry.universe.upgrade.preview=This would move the world from configuration %s to %s. %s systems are already frozen.
+commands.advancedrocketry.universe.upgrade.reach=Memory crystals will be read from the %s player(s) online. Crystals in chests, in unloaded chunks, or carried by players who are offline CANNOT be read - bring them in first.
+commands.advancedrocketry.universe.upgrade.confirm=Run /stellurgy universe upgrade confirm to go ahead. This cannot be undone.
+commands.advancedrocketry.universe.upgrade.done=Upgrade complete: %s crystals read, %s addresses, %s newly frozen. World model %s -> %s, configuration %s.
+commands.advancedrocketry.universe.upgrade.armed=This world will also accept ONE change to <galaxyGen> at its next start. Stop the server, put the new configuration in place, and start again.
+commands.advancedrocketry.universe.upgrade.seam=Charted space keeps exactly what it held; everything beyond it is re-derived under the new model.
+
 commands.advancedrocketry.filldata.usage=/ar fillData <type> <amount> OR /ar fillData chip (alias: fd)
 commands.advancedrocketry.filldata.chip.notheld=Hold an asteroid chip in your main hand to use /ar fillData chip
 commands.advancedrocketry.filldata.chip.success=Filled asteroid chip with %s data in composition, mass, and distance

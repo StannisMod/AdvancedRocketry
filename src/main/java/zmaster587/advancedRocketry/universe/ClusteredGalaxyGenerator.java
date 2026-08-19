@@ -188,6 +188,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private static final int MAX_SYSTEMS_PER_REGION_QUERY = 20_000;
 
     private final GalaxyGenConfig config;
+    private final IBodyDerivation derivation;
+    private final IUniverseLaws laws;
     private final GalaxyField galaxies;
     private final ClusterField clusters;
     private final NebulaField nebulae;
@@ -195,11 +197,31 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private final List<GalaxyGenConfig.RogueType> rogueTypes;
     private final long totalRogueWeight;
 
+    /**
+     * The stock generator: version 1's body derivation. Kept so every existing call site and test
+     * reads unchanged; a schema that means something else says so with the constructor below.
+     */
     public ClusteredGalaxyGenerator(GalaxyGenConfig config) {
+        this(config, BodyDerivationV0.INSTANCE, UniverseLawsV0.INSTANCE);
+    }
+
+    /** The same field with a stated derivation, measuring by version 1's laws. */
+    public ClusteredGalaxyGenerator(GalaxyGenConfig config, IBodyDerivation derivation) {
+        this(config, derivation, UniverseLawsV0.INSTANCE);
+    }
+
+    /**
+      * The full form: a field that derives its bodies by {@code derivation} and measures by
+      * {@code laws} — the two halves a later schema version differs in.
+      */
+    public ClusteredGalaxyGenerator(GalaxyGenConfig config, IBodyDerivation derivation,
+                                    IUniverseLaws laws) {
+        this.derivation = (derivation == null) ? BodyDerivationV0.INSTANCE : derivation;
+        this.laws = (laws == null) ? UniverseLawsV0.INSTANCE : laws;
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
-        this.galaxies = new GalaxyField(this.config);
-        this.clusters = new ClusterField(this.config, this.galaxies);
-        this.nebulae = new NebulaField(this.config, this.clusters);
+        this.galaxies = new GalaxyField(this.config, this.laws);
+        this.clusters = new ClusterField(this.config, this.galaxies, this.laws);
+        this.nebulae = new NebulaField(this.config, this.clusters, this.laws);
         long w = 0L; // accumulate in long so a few near-Integer.MAX weights cannot overflow the sum
         for (GalaxyGenConfig.StarType t : this.config.starTypes) {
             w += t.weight;
@@ -211,6 +233,21 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             rw += t.weight;
         }
         this.totalRogueWeight = Math.max(1L, rw);
+    }
+
+    @Override
+    public IBodyDerivation derivation() {
+        return derivation;
+    }
+
+    @Override
+    public IUniverseLaws laws() {
+        return laws;
+    }
+
+    @Override
+    public java.util.Optional<GalaxyGenConfig> tuning() {
+        return java.util.Optional.of(config);
     }
 
     public GalaxyGenConfig config() {
@@ -399,10 +436,10 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * inner few and nothing else — the same ceiling a rocky world has, applied whatever its bulk,
      * rather than the ceiling its mass would otherwise buy it.</p>
      */
-    private static List<SystemBody> rogueBodiesFor(long seed, GalacticCoord cell, int systemId,
+    private List<SystemBody> rogueBodiesFor(long seed, GalacticCoord cell, int systemId,
                                                    double giantFraction) {
         List<SystemBody> bodies = new ArrayList<>();
-        BodyProfile profile = PlanetDerivation.deriveRogue(seed, cell, 0, giantFraction);
+        BodyProfile profile = derivation.deriveRogue(seed, cell, 0, giantFraction);
         // It does not move inside its own system: it IS the system, so its frame is the anchor's.
         bodies.add(SystemBody.fixedAt(cell, SystemBodyKind.ROGUE_PLANET, Constants.INVALID_PLANET,
                 systemId).withRadius(profile.radiusEarths()));
@@ -425,7 +462,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                     SystemContent.MOON_UNIT_BLOCKS);
             // A moon of a rogue is starless too, so it is derived the same way its parent was, one
             // variant along — never through the star-lit law with a star that is not there.
-            BodyProfile moonProfile = PlanetDerivation.deriveRogue(seed, cell, j, giantFraction);
+            BodyProfile moonProfile = derivation.deriveRogue(seed, cell, j, giantFraction);
             bodies.add(new SystemBody(cell, frame, law, SystemBodyKind.MOON,
                     Constants.INVALID_PLANET, systemId, SystemBody.ORBIT_UNKNOWN)
                     .withRadius(moonProfile.radiusEarths()));
@@ -461,7 +498,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // moved it inward, which is the one thing this whole seam exists to prevent: a world's
             // distance is its star's business, and a system squeezed by its neighbours holds fewer
             // worlds rather than the same worlds at the wrong distances.
-            int orbit = PlanetDerivation.orbitalDistanceOf(seed, cell, i, count, star);
+            int orbit = derivation.orbitalDistanceOf(seed, cell, i, count, star);
             if (orbit > outerBound) {
                 continue; // outside this system's clear space — a bound of the layout, not a failure
             }
@@ -476,7 +513,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // which is what makes the zoning (rock inside, giants past the snow line) emerge instead
             // of being authored. Kept here rather than at realization because the nav list, the sky
             // and the descent trigger all read the kind long before anyone lands.
-            BodyProfile profile = PlanetDerivation.derive(seed, cell, seat.cell, 0, star, false, orbit);
+            BodyProfile profile = derivation.derive(seed, cell, seat.cell, 0, star, false, orbit);
             // THE ORBIT LIVES IN THE FRAME, not in the body's own offset — the same shape an authored
             // system uses (SystemContent: a planet sits at its frame origin and the FRAME goes round
             // the star). Built with the convenience constructor, a procedural planet got
@@ -512,7 +549,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // beyond the outermost world; what it may NOT pass is the system's own clear space, and there
         // it is bounded like everything else rather than being quietly dropped.
         double outerBelt = Math.max(outermostOrbit * OUTER_BELT_FACTOR,
-                PlanetDerivation.innerOrbit(star) * 2d);
+                derivation.innerOrbit(star) * 2d);
         addBelt(bodies, seed, cell, (int) Math.min(outerBelt, outerBound), star, lattice, starId, taken,
                 count + 2);
     }
@@ -561,10 +598,10 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * How far this system's NAMED bodies may reach from its star, in orbital-distance units: the
      * declared clear space around a seat, or as much of it as this spacing can actually give.
      */
-    private static double maxNamedOrbitUnits(long s) {
-        long reachCells = Math.max(1L, UniverseScale.seatMarginCells(s) - NEIGHBOURHOOD_MARGIN_CELLS);
+    private double maxNamedOrbitUnits(long s) {
+        long reachCells = Math.max(1L, laws.seatMarginCells(s) - NEIGHBOURHOOD_MARGIN_CELLS);
         return Math.min(UniverseScale.MAX_NAMED_ORBIT_UNITS,
-                UniverseScale.orbitUnitsForCells(reachCells));
+                laws.orbitUnitsForCells(reachCells));
     }
 
     /**
@@ -679,7 +716,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // It used to ride a static frame of its own, which pinned the whole family in place.
             // A moon's size comes from the SAME derivation a descent will realize it with, so the
             // moon a pilot sees from orbit is the moon he lands on.
-            BodyProfile moonProfile = PlanetDerivation.derive(seed, anchor, parent, j, star, true,
+            BodyProfile moonProfile = derivation.derive(seed, anchor, parent, j, star, true,
                     parentOrbit);
             bodies.add(new SystemBody(parent, parentFrame, law, SystemBodyKind.MOON,
                     Constants.INVALID_PLANET, starId, parentOrbit)
@@ -700,9 +737,9 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // Nothing lights this system, so nothing about the body follows from a distance: it is the
             // starless derivation or it is a body whose physics would be read off a star that is not
             // there. A moon of a rogue takes the same branch, which is right — it is starless too.
-            return PlanetDerivation.deriveRogue(seed, body.name(), variant, config.rogue.giantFraction);
+            return derivation.deriveRogue(seed, body.name(), variant, config.rogue.giantFraction);
         }
-        return PlanetDerivation.derive(seed, anchor.cellCentre(), body.name(), variant, star,
+        return derivation.derive(seed, anchor.cellCentre(), body.name(), variant, star,
                 body.kind() == SystemBodyKind.MOON, body.orbitalDistance());
     }
 
@@ -726,7 +763,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             return Collections.emptyList();
         }
         long s = config.minSpacing;
-        long reachSuper = Math.max(1L, UniverseScale.cellsForLightYears(radiusLy) / s);
+        long reachSuper = Math.max(1L, laws.cellsForLightYears(radiusLy) / s);
         long supX = Math.floorDiv(c.sectorX(), s);
         long supY = Math.floorDiv(c.sectorY(), s);
         long supZ = Math.floorDiv(c.sectorZ(), s);
@@ -897,7 +934,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * in a globular core really do stand closer than a wide binary, and a system there loses outer
      * bodies by the same rule that has always applied.</p>
      */
-    private static GalacticCoord seatIn(long seed, Lattice lattice) {
+    private GalacticCoord seatIn(long seed, Lattice lattice) {
         return GalacticCoord.ofSectorLocal(
                 lattice.lowX + seatOffset(seed, lattice, SALT_OX, lattice.edgeX),
                 lattice.lowY + seatOffset(seed, lattice, SALT_OY, lattice.edgeY),
@@ -929,8 +966,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     }
 
     /** Where the seat sits on one axis of its lattice cell, clear of the faces by the local margin. */
-    private static long seatOffset(long seed, Lattice lattice, long salt, long edge) {
-        long margin = UniverseScale.seatMarginCells(edge);
+    private long seatOffset(long seed, Lattice lattice, long salt, long edge) {
+        long margin = laws.seatMarginCells(edge);
         long band = Math.max(1L, edge - 2L * margin);
         return margin + Math.floorMod(lattice.hash(seed, salt), band);
     }

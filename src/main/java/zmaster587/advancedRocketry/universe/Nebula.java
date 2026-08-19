@@ -81,6 +81,8 @@ public final class Nebula {
         REFLECTION
     }
 
+    /** The metric this object was seated under — its schema's, never a global one. */
+    private final IUniverseLaws laws;
     private final StarCluster cluster;
     private final Appearance appearance;
     private final double centreXLy;
@@ -90,7 +92,8 @@ public final class Nebula {
     private final double peakDensity;
 
     public Nebula(StarCluster cluster, Appearance appearance, double centreXLy, double centreYLy,
-                  double centreZLy, double radiusLy, double peakDensity) {
+                  double centreZLy, double radiusLy, double peakDensity, IUniverseLaws laws) {
+        this.laws = (laws == null) ? UniverseLawsV0.INSTANCE : laws;
         this.cluster = cluster;
         this.appearance = appearance;
         this.centreXLy = centreXLy;
@@ -153,9 +156,9 @@ public final class Nebula {
 
     /** The same reading at a cell name — the form the rest of the layer asks in. */
     public double densityAtSector(long sectorX, long sectorY, long sectorZ) {
-        return densityAt(UniverseScale.lightYearsForCells(sectorX),
-                UniverseScale.lightYearsForCells(sectorY),
-                UniverseScale.lightYearsForCells(sectorZ));
+        return densityAt(laws.lightYearsForCells(sectorX),
+                laws.lightYearsForCells(sectorY),
+                laws.lightYearsForCells(sectorZ));
     }
 
     /** Whether a point is inside this nebula at all. */

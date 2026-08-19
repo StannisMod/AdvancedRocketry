@@ -36,9 +36,12 @@ public final class NebulaField {
     private static final int MAX_COLUMN_SAMPLES = 512;
 
     private final GalaxyGenConfig config;
+    /** The metric this field measures with — its schema's, not a global one. */
+    private final IUniverseLaws laws;
     private final ClusterField clusters;
 
-    public NebulaField(GalaxyGenConfig config, ClusterField clusters) {
+    public NebulaField(GalaxyGenConfig config, ClusterField clusters, IUniverseLaws laws) {
+        this.laws = (laws == null) ? UniverseLawsV0.INSTANCE : laws;
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
         this.clusters = clusters;
     }
@@ -67,16 +70,16 @@ public final class NebulaField {
 
         double spreadRoll = CellHash.norm(CellHash.of(seed, cluster.centreSuperX(),
                 cluster.centreSuperY(), cluster.centreSuperZ(), SALT_NEBULA_SPREAD));
-        double clusterRadiusLy = UniverseScale.lightYearsForCells(
+        double clusterRadiusLy = laws.lightYearsForCells(
                 (double) cluster.radiusSuperCells() * config.minSpacing);
         double radiusLy = clusterRadiusLy * Nebula.spreadFor(spreadRoll);
 
         long s = config.minSpacing;
         return Optional.of(new Nebula(cluster, Nebula.appearanceFor(gas),
-                UniverseScale.lightYearsForCells((double) cluster.centreSuperX() * s),
-                UniverseScale.lightYearsForCells((double) cluster.centreSuperY() * s),
-                UniverseScale.lightYearsForCells((double) cluster.centreSuperZ() * s),
-                radiusLy, gas));
+                laws.lightYearsForCells((double) cluster.centreSuperX() * s),
+                laws.lightYearsForCells((double) cluster.centreSuperY() * s),
+                laws.lightYearsForCells((double) cluster.centreSuperZ() * s),
+                radiusLy, gas, laws));
     }
 
     /** The cloud covering this coarse super-cell, if a cluster covers it and still has one. */
@@ -151,12 +154,12 @@ public final class NebulaField {
         }
         GalacticCoord a = from.cellCentre();
         GalacticCoord b = to.cellCentre();
-        double ax = UniverseScale.lightYearsForCells(a.sectorX());
-        double ay = UniverseScale.lightYearsForCells(a.sectorY());
-        double az = UniverseScale.lightYearsForCells(a.sectorZ());
-        double bx = UniverseScale.lightYearsForCells(b.sectorX());
-        double by = UniverseScale.lightYearsForCells(b.sectorY());
-        double bz = UniverseScale.lightYearsForCells(b.sectorZ());
+        double ax = laws.lightYearsForCells(a.sectorX());
+        double ay = laws.lightYearsForCells(a.sectorY());
+        double az = laws.lightYearsForCells(a.sectorZ());
+        double bx = laws.lightYearsForCells(b.sectorX());
+        double by = laws.lightYearsForCells(b.sectorY());
+        double bz = laws.lightYearsForCells(b.sectorZ());
         double dx = bx - ax, dy = by - ay, dz = bz - az;
         double lengthLy = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (lengthLy <= 0d) {
@@ -180,9 +183,9 @@ public final class NebulaField {
     /** The density at a point stated in light years — what the line integral samples. */
     public double densityAtLightYears(long seed, Galaxy galaxy, double xLy, double yLy, double zLy) {
         long s = config.minSpacing;
-        long sectorX = UniverseScale.cellsAt(xLy);
-        long sectorY = UniverseScale.cellsAt(yLy);
-        long sectorZ = UniverseScale.cellsAt(zLy);
+        long sectorX = laws.cellsAt(xLy);
+        long sectorY = laws.cellsAt(yLy);
+        long sectorZ = laws.cellsAt(zLy);
         Optional<Nebula> nebula = nebulaAt(seed, galaxy, Math.floorDiv(sectorX, s),
                 Math.floorDiv(sectorY, s), Math.floorDiv(sectorZ, s));
         return nebula.isPresent() ? nebula.get().densityAt(xLy, yLy, zLy) : 0d;

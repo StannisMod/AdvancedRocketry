@@ -15,6 +15,7 @@ import zmaster587.advancedRocketry.space.SkyNebulaeProducer;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.Nebula;
 import zmaster587.advancedRocketry.universe.PlanetarySystem;
+import zmaster587.advancedRocketry.universe.UniverseLawsV0;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -35,7 +36,7 @@ public class SkyNebulaeProducerTest {
 
     /** A cloud seated at a stated point, with a stated size. The cluster behind it is not read here. */
     private static Nebula cloudAt(double xLy, double yLy, double zLy, double radiusLy) {
-        return new Nebula(null, Nebula.Appearance.EMISSION, xLy, yLy, zLy, radiusLy, 0.8d);
+        return new Nebula(null, Nebula.Appearance.EMISSION, xLy, yLy, zLy, radiusLy, 0.8d, UniverseLawsV0.INSTANCE);
     }
 
     /** A generator that answers with exactly these clouds, whatever is asked. */
@@ -158,7 +159,7 @@ public class SkyNebulaeProducerTest {
     public void aCloudCarriesItsAppearanceAndItsThickness() {
         // The two fields the renderer branches on: the age sequence decides the tint, and a dark
         // cloud is the one that must be drawn OVER the stars rather than behind them.
-        Nebula dark = new Nebula(null, Nebula.Appearance.DARK, 0d, 0d, 150d, 40d, 0.6d);
+        Nebula dark = new Nebula(null, Nebula.Appearance.DARK, 0d, 0d, 150d, 40d, 0.6d, UniverseLawsV0.INSTANCE);
         RenderNebula drawn = SkyNebulaeProducer.renderOf(dark, 0d, 0d, 0d);
 
         assertNotNull(drawn);

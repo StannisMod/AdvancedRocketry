@@ -91,9 +91,12 @@ public final class SkyNebulaeProducer {
             return Collections.emptyList();
         }
         GalacticCoord c = cell.cellCentre();
-        double observerX = UniverseScale.lightYearsForCells(c.sectorX());
-        double observerY = UniverseScale.lightYearsForCells(c.sectorY());
-        double observerZ = UniverseScale.lightYearsForCells(c.sectorZ());
+        // Measured by the generator that produced these clouds, not by a global: a sky drawn under
+        // one schema's metric and clouds seated under another's would not line up.
+        zmaster587.advancedRocketry.universe.IUniverseLaws laws = generator.laws();
+        double observerX = laws.lightYearsForCells(c.sectorX());
+        double observerY = laws.lightYearsForCells(c.sectorY());
+        double observerZ = laws.lightYearsForCells(c.sectorZ());
 
         List<RenderNebula> out = new ArrayList<>();
         for (Nebula nebula : found) {

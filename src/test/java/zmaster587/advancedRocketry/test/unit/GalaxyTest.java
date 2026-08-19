@@ -7,6 +7,7 @@ import zmaster587.advancedRocketry.universe.Cosmology;
 import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.LightYearVector;
+import zmaster587.advancedRocketry.universe.UniverseLawsV0;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -45,13 +46,13 @@ public class GalaxyTest {
     /** A galaxy with its plane on the world's XZ plane, so a test can reason in plain coordinates. */
     private static Galaxy flat(GalaxyGenConfig.GalaxyType type) {
         return new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN, type, RADIUS, 0d, 0d,
-                Math.toRadians(20d), 0d, LightYearVector.ZERO);
+                Math.toRadians(20d), 0d, LightYearVector.ZERO, UniverseLawsV0.INSTANCE);
     }
 
     /** The same galaxy, seated away from the origin and moving — the subject of the R3 laws. */
     private static Galaxy adrift(GalacticCoord seat, LightYearVector velocity) {
         return new Galaxy(1L, 0L, 0L, 0, seat, smoothDisc(), RADIUS, 0d, 0d, Math.toRadians(20d), 0d,
-                velocity);
+                velocity, UniverseLawsV0.INSTANCE);
     }
 
     @Test
@@ -131,9 +132,9 @@ public class GalaxyTest {
         // Two galaxies alike but for their orientation must be the same object seen from elsewhere:
         // the density a point sees depends on where it is IN THE GALAXY, never on the world axes.
         Galaxy flat = new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN, smoothDisc(), RADIUS, 0d, 0d,
-                Math.toRadians(20d), 0d, LightYearVector.ZERO);
+                Math.toRadians(20d), 0d, LightYearVector.ZERO, UniverseLawsV0.INSTANCE);
         Galaxy tilted = new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN, smoothDisc(), RADIUS,
-                Math.toRadians(90d), 0d, Math.toRadians(20d), 0d, LightYearVector.ZERO);
+                Math.toRadians(90d), 0d, Math.toRadians(20d), 0d, LightYearVector.ZERO, UniverseLawsV0.INSTANCE);
         // The tilted galaxy's pole is +X, so ITS plane is the world's YZ plane.
         double r = RADIUS * 0.3d;
         assertEquals("the same point of the galaxy must read the same however it is oriented",
@@ -256,7 +257,7 @@ public class GalaxyTest {
                 LightYearVector.of(3e-10d, -1e-10d, 2e-10d));
         long t = 12_345_678L;
         double a = Cosmology.scaleFactorAt(t);
-        LightYearVector expected = LightYearVector.ofCell(g.centre())
+        LightYearVector expected = LightYearVector.ofCell(g.centre(), UniverseLawsV0.INSTANCE)
                 .plus(g.peculiarVelocity().scale((double) t)).scale(a);
         assertEquals(expected.x(), g.centreAt(t).x(), Math.abs(expected.x()) * 1e-12d);
         assertEquals(expected.y(), g.centreAt(t).y(), 1e-9d);

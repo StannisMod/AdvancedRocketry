@@ -5192,7 +5192,8 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             zmaster587.advancedRocketry.universe.BodyProfile p =
-                    zmaster587.advancedRocketry.universe.PlanetDerivation.derive(reg.worldSeed(),
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator()
+                            .derivation().derive(reg.worldSeed(),
                             anchor.get(), target.name(), variant, star.get(),
                             target.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.MOON,
                             target.orbitalDistance());

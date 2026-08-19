@@ -108,6 +108,45 @@ public interface IGalaxyGenerator {
     }
 
     /**
+     * The tunables this generator was built from, when it has any — what a {@code <galaxyGen>} element
+     * would have to say to reproduce it, and what the save fingerprints so a later load can tell that
+     * the pack has been retuned underneath it.
+     *
+     * <p>Empty is a real answer and not a stub: a generator with no parameters (the authored-anchors-only
+     * default, or one an addon fabricates from something other than this config) has nothing to write
+     * back, and a pack file that carried a {@code <galaxyGen>} section for it would describe a generator
+     * nobody installed.
+     */
+    default Optional<GalaxyGenConfig> tuning() {
+        return Optional.empty();
+    }
+
+    /**
+     * How this generator's bodies are derived — the half of a world model that says WHAT a body is,
+     * where {@link #systemAt} says where it is.
+     *
+     * <p>It hangs here rather than on the schema because the generator is what a schema selects, so a
+     * version picks a derivation by picking a generator, and anything outside the universe layer that
+     * needs a body's physics asks the generator that produced the body. The default is version 1's,
+     * which is the right answer for a generator that does not derive anything of its own.
+     */
+    default IBodyDerivation derivation() {
+        return BodyDerivationV0.INSTANCE;
+    }
+
+    /**
+     * The metric and expansion this generator measures with — how many cells a light year is, and how
+     * the whole thing grows.
+     *
+     * <p>Beside {@link #derivation()} and for the same reason: a schema selects the laws by selecting a
+     * generator, and anything outside this package that must convert a length in THIS world's terms
+     * asks the world's generator rather than a global. The default is version 1's.
+     */
+    default IUniverseLaws laws() {
+        return UniverseLawsV0.INSTANCE;
+    }
+
+    /**
      * The cell an authored anchor declared against {@code key} is measured FROM, or empty when this
      * generator has no galaxies.
      *

@@ -58,7 +58,16 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     public static final String STORAGE_KEY = "advancedrocketry_universe";
 
     // v3: + durable cell names (derived once, then persisted and never re-derived) and their owning system.
-    private static final int NBT_VERSION = 3;
+    // v4: + the world-model stamp (schema version + galaxy-config fingerprint).
+    private static final int NBT_VERSION = 4;
+
+    /**
+      * A save with no world-model stamp: a fresh world, or one written before the stamp existed.
+      *
+      * <p>Negative on purpose. Version numbers start at ZERO — the alpha — so a sentinel of 0 would have
+      * read every alpha world as unstamped and silently re-adopted whatever the build shipped.
+      */
+    public static final int UNSTAMPED = -1;
 
     // A self-contained logger rather than AdvancedRocketry.logger: loading the mod class triggers Forge
     // bootstrap (FluidRegistry.enableUniversalBucket), which would break pure unit tests of this registry.
@@ -91,6 +100,45 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     private final Map<Integer, RecordedName> namesByDim = new HashMap<>();
     /** Latch: authored anchors drain into the store exactly once (unless a config XML reset is forced). */
     private boolean anchorsSeeded = false;
+    /**
+     * The world model this save was generated under — {@link UniverseSchema#version()}, or
+     * {@link #UNSTAMPED} for a world made before the stamp existed.
+     *
+     * <p>Deliberately SEPARATE from {@link #NBT_VERSION}: that one is the layout of these tags and
+     * moves whenever a field is added here, while this one is the identity of the universe those tags
+     * describe. A save whose tag layout is a version behind still describes the same sky; a save whose
+     * schema is a version behind describes a different one.
+     */
+    private int schemaVersion = UNSTAMPED;
+    /**
+     * The fingerprint of the {@code <galaxyGen>} configuration this save was generated under. The
+     * schema decides HOW space is derived; these knobs decide the particular universe it derives, and
+     * an edit to either one moves every system nobody has touched yet.
+     */
+    private String configFingerprint = "";
+    /**
+     * The fingerprint of the LAWS this save was generated under — the metric and the expansion.
+     *
+     * <p>Kept apart from the configuration's because the two are edited by different people for
+     * different reasons: the configuration is the pack author's, the laws are the mod's. Sharing one
+     * stamp would let a refusal blame the wrong one, and the remedies are not the same.
+     */
+    private String lawsFingerprint = "";
+    /**
+     * Set by an operator's upgrade, consumed by the NEXT load: permission, given once, to accept a
+     * {@code <galaxyGen>} that has changed.
+     *
+     * <p>It exists because the refusal and its remedy cannot both live inside a running server. A
+     * fingerprint is one-way, so a save whose configuration has changed cannot be opened under the
+     * universe it was made with — the load has to refuse — and a command inside a server that refuses
+     * to start cannot be typed. So the acceptance is armed while the world still loads, which is also
+     * the only moment crystals can be read and the systems on them frozen, and it is spent at the boot
+     * after.
+     *
+     * <p>Consumed exactly once, and only when the configuration actually differs, so an accidental
+     * edit a year later is refused like any other.
+     */
+    private boolean upgradeArmed = false;
 
     // ─── Transient, re-derived per load ───────────────────────────────────────
     /** The world seed fed to the generator; set by {@link #bindWorldSeed}, never persisted. */
@@ -109,6 +157,13 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     // supply fabricated systems.
     private static volatile IntFunction<StellarBody> starLookup = UniverseRegistry::lookupCatalogueStar;
     private static Map<Integer, GalacticAnchor> pendingAnchors = new HashMap<>();
+    /**
+     * The pack's {@code <galaxyGen>} configuration for this session, staged while dimensions load and
+     * paired with the save's schema stamp at {@link #populate}. Null means the pack declares none.
+     */
+    private static volatile GalaxyGenConfig packGalaxyConfig = null;
+    /** The model {@link #populate} put in force for this session; null until it has run. */
+    private static volatile UniverseSchema activeSchema = null;
     private static boolean pendingReset = false;
 
     /**
@@ -1011,6 +1066,212 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         return worldSeed;
     }
 
+    // ─── The world-model stamp (schema version + config fingerprint) ───────────
+
+    /** The world model this save was generated under, or {@link #UNSTAMPED}. */
+    public int schemaVersion() {
+        return schemaVersion;
+    }
+
+    /**
+     * The world model in force, or empty before {@link #populate} has resolved one.
+     *
+     * <p>What a caller usually wants this for is {@link UniverseSchema#isStable()} — whether the world
+     * it is about to touch was generated by an ALPHA model that may be replaced rather than carried
+     * forward.
+     */
+    public static Optional<UniverseSchema> activeSchema() {
+        return Optional.ofNullable(activeSchema);
+    }
+
+    /** How many procedural systems this save has frozen — what an upgrade would carry over untouched. */
+    public int pinnedSystemCount() {
+        return pinnedSystems.size();
+    }
+
+    /** The galaxy-config fingerprint this save was generated under; empty when unstamped. */
+    public String configFingerprint() {
+        return configFingerprint;
+    }
+
+    /** The laws fingerprint (metric + expansion) this save was generated under; empty when unstamped. */
+    public String lawsFingerprint() {
+        return lawsFingerprint;
+    }
+
+    /**
+     * The identity of a set of laws, taken by MEASURING them rather than by listing their constants.
+     *
+     * <p>Fixed inputs through every conversion, plus the expansion at fixed ticks, hashed. Two reasons
+     * it is done this way. It works for any implementation, so a schema version 2 with its own metric
+     * needs no fingerprinting code of its own. And it catches what a declaration cannot: an
+     * implementation whose internal constant moved while whatever list it publishes stayed the same.
+     */
+    public static String lawsFingerprintOf(IUniverseLaws laws) {
+        StringBuilder sb = new StringBuilder(256);
+        sb.append("laws1;");
+        double[] lightYears = {0.1d, 1d, 4.23d, 100d, 50_000d};
+        for (double ly : lightYears) {
+            sb.append(laws.cellsForLightYears(ly)).append(',').append(laws.cellsAt(ly)).append(';');
+        }
+        long[] cells = {1L, 1_000_000L, 5_002_361L};
+        for (long c : cells) {
+            sb.append(Fingerprint.bits(laws.lightYearsForCells(c))).append(',')
+                    .append(Fingerprint.bits(laws.orbitUnitsForCells(c))).append(',')
+                    .append(laws.seatMarginCells(c)).append(';');
+        }
+        sb.append(Fingerprint.bits(laws.lightYearsPerTick(1d))).append(';');
+        sb.append(laws.cellsForOrbitUnits(1d)).append(';');
+        sb.append(Fingerprint.bits(laws.retinueReachLy(1d))).append(';');
+        for (long tick : new long[]{0L, 24_000L, 24_000_000L}) {
+            sb.append(Fingerprint.bits(laws.scaleFactorAt(tick))).append(';');
+        }
+        sb.append(laws.driftHorizonTicks());
+        return Fingerprint.hex16(sb.toString());
+    }
+
+    /** What THIS build's newest schema measures with — what a fresh world is stamped against. */
+    public static String currentLawsFingerprint() {
+        return lawsFingerprintOf(UniverseSchemas.current().laws());
+    }
+
+    /**
+     * Decide which world model this save must be read under, and stamp it if it has none yet.
+     *
+     * <p><b>The version comes from the SAVE, never from the pack.</b> That inversion is the whole
+     * mechanism: a world generated under schema 1 keeps being derived by schema 1 after the mod ships
+     * schema 2, so the mod is free to move — new mechanics, new blocks, new balance — while the sky a
+     * player has already charted stays where he charted it. Only {@code upgrade} moves a world.
+     *
+     * <p><b>Two refusals, and both are recoverable from outside the game.</b> A stamp naming a version
+     * this build does not carry (a world from a newer jar, or one whose version was dropped) and a
+     * configuration that has been edited since the world was made. Neither can be honoured by
+     * substituting something close: continuing would answer a different universe under an unchanged
+     * save, and the player would find out by flying somewhere his notes describe.
+     *
+     * <p>Note that a pack edit which merely ADDS — one more authored anchor naming a new galaxy, one
+     * more star archetype — changes the fingerprint like any other, and that is correct rather than
+     * strict: a reserved galaxy is a galaxy forced into a cell that had its own contents, and one more
+     * weight moves every draw that walks the table.
+     *
+     * @param config the pack's {@code <galaxyGen>} configuration, or {@code null} for an
+     *               authored-anchors-only universe
+     * @return the schema to install for this world
+     * @throws UniverseSchemaMismatchException when the save cannot be honoured by this build
+     */
+    public UniverseSchema reconcileSchema(GalaxyGenConfig config) {
+        String fingerprint = fingerprintOf(config);
+        if (schemaVersion == UNSTAMPED) {
+            UniverseSchema schema = UniverseSchemas.current();
+            if (!byCell.isEmpty() || !pinnedSystems.isEmpty()) {
+                // A world with content but no stamp predates the stamp. Nothing records what generated
+                // it, so adopting the current model is the only move available — said out loud, because
+                // it is the one case where this class cannot prove the sky is unchanged.
+                LOGGER.warn("Universe save carries content but no world-model stamp; adopting schema {} "
+                        + "and configuration {}. If this world was generated by a different build, its "
+                        + "untouched systems may have moved.", schema.version(), fingerprint);
+            }
+            stampSchema(schema.version(), fingerprint);
+            return schema;
+        }
+        Optional<UniverseSchema> saved = UniverseSchemas.of(schemaVersion);
+        if (!saved.isPresent()) {
+            throw new UniverseSchemaMismatchException(
+                    "This world was generated under universe schema " + schemaVersion
+                            + ", which this build does not carry (it has " + UniverseSchemas.released()
+                            + "). Install a build that carries schema " + schemaVersion
+                            + " to open this world.");
+        }
+        // Measured against the laws of the schema THIS SAVE is owed, not the newest ones. A build that
+        // ships a new metric ships it as a new schema version, and this world simply keeps using its own
+        // — which is why a mismatch here does not mean "the mod moved on". It means schema
+        // %d's laws in this jar are not the ones that made this world, i.e. a released version was
+        // edited in place. That is a developer error, and there is nothing a player or an operator can
+        // do about it, so it is not something an upgrade may accept.
+        String laws = lawsFingerprintOf(saved.get().laws());
+        if (!lawsFingerprint.isEmpty() && !lawsFingerprint.equals(laws)) {
+            throw new UniverseSchemaMismatchException(
+                    "Universe schema " + schemaVersion + " in this build does not measure the way it did "
+                            + "when this world was generated: the world was made under laws "
+                            + lawsFingerprint + " and this build's schema " + schemaVersion + " states "
+                            + laws + ". A released schema's metric and expansion may never change — a "
+                            + "changed metric ships as a NEW schema version, which old worlds simply do "
+                            + "not use. This build is broken; install one whose schema " + schemaVersion
+                            + " is intact.");
+        }
+        if (!configFingerprint.equals(fingerprint)) {
+            if (upgradeArmed) {
+                // Permission was given last session, by an operator, on a world that was still loading
+                // — which is when the crystals could be read and their systems frozen. Spend it.
+                LOGGER.warn("Accepting the changed <galaxyGen> for this world: {} -> {}. This was armed "
+                        + "by an operator's upgrade. Systems already frozen keep exactly what they held; "
+                        + "everything else is re-derived from here.", configFingerprint, fingerprint);
+                upgradeArmed = false;
+                stampSchema(UniverseSchemas.CURRENT, fingerprint);
+                return UniverseSchemas.current();
+            }
+            throw new UniverseSchemaMismatchException(
+                    "The <galaxyGen> configuration has changed since this world was generated: it was "
+                            + "made under " + configFingerprint + " and this pack states " + fingerprint
+                            + ". Every system nobody has visited yet would move, so this world will not "
+                            + "open under it. "
+                            + "To go back: restore the previous <galaxyGen> and start again. "
+                            + "To accept the change: restore the previous <galaxyGen>, start, run "
+                            + "\"/stellurgy universe upgrade confirm\" (that freezes every system anyone "
+                            + "has seen, including the addresses on the memory crystals of players who "
+                            + "are online), stop, put the new configuration back, and start again.");
+        }
+        return saved.get();
+    }
+
+    /**
+     * Accept {@code config} (and the current schema) as this world's model from now on — the write half
+     * of the upgrade, after everything already seen has been pinned.
+     *
+     * @return the schema now in force
+     */
+    /**
+     * Whether this world is holding an operator's one-shot permission to accept a changed
+     * {@code <galaxyGen>} at its next load.
+     */
+    public boolean isUpgradeArmed() {
+        return upgradeArmed;
+    }
+
+    /**
+     * Give that permission — the half of an upgrade that a running server can perform for a change it
+     * cannot see yet. It is spent by the next load, and only if the configuration has actually moved.
+     */
+    public void armUpgrade() {
+        if (!upgradeArmed) {
+            upgradeArmed = true;
+            markDirty();
+        }
+    }
+
+    public UniverseSchema adoptSchema(GalaxyGenConfig config) {
+        UniverseSchema schema = UniverseSchemas.current();
+        stampSchema(schema.version(), fingerprintOf(config));
+        return schema;
+    }
+
+    /** The fingerprint a {@code null} (authored-anchors-only) configuration has its own name for. */
+    public static String fingerprintOf(GalaxyGenConfig config) {
+        return (config == null) ? GalaxyGenConfig.noGeneratorFingerprint() : config.fingerprint();
+    }
+
+    private void stampSchema(int version, String fingerprint) {
+        String laws = currentLawsFingerprint();
+        if (schemaVersion == version && configFingerprint.equals(fingerprint)
+                && lawsFingerprint.equals(laws)) {
+            return;
+        }
+        schemaVersion = version;
+        configFingerprint = fingerprint;
+        lawsFingerprint = laws;
+        markDirty();
+    }
+
     // ─── Static staging + population (server lifecycle) ────────────────────────
 
     /**
@@ -1020,6 +1281,26 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     public static void stageAnchors(Map<Integer, GalacticAnchor> anchors, boolean reset) {
         pendingAnchors = (anchors == null) ? new HashMap<Integer, GalacticAnchor>() : new HashMap<>(anchors);
         pendingReset = reset;
+    }
+
+    /**
+     * Hand over the pack's {@code <galaxyGen>} configuration, read while dimensions load — before the
+     * save is reachable, so before anything can know which model this world is owed.
+     *
+     * <p>The pack states the KNOBS; the save states the VERSION. {@link #populate} puts the two together
+     * and installs the generator, which is why the generator is no longer built at the XML site: doing
+     * it there would make the pack the authority on a question that belongs to the world.
+     *
+     * <p>It is kept for the session rather than drained, because an upgrade run later needs the same
+     * configuration to stamp.
+     */
+    public static void stageGalaxyConfig(GalaxyGenConfig config) {
+        packGalaxyConfig = config;
+    }
+
+    /** The pack's {@code <galaxyGen>} configuration for this session, or {@code null} if it declares none. */
+    public static GalaxyGenConfig packGalaxyConfig() {
+        return packGalaxyConfig;
     }
 
     /**
@@ -1037,6 +1318,23 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         }
         if (overworld != null) {
             reg.bindWorldSeed(overworld.getSeed());
+        }
+        // Raise the world model from the SAVE and install its generator, BEFORE anything derives.
+        // applyAnchors resolves declared positions through the generator, so an anchor placed under the
+        // wrong model would be placed wrongly and then persisted.
+        UniverseSchema schema = reg.reconcileSchema(packGalaxyConfig);
+        activeSchema = schema;
+        setGenerator(schema.generator(packGalaxyConfig));
+        LOGGER.info("Universe schema {} ({}) in force, configuration {}", schema.version(),
+                schema.label(), reg.configFingerprint());
+        if (!schema.isStable()) {
+            // Loud, and at WARN, because it is a statement about the FUTURE of this save rather than
+            // about anything wrong with it now: an alpha model may be replaced outright, and a world
+            // built on one is not promised a way forward.
+            LOGGER.warn("Universe generator {} is an ALPHA. Its leading zero means the world model may "
+                    + "be REPLACED in a later release rather than extended: worlds generated under it "
+                    + "are not guaranteed to be carried forward, and only what has already been seen is "
+                    + "frozen. Do not start a world you intend to keep for years on it.", schema.label());
         }
         reg.applyAnchors(pendingAnchors, pendingReset);
         reg.assignFallbackCoords(DimensionManager.getInstance().getStars());
@@ -1106,6 +1404,14 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         namesByDim.clear();
         anchorsBySuper = null;
         anchorsSeeded = nbt.getBoolean("anchorsSeeded");
+        // Read through hasKey, NEVER through the value alone. NBT answers 0 for an absent integer, and
+        // 0 is a real version number — the alpha — so taking the default would report every stampless
+        // save as "generated by the alpha" and quietly skip the adoption that a fresh world is owed.
+        // This is also why UNSTAMPED is negative: no version is.
+        schemaVersion = nbt.hasKey("schemaVersion") ? nbt.getInteger("schemaVersion") : UNSTAMPED;
+        configFingerprint = nbt.getString("galaxyConfigFingerprint");
+        lawsFingerprint = nbt.getString("universeLawsFingerprint");
+        upgradeArmed = nbt.getBoolean("universeUpgradeArmed");
         NBTTagList names = nbt.getTagList("cellNames", 10 /* NBTTagCompound */);
         for (int i = 0; i < names.tagCount(); i++) {
             NBTTagCompound e = names.getCompoundTagAt(i);
@@ -1157,6 +1463,10 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         nbt.setInteger("version", NBT_VERSION);
         nbt.setBoolean("anchorsSeeded", anchorsSeeded);
+        nbt.setInteger("schemaVersion", schemaVersion);
+        nbt.setString("galaxyConfigFingerprint", configFingerprint);
+        nbt.setString("universeLawsFingerprint", lawsFingerprint);
+        nbt.setBoolean("universeUpgradeArmed", upgradeArmed);
         NBTTagList list = new NBTTagList();
         for (Map.Entry<Integer, GalacticCoord> e : byStar.entrySet()) {
             NBTTagCompound entry = new NBTTagCompound();

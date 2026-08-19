@@ -291,8 +291,82 @@ public final class GalaxyGenConfig {
      * they name are folded in here rather than parsed twice.
      */
     public GalaxyGenConfig withReservedGalaxies(List<GalaxyKey> keys) {
+        // The rogue tuning is carried over EXPLICITLY. This runs after the catalogue walk, i.e. after
+        // <galaxyGen> has already been read, so going through the public constructor — which resets the
+        // unbound population to the measured default — would silently discard whatever the pack
+        // authored about rogues for every pack that also names a galaxy.
         return new GalaxyGenConfig(minSpacing, density, galaxySpacing, galaxyDensity, starTypes,
-                galaxyTypes, keys);
+                galaxyTypes, keys).withRogueTuning(rogue);
+    }
+
+    /**
+     * A stable digest of every knob in this configuration — the identity of the universe these
+     * parameters describe.
+     *
+     * <p>What it is FOR: a save records the fingerprint of the configuration it was generated under,
+     * and a later load compares. The generator is a pure function of {@code (seed, cell)} <i>and these
+     * numbers</i>, so a pack that retunes one of them is not tweaking balance — it is describing a
+     * different universe, in which every unpinned system moves. That is invisible without a stamp, and
+     * a moved system is discovered by a player arriving somewhere his notes do not match.</p>
+     *
+     * <p>Stable across JVMs and runs by construction: no {@link Object#hashCode()} anywhere (identity
+     * hashes and {@code String.hashCode} are not a promise across versions), doubles rendered through
+     * {@link Double#doubleToLongBits} rather than formatted (no locale, no rounding), and every list
+     * walked in its declared order — order IS part of the identity, because a weighted table's order
+     * decides which archetype a given hash lands on.</p>
+     *
+     * @return 16 lowercase hex characters of SHA-256 over the canonical rendering — enough that a
+     *         collision is not something a pack author will meet, short enough to read out of a log
+     */
+    public String fingerprint() {
+        StringBuilder sb = new StringBuilder(512);
+        sb.append("v1;");
+        sb.append("minSpacing=").append(minSpacing).append(';');
+        sb.append("density=").append(bits(density)).append(';');
+        sb.append("galaxySpacing=").append(galaxySpacing).append(';');
+        sb.append("galaxyDensity=").append(bits(galaxyDensity)).append(';');
+        for (StarType t : starTypes) {
+            sb.append("star[").append(t.temperature).append(',').append(bits(t.minSize)).append(',')
+                    .append(bits(t.maxSize)).append(',').append(t.weight).append("];");
+        }
+        for (GalaxyType t : galaxyTypes) {
+            sb.append("galaxy[").append(t.name).append(',').append(t.profile).append(',')
+                    .append(bits(t.minRadiusLy)).append(',').append(bits(t.maxRadiusLy)).append(',')
+                    .append(bits(t.scaleHeightRatio)).append(',').append(t.armCount).append(',')
+                    .append(bits(t.rotationSpeedKmS)).append(',').append(bits(t.coreRadiusFraction))
+                    .append(',').append(t.minSatellites).append(',').append(t.maxSatellites)
+                    .append(',').append(t.weight).append("];");
+        }
+        for (ClusterType t : clusterTypes) {
+            sb.append("cluster[").append(t.name).append(',').append(t.subdivision).append(',')
+                    .append(bits(t.minRadiusLy)).append(',').append(bits(t.maxRadiusLy)).append(',')
+                    .append(bits(t.nebulaFraction)).append(',').append(t.selfBound).append(',')
+                    .append(t.weight).append("];");
+        }
+        for (GalaxyKey key : reservedGalaxies) {
+            sb.append("reserved[").append(key.gx()).append(',').append(key.gy()).append(',')
+                    .append(key.gz()).append("];");
+        }
+        sb.append("rogue[").append(bits(rogue.abundance)).append(',').append(bits(rogue.giantFraction))
+                .append(',').append(bits(rogue.ejectaFalloff)).append(']');
+        for (RogueType t : rogue.types) {
+            sb.append("rogueType[").append(t.name).append(',').append(t.primaryKind).append(',')
+                    .append(t.weight).append("];");
+        }
+        return digest(sb.toString());
+    }
+
+    /** The fingerprint of "no procedural generator at all" — an authored-anchors-only universe. */
+    public static String noGeneratorFingerprint() {
+        return digest("none");
+    }
+
+    private static String bits(double v) {
+        return Fingerprint.bits(v);
+    }
+
+    private static String digest(String canonical) {
+        return Fingerprint.hex16(canonical);
     }
 
     /** A sparse, strongly-clustered default galaxy. */

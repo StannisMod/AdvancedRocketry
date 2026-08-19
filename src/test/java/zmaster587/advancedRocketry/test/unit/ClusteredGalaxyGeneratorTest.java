@@ -2,7 +2,14 @@ package zmaster587.advancedRocketry.test.unit;
 
 import org.junit.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -11,19 +18,28 @@ import java.util.Optional;
 import java.util.Set;
 
 import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.universe.BodyDerivationV0;
+import zmaster587.advancedRocketry.universe.BodyProfile;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.Cosmology;
 import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.IBodyDerivation;
+import zmaster587.advancedRocketry.universe.PlanetDerivation;
 import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.UniverseScale;
+import zmaster587.advancedRocketry.universe.UniverseSchemas;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Contract tests for the deterministic clustered galaxy generator. Pure-JUnit; no MC bootstrap.
@@ -698,5 +714,378 @@ public class ClusteredGalaxyGeneratorTest {
             }
         }
         return n;
+    }
+
+    // ── the derivation is part of the world model ─────────────────────────────
+
+    /** A derivation that differs from version 1 in one law, and delegates the rest. */
+    private static final class ShiftedDerivation implements IBodyDerivation {
+        private final IBodyDerivation base = BodyDerivationV0.INSTANCE;
+
+        @Override
+        public double metallicityOf(long seed, GalacticCoord anchor) {
+            return base.metallicityOf(seed, anchor);
+        }
+
+        @Override
+        public int referenceDistance(zmaster587.advancedRocketry.api.dimension.solar.StellarBody star) {
+            return base.referenceDistance(star);
+        }
+
+        @Override
+        public int orbitalDistanceOf(long seed, GalacticCoord anchor, int index, int count,
+                                     zmaster587.advancedRocketry.api.dimension.solar.StellarBody star) {
+            return base.orbitalDistanceOf(seed, anchor, index, count, star) + 7;
+        }
+
+        @Override
+        public double innerOrbit(zmaster587.advancedRocketry.api.dimension.solar.StellarBody star) {
+            return base.innerOrbit(star);
+        }
+
+        @Override
+        public double outerOrbit(zmaster587.advancedRocketry.api.dimension.solar.StellarBody star) {
+            return base.outerOrbit(star);
+        }
+
+        @Override
+        public int bareTemperature(zmaster587.advancedRocketry.api.dimension.solar.StellarBody star,
+                                   int orbitalDistance) {
+            return base.bareTemperature(star, orbitalDistance);
+        }
+
+        @Override
+        public boolean tidallyLockedAt(zmaster587.advancedRocketry.api.dimension.solar.StellarBody star,
+                                       int orbitalDistance) {
+            return base.tidallyLockedAt(star, orbitalDistance);
+        }
+
+        @Override
+        public boolean isGiantAt(long seed, GalacticCoord anchor, int index, int bareTemperatureK) {
+            return base.isGiantAt(seed, anchor, index, bareTemperatureK);
+        }
+
+        @Override
+        public BodyProfile derive(long seed, GalacticCoord anchor, GalacticCoord bodyCell, int variant,
+                                  zmaster587.advancedRocketry.api.dimension.solar.StellarBody star,
+                                  boolean moon, int orbitalDistance) {
+            return base.derive(seed, anchor, bodyCell, variant, star, moon, orbitalDistance);
+        }
+
+        @Override
+        public BodyProfile deriveRogue(long seed, GalacticCoord bodyCell, int variant,
+                                       double giantFraction) {
+            return base.deriveRogue(seed, bodyCell, variant, giantFraction);
+        }
+
+        @Override
+        public int residualTemperature(double massEarths, double radiusEarths) {
+            return base.residualTemperature(massEarths, radiusEarths);
+        }
+    }
+
+    @Test
+    public void aGeneratorDerivesItsBodiesThroughTheDerivationItWasGiven() {
+        // The point of the seam: a later schema can change what a body IS while the placement stands.
+        // If this passes with an unused parameter somewhere, the seam is decoration.
+        GalaxyGenConfig config = defaultsCfg();
+        ClusteredGalaxyGenerator stock = new ClusteredGalaxyGenerator(config);
+        ClusteredGalaxyGenerator shifted = new ClusteredGalaxyGenerator(config, new ShiftedDerivation());
+
+        GalacticCoord anchor = null;
+        for (int i = 0; i < 64 && anchor == null; i++) {
+            GalacticCoord probe = GalacticCoord.ofSectorLocal((long) i * config.minSpacing, 0, 0, 0, 0, 0);
+            java.util.Optional<GalacticCoord> found = stock.anchorAt(SEED, probe);
+            if (found.isPresent() && !stock.bodiesFor(SEED, found.get()).isEmpty()) {
+                anchor = found.get();
+            }
+        }
+        assertTrue("arrangement: a system with bodies must be found near the origin", anchor != null);
+
+        List<SystemBody> stockBodies = stock.bodiesFor(SEED, anchor);
+        List<SystemBody> shiftedBodies = shifted.bodiesFor(SEED, anchor);
+
+        // The retinue does not merely change VALUES, it changes SHAPE — a body's cell follows its
+        // orbital distance, so moving the orbit law moves which seats are claimed and how many fit.
+        // That is the strongest form of the claim being made here: the derivation is not a decoration
+        // on top of a fixed layout, it is part of what the world model IS, and it therefore has to
+        // travel with the schema version rather than with the jar.
+        assertNotEquals("a generator handed a different derivation must produce a different system — "
+                        + "otherwise the derivation is not reachable from the schema at all",
+                describe(stockBodies), describe(shiftedBodies));
+    }
+
+    /** A system as a comparable string: every body's cell, kind and orbit, in a stable order. */
+    private static String describe(List<SystemBody> bodies) {
+        List<String> lines = new ArrayList<>();
+        for (SystemBody b : bodies) {
+            lines.add(b.name().cellKey() + ':' + b.kind() + ':' + b.orbitalDistance());
+        }
+        Collections.sort(lines);
+        return lines.toString();
+    }
+
+    @Test
+    public void aGeneratorHandsOutTheDerivationItUses() {
+        // How everything outside this package reaches the world's derivation. Asking the class directly
+        // would pin version 1 forever, whatever schema the save is owed.
+        IBodyDerivation mine = new ShiftedDerivation();
+
+        assertSame("a generator must hand out the derivation it was built with",
+                mine, new ClusteredGalaxyGenerator(defaultsCfg(), mine).derivation());
+        assertSame("and the stock one hands out version 1's", BodyDerivationV0.INSTANCE,
+                new ClusteredGalaxyGenerator(defaultsCfg()).derivation());
+    }
+
+    // ── the golden corpus ─────────────────────────────────────────────────────
+
+    /**
+     * The released world model, rendered and compared byte for byte against a checked-in fixture.
+     *
+     * <p><b>This is not a regression test, it is a VERSION DECISION.</b> A save keeps what has been
+     * touched and re-derives everything else, so any change to what this renders moves systems in worlds
+     * that already exist. The fixture is what makes that visible before it ships:</p>
+     *
+     * <ul>
+     *   <li><b>No diff</b> — the world model is unchanged; the release is a minor one and existing saves
+     *       carry on under the same schema version.</li>
+     *   <li><b>A diff, on a version that has REACHED A RELEASE</b> — the world model has moved under
+     *       worlds that exist, so the change needs a NEW schema version registered in
+     *       {@code UniverseSchemas}, and this fixture is regenerated alongside it. Not a discussion:
+     *       a diff here IS the definition of a different universe.</li>
+     *   <li><b>A diff, on a version that has not shipped yet</b> — the version is edited IN PLACE and
+     *       the fixture regenerated with it. A model nobody outside the branch has ever generated a
+     *       world under owes nobody compatibility, and minting a version for it would fill the registry
+     *       with universes that never existed. <b>"Shipped" means merged to the release branch, not
+     *       landed on a feature branch.</b></li>
+     * </ul>
+     *
+     * <p>Regenerate deliberately, never to make a red test green:
+     * {@code ./gradlew testUnit -Dadvancedrocketry.universe.corpus.write=true}</p>
+     */
+    @Test
+    public void theGoldenCorpusIsByteIdentical() throws Exception {
+        byte[] rendered = UniverseCorpus.render().getBytes(StandardCharsets.UTF_8);
+
+        if (Boolean.getBoolean("advancedrocketry.universe.corpus.write")) {
+            File out = new File(UniverseCorpus.FIXTURE_PATH);
+            //noinspection ResultOfMethodCallIgnored
+            out.getParentFile().mkdirs();
+            byte[] tmp = rendered;
+            try (FileOutputStream fos = new FileOutputStream(out)) {
+                fos.write(tmp);
+            }
+            fail("corpus rewritten to " + out.getPath() + " (" + tmp.length + " bytes). This is a "
+                    + "DELIBERATE act: if the content changed, the world model changed, and the release "
+                    + "needs a new universe schema version. Re-run without the write flag.");
+        }
+
+        byte[] expected;
+        try (InputStream in = getClass().getResourceAsStream(UniverseCorpus.FIXTURE_RESOURCE)) {
+            assertNotNull("the golden corpus fixture is missing from the test resources: "
+                    + UniverseCorpus.FIXTURE_RESOURCE, in);
+            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = in.read(chunk)) > 0) {
+                buf.write(chunk, 0, read);
+            }
+            expected = buf.toByteArray();
+        }
+
+        if (!Arrays.equals(expected, rendered)) {
+            fail("THE WORLD MODEL HAS MOVED. " + firstDifference(
+                    new String(expected, StandardCharsets.UTF_8),
+                    new String(rendered, StandardCharsets.UTF_8))
+                    + "\nEvery system nobody has visited moves with it, in every save generated under "
+                    + "this version. If the change is NOT intended, this is the bug. If it is: a version "
+                    + "that has already reached a release needs a NEW schema version in UniverseSchemas "
+                    + "beside it, while a version that has not shipped yet is edited in place — it owes "
+                    + "nobody compatibility. Either way the fixture is regenerated deliberately, with "
+                    + "-Dadvancedrocketry.universe.corpus.write=true.");
+        }
+    }
+
+    /** The first line that differs, quoted — a byte offset alone says nothing about what moved. */
+    private static String firstDifference(String expected, String actual) {
+        String[] e = expected.split("\n", -1);
+        String[] a = actual.split("\n", -1);
+        for (int i = 0; i < Math.max(e.length, a.length); i++) {
+            String le = i < e.length ? e[i] : "<end of fixture>";
+            String la = i < a.length ? a[i] : "<end of rendering>";
+            if (!le.equals(la)) {
+                return "line " + (i + 1) + ":\n  fixture: " + le + "\n  now:     " + la;
+            }
+        }
+        return "the two differ in length only (" + expected.length() + " vs " + actual.length() + ")";
+    }
+
+    /**
+     * Renders the observable universe of a fixed set of seeds over a fixed region — the whole schema,
+     * not the generator alone.
+     *
+     * <p>Four members, and each is sampled where a change to it would show:</p>
+     * <ul>
+     *   <li>{@code IGalaxyGenerator} — which territories hold a system, its identity, and the cells its
+     *       bodies stand in;</li>
+     *   <li>{@code PlanetDerivation} — a profile derived at each body's real inputs. Deliberately a
+     *       SAMPLE at a fixed variant rather than a claim about what the generator built internally:
+     *       its purpose is to be a canary on the derivation, and a canary that reproduced the
+     *       generator's private choices would be pinning implementation instead;</li>
+     *   <li>{@code UniverseScale} — the metric constants and both conversions, because a light year
+     *       that becomes a different number of cells relocates everything at once;</li>
+     *   <li>{@code Cosmology} — the expansion factor at fixed ticks.</li>
+     * </ul>
+     *
+     * <p>Rendering rules: LF only, every list sorted, doubles through {@link Double#toString} (exact and
+     * locale-free — a formatted number would hide a change in its last digits and change with a locale).</p>
+     */
+    static final class UniverseCorpus {
+
+        static final String FIXTURE_RESOURCE = "/universe/golden-corpus-v1.txt";
+        static final String FIXTURE_PATH = "src/test/resources/universe/golden-corpus-v1.txt";
+
+        /** Fixed seeds. Arbitrary, and that is the point — they are frozen, not chosen for an outcome. */
+        private static final long[] SEEDS = {
+                1L, 42L, 1337L, 8675309L, -1L, 6_942_069L, 2_147_483_647L,
+        };
+
+        /** Territories swept per axis, centred on the origin — the home galaxy's centre. */
+        private static final int SPAN = 1;
+
+        private UniverseCorpus() {
+        }
+
+        static String render() {
+            GalaxyGenConfig config = GalaxyGenConfig.defaults();
+            StringBuilder sb = new StringBuilder(64 * 1024);
+            sb.append("# universe golden corpus - schema ").append(UniverseSchemas.CURRENT).append('\n');
+            sb.append("config ").append(config.fingerprint()).append('\n');
+            renderScale(sb);
+            renderCosmology(sb);
+            for (long seed : SEEDS) {
+                renderSeed(sb, config, seed);
+            }
+            return sb.toString();
+        }
+
+        private static void renderScale(StringBuilder sb) {
+            sb.append("scale spacingCells=").append(UniverseScale.DEFAULT_SPACING_CELLS)
+                    .append(" galaxySpacingCells=").append(UniverseScale.DEFAULT_GALAXY_SPACING_CELLS)
+                    .append(" seatMarginCells=").append(UniverseScale.SEAT_MARGIN_CELLS).append('\n');
+            double[] lightYears = {0.1d, 1d, 4.23d, 100d, 50_000d};
+            for (double ly : lightYears) {
+                long cells = UniverseScale.cellsForLightYears(ly);
+                sb.append("scale ly=").append(Double.toString(ly))
+                        .append(" cells=").append(cells)
+                        .append(" backLy=").append(Double.toString(UniverseScale.lightYearsForCells(cells)))
+                        .append('\n');
+            }
+        }
+
+        private static void renderCosmology(StringBuilder sb) {
+            long[] ticks = {0L, 24_000L, 24_000_000L};
+            for (long tick : ticks) {
+                sb.append("cosmology tick=").append(tick)
+                        .append(" scaleFactor=").append(Double.toString(Cosmology.scaleFactorAt(tick)))
+                        .append('\n');
+            }
+        }
+
+        private static void renderSeed(StringBuilder sb, GalaxyGenConfig config, long seed) {
+            ClusteredGalaxyGenerator g = new ClusteredGalaxyGenerator(config);
+            long step = config.minSpacing;
+            Set<String> seen = new HashSet<>();
+            List<String> lines = new ArrayList<>();
+            for (int i = -SPAN; i <= SPAN; i++) {
+                for (int j = -SPAN; j <= SPAN; j++) {
+                    for (int k = -SPAN; k <= SPAN; k++) {
+                        GalacticCoord probe = GalacticCoord.ofSectorLocal(i * step, j * step, k * step,
+                                0L, 0L, 0L);
+                        Optional<GalacticCoord> anchor = g.anchorAt(seed, probe);
+                        if (!anchor.isPresent() || !seen.add(anchor.get().cellKey())) {
+                            continue;
+                        }
+                        renderSystem(lines, g, seed, anchor.get());
+                    }
+                }
+            }
+            Collections.sort(lines);
+            sb.append("seed ").append(seed).append(" systems=").append(seen.size()).append('\n');
+            for (String line : lines) {
+                sb.append(line).append('\n');
+            }
+        }
+
+        private static void renderSystem(List<String> out, ClusteredGalaxyGenerator g, long seed,
+                                         GalacticCoord anchor) {
+            Optional<PlanetarySystem> systemOpt = g.systemAt(seed, anchor);
+            if (!systemOpt.isPresent()) {
+                return;
+            }
+            PlanetarySystem system = systemOpt.get();
+            StringBuilder head = new StringBuilder();
+            head.append("  system ").append(anchor.cellKey())
+                    .append(" id=").append(system.systemId())
+                    .append(" kind=").append(system.primaryKind())
+                    .append(" name=").append(system.name());
+            if (system.star().isPresent()) {
+                head.append(" starTemp=").append(system.star().get().getTemperature())
+                        .append(" starSize=").append(Double.toString(system.star().get().getSize()));
+            } else {
+                head.append(" starless");
+            }
+            out.add(head.toString());
+
+            List<SystemBody> bodies = new ArrayList<>(g.bodiesFor(seed, anchor));
+            List<String> bodyLines = new ArrayList<>();
+            // One derivation sample per distinct CELL, not per body: a moon stands in its parent's
+            // cell, so a per-body sample would render every profile twice and cover nothing extra.
+            Map<String, SystemBody> byCell = new java.util.TreeMap<>();
+            for (SystemBody body : bodies) {
+                bodyLines.add(renderBody(anchor, body));
+                String key = body.name().cellKey();
+                if (!byCell.containsKey(key)) {
+                    byCell.put(key, body);
+                }
+            }
+            Collections.sort(bodyLines);
+            out.addAll(bodyLines);
+            for (Map.Entry<String, SystemBody> e : byCell.entrySet()) {
+                out.add(renderDerivation(g, seed, anchor, system, e.getValue()));
+            }
+        }
+
+        private static String renderBody(GalacticCoord anchor, SystemBody body) {
+            return "  body " + anchor.cellKey() + ' ' + body.name().cellKey()
+                    + " kind=" + body.kind()
+                    + " orbit=" + body.orbitalDistance()
+                    + " radius=" + Double.toString(body.radiusEarths())
+                    + " starId=" + body.starId()
+                    + " frame=" + body.definesFrame();
+        }
+
+        private static String renderDerivation(ClusteredGalaxyGenerator g, long seed,
+                                               GalacticCoord anchor, PlanetarySystem system,
+                                               SystemBody body) {
+            BodyProfile profile = system.star().isPresent()
+                    ? PlanetDerivation.derive(seed, anchor, body.name(), 0, system.star().get(), false,
+                            body.orbitalDistance())
+                    : PlanetDerivation.deriveRogue(seed, body.name(), 0,
+                            g.config().rogue.giantFraction);
+            return "  derived " + anchor.cellKey() + ' ' + body.name().cellKey()
+                    + " type=" + profile.typeName()
+                    + " mass=" + Double.toString(profile.massEarths())
+                    + " radius=" + Double.toString(profile.radiusEarths())
+                    + " gravity=" + profile.gravityPercent()
+                    + " pressure=" + profile.pressure()
+                    + " tempK=" + profile.temperatureKelvin()
+                    + " oxygen=" + profile.hasOxygen()
+                    + " locked=" + profile.tidallyLocked()
+                    + " rings=" + profile.hasRings()
+                    + " rotation=" + profile.rotationalPeriodTicks()
+                    + " metallicity=" + Double.toString(profile.metallicity())
+                    + " terrain=" + profile.terrain();
+        }
     }
 }

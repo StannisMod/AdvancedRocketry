@@ -65,9 +65,10 @@ public final class GalacticAnchor {
      * minimum radius is checked against.
      */
     public double reachLy() {
-        double x = UniverseScale.lightYearsForCells(local.sectorX());
-        double y = UniverseScale.lightYearsForCells(local.sectorY());
-        double z = UniverseScale.lightYearsForCells(local.sectorZ());
+        IUniverseLaws laws = UniverseRegistry.getGenerator().laws();
+        double x = laws.lightYearsForCells(local.sectorX());
+        double y = laws.lightYearsForCells(local.sectorY());
+        double z = laws.lightYearsForCells(local.sectorZ());
         return Math.sqrt(x * x + y * y + z * z);
     }
 

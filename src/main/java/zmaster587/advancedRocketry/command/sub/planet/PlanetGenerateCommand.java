@@ -86,9 +86,11 @@ public class PlanetGenerateCommand extends ARCommand {
         // world rather than the same one again — and the sequence is reproducible on a fresh world.
         int index = star.getNumPlanets();
         GalacticCoord anchor = GalacticCoord.ofSectorLocal(starId, 0L, 0L, 0L, 0L, 0L);
-        int orbit = PlanetDerivation.orbitalDistanceOf(server.getWorld(0).getSeed(), anchor, index,
+        zmaster587.advancedRocketry.universe.IBodyDerivation derivation =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator().derivation();
+        int orbit = derivation.orbitalDistanceOf(server.getWorld(0).getSeed(), anchor, index,
                 Math.max(1, index + 1), star);
-        BodyProfile profile = PlanetDerivation.derive(server.getWorld(0).getSeed(), anchor, anchor,
+        BodyProfile profile = derivation.derive(server.getWorld(0).getSeed(), anchor, anchor,
                 index, star, moon, orbit);
 
         int dimId = DimensionManager.getInstance().getNextFreeDim(2);

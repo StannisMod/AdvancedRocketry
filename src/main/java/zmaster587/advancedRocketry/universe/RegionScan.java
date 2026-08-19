@@ -174,7 +174,8 @@ public final class RegionScan {
      */
     private static int stepTicks(long distanceCells, Tuning tuning) {
         double ticks = tuning.baseTicks()
-                + tuning.ticksPerLightYear() * UniverseScale.lightYearsForCells(distanceCells);
+                + tuning.ticksPerLightYear()
+                * UniverseRegistry.getGenerator().laws().lightYearsForCells(distanceCells);
         return (int) Math.max(0L, Math.min(Integer.MAX_VALUE, Math.round(ticks)));
     }
 
@@ -195,7 +196,7 @@ public final class RegionScan {
 
     /** The same reach in light years — the form the number is recognisable in. */
     public double distanceLightYears() {
-        return UniverseScale.lightYearsForCells(distanceCells);
+        return UniverseRegistry.getGenerator().laws().lightYearsForCells(distanceCells);
     }
 
     /** How far apart the cells this survey looks at stand. One star's territory, or one cell. */
@@ -406,7 +407,8 @@ public final class RegionScan {
 
         /** The horizon as a number of steps, which is what an operator aims in. At least one. */
         public int maxRangeSteps() {
-            long steps = UniverseScale.cellsForLightYears(maxRangeLightYears) / strideCells;
+            long steps = UniverseRegistry.getGenerator().laws()
+                    .cellsForLightYears(maxRangeLightYears) / strideCells;
             return (int) Math.max(1L, Math.min(Integer.MAX_VALUE, steps));
         }
 

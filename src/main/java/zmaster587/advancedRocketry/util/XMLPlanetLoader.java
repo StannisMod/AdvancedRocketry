@@ -717,8 +717,10 @@ public class XMLPlanetLoader {
 
         // Emit the active procedural generator's config so a re-read (resetFromXml) round-trips it.
         IGalaxyGenerator activeGenerator = UniverseRegistry.getGenerator();
-        if (activeGenerator instanceof ClusteredGalaxyGenerator) {
-            galaxyElement.appendChild(writeGalaxyGen(doc, ((ClusteredGalaxyGenerator) activeGenerator).config()));
+        java.util.Optional<zmaster587.advancedRocketry.universe.GalaxyGenConfig> tuning =
+                activeGenerator.tuning();
+        if (tuning.isPresent()) {
+            galaxyElement.appendChild(writeGalaxyGen(doc, tuning.get()));
             // The planet-type table travels with the generator, and only with it: an authored-anchors-only
             // world has nothing that draws a type, so writing the presets there would put a section into
             // the file that nothing reads.

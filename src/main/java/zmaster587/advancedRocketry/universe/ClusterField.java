@@ -29,6 +29,8 @@ public final class ClusterField {
     private static final long SALT_NUCLEUS_RADIUS = 0x207L;
 
     private final GalaxyGenConfig config;
+    /** The metric this field measures with — its schema's, not a global one. */
+    private final IUniverseLaws laws;
     private final GalaxyField galaxies;
     private final long spacingSuperCells;
 
@@ -37,9 +39,10 @@ public final class ClusterField {
      *                 galaxy is scaled by that galaxy's profile; one out in the void is scaled by the
      *                 ejecta halo, which is how a globular can be intergalactic without a second rule
      */
-    public ClusterField(GalaxyGenConfig config, GalaxyField galaxies) {
+    public ClusterField(GalaxyGenConfig config, GalaxyField galaxies, IUniverseLaws laws) {
+        this.laws = (laws == null) ? UniverseLawsV0.INSTANCE : laws;
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
-        this.galaxies = (galaxies == null) ? new GalaxyField(this.config) : galaxies;
+        this.galaxies = (galaxies == null) ? new GalaxyField(this.config, this.laws) : galaxies;
         this.spacingSuperCells = Math.max(1L,
                 superCellsForLightYears(GalaxyGenConfig.CLUSTER_SPACING_LY, this.config.minSpacing));
     }
@@ -177,8 +180,8 @@ public final class ClusterField {
     }
 
     /** A length in light years as a whole number of coarse super-cells, at least one. */
-    private static long superCellsForLightYears(double lightYears, long superCellEdgeCells) {
-        long cells = UniverseScale.cellsForLightYears(lightYears);
+    private long superCellsForLightYears(double lightYears, long superCellEdgeCells) {
+        long cells = laws.cellsForLightYears(lightYears);
         return Math.max(1L, cells / Math.max(1L, superCellEdgeCells));
     }
 

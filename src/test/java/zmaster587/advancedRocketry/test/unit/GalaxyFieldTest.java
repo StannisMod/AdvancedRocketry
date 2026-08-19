@@ -20,6 +20,7 @@ import zmaster587.advancedRocketry.universe.GalaxyField;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.LightYearVector;
 import zmaster587.advancedRocketry.universe.PlanetarySystem;
+import zmaster587.advancedRocketry.universe.UniverseLawsV0;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -44,7 +45,7 @@ public class GalaxyFieldTest {
     }
 
     private static GalaxyField field(double galaxyDensity) {
-        return new GalaxyField(cfg(galaxyDensity));
+        return new GalaxyField(cfg(galaxyDensity), UniverseLawsV0.INSTANCE);
     }
 
     @Test
@@ -121,7 +122,7 @@ public class GalaxyFieldTest {
         // No stored tier, no new coordinate field: a coarse reading of the sector space that already
         // exists. Every sector of one galaxy cell must name the same galaxy.
         GalaxyGenConfig config = cfg(1.0d);
-        GalaxyField f = new GalaxyField(config);
+        GalaxyField f = new GalaxyField(config, UniverseLawsV0.INSTANCE);
         long s = config.galaxySpacing;
         // The lattice is offset by half a cell, so the ORIGIN is a cell CENTRE. Without that, every
         // sector with a negative coordinate would sit in a neighbouring cell and the space around the
@@ -170,7 +171,7 @@ public class GalaxyFieldTest {
         // Containment is what keeps three things true at once: at most one galaxy per cell, galaxies
         // that cannot overlap, and an ownership answer that reads the containing cell and nothing else.
         GalaxyGenConfig config = cfg(1.0d);
-        GalaxyField f = new GalaxyField(config);
+        GalaxyField f = new GalaxyField(config, UniverseLawsV0.INSTANCE);
         long s = config.galaxySpacing;
         int checked = 0;
         for (long gx = -3L; gx <= 3L; gx++) {
@@ -384,7 +385,7 @@ public class GalaxyFieldTest {
         return new Galaxy(0L, 0L, 0L, 0, GalacticCoord.ORIGIN,
                 typeNamed(GalaxyGenConfig.defaults(), "Spiral"),
                 UniverseScale.REFERENCE_GALAXY_RADIUS_LY,
-                0d, 0d, Math.toRadians(20d), 0d, LightYearVector.ZERO);
+                0d, 0d, Math.toRadians(20d), 0d, LightYearVector.ZERO, UniverseLawsV0.INSTANCE);
     }
 
     @Test
@@ -421,7 +422,7 @@ public class GalaxyFieldTest {
         // radius cubed means. The band here is therefore wide on purpose; what it guards is that no
         // seed opens on a village, and that none opens on something the lattice cannot address.
         GalaxyGenConfig config = GalaxyGenConfig.defaults();
-        GalaxyField f = new GalaxyField(config);
+        GalaxyField f = new GalaxyField(config, UniverseLawsV0.INSTANCE);
         for (long seed : new long[] {0xC0FFEEL, 1L, 2L, 3L, 17L, 99L}) {
             Galaxy home = f.home(seed);
             double systems = estimateSystems(home, config);
@@ -711,7 +712,7 @@ public class GalaxyFieldTest {
         // bound is real code, and it is measured here rather than asserted — at realistic speeds it is
         // orders away from binding, which is the finding.
         GalaxyGenConfig config = cfg(1.0d);
-        GalaxyField f = new GalaxyField(config);
+        GalaxyField f = new GalaxyField(config, UniverseLawsV0.INSTANCE);
         double halfCellLy = UniverseScale.lightYearsForCells(config.galaxySpacing / 2d);
         double worstFraction = 0d;
         int checked = 0;
@@ -816,7 +817,7 @@ public class GalaxyFieldTest {
         assertNotNull("the sweep must find a void galaxy cell to reserve", empty);
 
         GalaxyGenConfig reserved = cfg(0.2d).withReservedGalaxies(Collections.singletonList(empty));
-        GalaxyField withKey = new GalaxyField(reserved);
+        GalaxyField withKey = new GalaxyField(reserved, UniverseLawsV0.INSTANCE);
         assertTrue("a declared key must force its cell to hold a galaxy",
                 withKey.galaxyAtIndex(seed, empty.gx(), empty.gy(), empty.gz()).isPresent());
         assertTrue(withKey.isReserved(empty.gx(), empty.gy(), empty.gz()));
@@ -830,7 +831,7 @@ public class GalaxyFieldTest {
         long seed = 909L;
         GalaxyKey key = GalaxyKey.of(6L, -2L, 3L);
         GalaxyField f = new GalaxyField(
-                cfg(0.2d).withReservedGalaxies(Collections.singletonList(key)));
+                cfg(0.2d).withReservedGalaxies(Collections.singletonList(key)), UniverseLawsV0.INSTANCE);
         Galaxy declared = f.galaxyAtIndex(seed, key.gx(), key.gy(), key.gz()).get();
         assertTrue("a reserved galaxy is only " + declared.radiusLy() + " ly across",
                 declared.radiusLy() >= UniverseScale.MIN_AUTHORED_GALAXY_RADIUS_LY);
@@ -852,7 +853,7 @@ public class GalaxyFieldTest {
         long seed = 77L;
         GalaxyKey key = GalaxyKey.of(2L, 0L, 0L);
         GalaxyField f = new GalaxyField(
-                cfg(1.0d).withReservedGalaxies(Collections.singletonList(key)));
+                cfg(1.0d).withReservedGalaxies(Collections.singletonList(key)), UniverseLawsV0.INSTANCE);
         GalacticCoord centre = f.centreOf(seed, key).get();
         GalacticCoord local = GalacticCoord.ofSectorLocal(500_000L, 0L, 0L, 0L, 0L, 0L);
 

@@ -65,6 +65,8 @@ public final class Galaxy {
      */
     public static final double EDGE_LEVEL = Math.exp(-1d / DISC_SCALE_FRACTION) / REFERENCE_LEVEL;
 
+    /** The metric this object was seated under — its schema's, never a global one. */
+    private final IUniverseLaws laws;
     private final long cellX;
     private final long cellY;
     private final long cellZ;
@@ -108,13 +110,15 @@ public final class Galaxy {
      */
     public Galaxy(long cellX, long cellY, long cellZ, int satelliteIndex, GalacticCoord centre,
                   GalaxyGenConfig.GalaxyType type, double radiusLy, double tilt, double node,
-                  double armPitch, double armPhase, LightYearVector peculiarVelocity) {
+                  double armPitch, double armPhase, LightYearVector peculiarVelocity,
+                  IUniverseLaws laws) {
+        this.laws = (laws == null) ? UniverseLawsV0.INSTANCE : laws;
         this.cellX = cellX;
         this.cellY = cellY;
         this.cellZ = cellZ;
         this.satelliteIndex = Math.max(0, satelliteIndex);
         this.centre = centre;
-        this.seat = LightYearVector.ofCell(centre);
+        this.seat = LightYearVector.ofCell(centre, this.laws);
         this.peculiarVelocity = (peculiarVelocity == null) ? LightYearVector.ZERO : peculiarVelocity;
         this.type = type;
         this.radiusLy = Math.max(1d, radiusLy);
@@ -362,7 +366,7 @@ public final class Galaxy {
      */
     public double angularSpeedAt(double rLy) {
         double core = radiusLy * type.coreRadiusFraction;
-        double speed = UniverseScale.lightYearsPerTick(type.rotationSpeedKmS);
+        double speed = laws.lightYearsPerTick(type.rotationSpeedKmS);
         return speed / Math.hypot(Math.max(0d, rLy), core);
     }
 
@@ -396,7 +400,7 @@ public final class Galaxy {
      */
     public LightYearVector centreAt(long tick) {
         return seat.plus(peculiarVelocity.scale((double) tick))
-                .scale(Cosmology.scaleFactorAt(tick));
+                .scale(laws.scaleFactorAt(tick));
     }
 
     /**
@@ -449,8 +453,8 @@ public final class Galaxy {
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
     /** A sector delta as a length in light years. Exact: the delta is bounded by one galaxy cell. */
-    private static double offsetLy(long sector, long centreSector) {
-        return UniverseScale.lightYearsForCells((double) (sector - centreSector));
+    private double offsetLy(long sector, long centreSector) {
+        return laws.lightYearsForCells((double) (sector - centreSector));
     }
 
     private static double atLeastZero(double v) {
