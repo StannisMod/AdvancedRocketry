@@ -4,7 +4,11 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 
+import net.minecraft.block.Block;
+import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
+import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
@@ -73,6 +77,31 @@ public enum ThermalMaterials {
         PREFIX_VOLUMES.put("nugget", 1_000_000L / 81);
     }
 
+    /**
+     * What each vanilla {@link Material} is made of, as far as heat is concerned. Coarse on purpose -
+     * this is the fallback, and it only has to be RIGHT rather than precise: a stone slab is stone,
+     * an anvil is iron, and anything the game does not describe this way stays unknown.
+     */
+    private static final Map<Material, String> VANILLA_MATERIAL_NAMES = new LinkedHashMap<>();
+
+    static {
+        VANILLA_MATERIAL_NAMES.put(Material.ROCK, "stone");
+        VANILLA_MATERIAL_NAMES.put(Material.IRON, "iron");
+        VANILLA_MATERIAL_NAMES.put(Material.ANVIL, "iron");
+        VANILLA_MATERIAL_NAMES.put(Material.WOOD, "wood");
+        VANILLA_MATERIAL_NAMES.put(Material.GLASS, "glass");
+        VANILLA_MATERIAL_NAMES.put(Material.ICE, "ice");
+        VANILLA_MATERIAL_NAMES.put(Material.PACKED_ICE, "ice");
+        VANILLA_MATERIAL_NAMES.put(Material.SNOW, "snow");
+        VANILLA_MATERIAL_NAMES.put(Material.CRAFTED_SNOW, "snow");
+        VANILLA_MATERIAL_NAMES.put(Material.SAND, "sand");
+        VANILLA_MATERIAL_NAMES.put(Material.GROUND, "dirt");
+        VANILLA_MATERIAL_NAMES.put(Material.GRASS, "dirt");
+        VANILLA_MATERIAL_NAMES.put(Material.CLAY, "clay");
+        VANILLA_MATERIAL_NAMES.put(Material.CLOTH, "wool");
+        VANILLA_MATERIAL_NAMES.put(Material.CARPET, "wool");
+    }
+
     private final String file;
     private Map<String, ThermalMaterial> materials = new LinkedHashMap<>();
 
@@ -81,7 +110,17 @@ public enum ThermalMaterials {
         load();
     }
 
-    /** The material this stack is made of, or {@code null} when nothing in the table matches it. */
+    /**
+     * The material this stack is made of, or {@code null} when nothing in the table matches it.
+     *
+     * <p>Two sources, in this order, and the order is the whole of it. The ore dictionary is asked
+     * FIRST because it is SPECIFIC - {@code ingotIron} says iron and nothing else. Only when it is
+     * silent does the block's own vanilla {@link Material} answer, which is coarse by construction
+     * (one {@code IRON} covers every metal-looking block in the game) and is therefore a last resort
+     * rather than a peer. Without it a stone slab - which no mod names in the ore dictionary - would
+     * have a size and no substance, and a table that knows how big something is but not what it is
+     * cannot answer the only question it exists for.</p>
+     */
     public ThermalMaterial of(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return null;
@@ -92,7 +131,17 @@ public enum ThermalMaterials {
                 return found;
             }
         }
-        return null;
+        return byVanillaMaterial(placedBlock(stack));
+    }
+
+    /** The substance a block is made of, as its own vanilla {@link Material} names it. */
+    public ThermalMaterial byVanillaMaterial(Block block) {
+        if (block == null || block == Blocks.AIR) {
+            return null;
+        }
+        @SuppressWarnings("deprecation")
+        Material vanilla = block.getDefaultState().getMaterial();
+        return byName(VANILLA_MATERIAL_NAMES.get(vanilla));
     }
 
     /** The material behind an ore-dictionary name such as {@code ingotIron}, or {@code null}. */
@@ -204,11 +253,61 @@ public enum ThermalMaterials {
         if (stack == null || stack.isEmpty()) {
             return 0L;
         }
+        // A block ANSWERS FOR ITSELF, and it outranks the ore dictionary rather than backing it up:
+        // `blockIron` means "a block of iron" and a prefix table can only ASSUME that is a full cube,
+        // while the block itself knows. Where the two disagree - a mod's half-height plate registered
+        // under a block prefix - the shape in the world is the truth about how much substance it is.
+        long fromBlock = placedBlockVolume(stack);
+        if (fromBlock > 0L) {
+            return fromBlock * stack.getCount();
+        }
         long best = 0L;
         for (int id : OreDictionary.getOreIDs(stack)) {
             best = Math.max(best, volumeMillilitres(OreDictionary.getOreName(id)));
         }
         return best * stack.getCount();
+    }
+
+    /**
+     * The volume of the block an item would PLACE, for an item the ore dictionary says nothing about.
+     *
+     * <p>A stone slab is the case that needs this: no mod registers a shape for it, so the ore
+     * dictionary has no answer, and yet the thing in your hand is plainly half a block of stone. The
+     * block it places knows its own shape and says so from its state alone.</p>
+     *
+     * <p><b>The known limit, stated rather than hidden.</b> Without a world this can only ask for the
+     * state's single box, not the collision LIST, so a shape made of several pieces reads as its
+     * outline: a staircase in the hand answers a whole block where the same staircase placed answers
+     * three quarters. There is no world to ask for the pieces, and guessing a fraction would be the
+     * authored number this whole chain exists to avoid. The moment it is placed, the exact read takes
+     * over.</p>
+     */
+    private static Block placedBlock(ItemStack stack) {
+        if (stack == null || !(stack.getItem() instanceof ItemBlock)) {
+            return null;
+        }
+        Block block = ((ItemBlock) stack.getItem()).getBlock();
+        return block == Blocks.AIR ? null : block;
+    }
+
+    private static long placedBlockVolume(ItemStack stack) {
+        Block block = placedBlock(stack);
+        if (block == null) {
+            return 0L;
+        }
+        try {
+            @SuppressWarnings("deprecation")
+            IBlockState state = block.getStateFromMeta(stack.getMetadata());
+            @SuppressWarnings("deprecation")
+            AxisAlignedBB box = state.getBoundingBox(null, BlockPos.ORIGIN);
+            double cubicMetres = (box.maxX - box.minX) * (box.maxY - box.minY)
+                    * (box.maxZ - box.minZ);
+            return (long) (cubicMetres * 1_000_000L);
+        } catch (RuntimeException e) {
+            // A block that cannot describe itself without a world in hand is one we decline to guess
+            // at. Zero means "nobody said", which every caller already treats as "not a slug".
+            return 0L;
+        }
     }
 
     /**
@@ -320,6 +419,14 @@ public enum ThermalMaterials {
         put(m, new ThermalMaterial("carbon", 2260, 709, 3900));     // graphite sublimes
         put(m, new ThermalMaterial("graphite", 2260, 709, 3900));
         put(m, new ThermalMaterial("stone", 2700, 790, 1473));
+        put(m, new ThermalMaterial("wood", 700, 1700, 573));        // chars rather than melts
+        put(m, new ThermalMaterial("glass", 2500, 840, 1700));      // softens
+        put(m, new ThermalMaterial("ice", 917, 2100, 273));
+        put(m, new ThermalMaterial("snow", 300, 2090, 273));
+        put(m, new ThermalMaterial("sand", 1600, 830, 1983));       // silica
+        put(m, new ThermalMaterial("dirt", 1300, 800, 1500));
+        put(m, new ThermalMaterial("clay", 1750, 920, 1800));
+        put(m, new ThermalMaterial("wool", 100, 1300, 500));
         put(m, new ThermalMaterial("obsidian", 2650, 840, 1500));
         return m;
     }

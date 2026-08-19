@@ -16770,6 +16770,27 @@ public class TestProbeCommand extends CommandBase {
             handleHeatCycle(server, sender, args);
             return;
         }
+        if (args.length >= 2 && "item".equalsIgnoreCase(args[0])) {
+            // The same question asked of an ITEM rather than a position: an item has no collision
+            // boxes, so this is the path that falls back to the shape of the block it would place.
+            net.minecraft.item.Item item = net.minecraft.item.Item.getByNameOrId(args[1]);
+            int meta = args.length >= 3 ? parseIntOr(args[2], 0) : 0;
+            if (item == null) {
+                send(sender, "{\"error\":\"unknown item id\",\"id\":\"" + escapeJson(args[1]) + "\"}");
+                return;
+            }
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, 1, meta);
+            zmaster587.advancedRocketry.subsystem.heat.ThermalMaterial material =
+                    zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials.INSTANCE.of(stack);
+            long volume = zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials
+                    .volumeMillilitres(stack);
+            send(sender, "{\"ok\":true,\"item\":\"" + escapeJson(args[1])
+                    + "\",\"material\":\"" + escapeJson(material == null ? "" : material.name())
+                    + "\",\"volumeMilliLitres\":" + volume
+                    + ",\"capacity\":" + zmaster587.advancedRocketry.subsystem.heat.ThermalMaterials
+                            .slugCapacity(material, volume) + "}");
+            return;
+        }
         if (args.length >= 5 && "material".equalsIgnoreCase(args[0])) {
             // What the block at this position IS, thermally: which substance, how much of it, and
             // therefore how much heat it can take. Volume is reported separately from capacity on

@@ -33,6 +33,7 @@ public class ThermalMaterialVolumeTest extends AbstractSharedServerTest {
     private static final int X_SLAB = 2010;
     private static final int X_STAIRS = 2020;
     private static final int X_AIR = 2030;
+    private static final int X_GOLD = 2040;
 
     /** One cubic metre in the millilitres the probe reports. */
     private static final long WHOLE_BLOCK = 1_000_000L;
@@ -82,6 +83,48 @@ public class ThermalMaterialVolumeTest extends AbstractSharedServerTest {
                 + " and the bounding box is not what it is made of: " + stairs, volume < WHOLE_BLOCK);
         assertEquals("it is the half slab plus the quarter step: " + stairs,
                 3 * WHOLE_BLOCK / 4, volume);
+    }
+
+    /**
+     * The same half-block, held rather than placed. Nothing in the ore dictionary describes a stone
+     * slab, so without this the thing in your hand is nothing at all - while the identical block on
+     * the ground is half a cubic metre.
+     */
+    @Test
+    public void aSlabInTheHandIsTheSameHalfBlockAsASlabOnTheGround() throws Exception {
+        String held = exec("artest heat item minecraft:stone_slab");
+
+        assertEquals("an item the ore dictionary cannot name still has the shape of what it places: "
+                + held, WHOLE_BLOCK / 2, field(held, "volumeMilliLitres"));
+    }
+
+    /**
+     * The substance chain's second link. Vanilla names no stone in the ore dictionary, so without the
+     * block's own {@code Material} a stone slab has a size and no identity - and a size alone answers
+     * nothing, because capacity is the two multiplied.
+     */
+    @Test
+    public void aBlockTheOreDictionaryNeverNamedStillKnowsWhatItIsMadeOf() throws Exception {
+        String slab = placeAndRead(X_SLAB, "minecraft:stone_slab");
+
+        assertTrue("stone must resolve through the block's own vanilla material: " + slab,
+                slab.contains("\"material\":\"stone\""));
+        assertTrue("and having both halves, it must have a capacity: " + slab,
+                field(slab, "capacity") > 0);
+    }
+
+    /**
+     * Precedence, on a block where the two sources DISAGREE - which is the only kind that can measure
+     * it. A gold block is {@code blockGold} in the ore dictionary and {@code Material.IRON} to vanilla,
+     * because that material means "metal-looking" and nothing finer. Asked on an IRON block this
+     * assertion would pass whichever source won, which is a test that cannot fail.
+     */
+    @Test
+    public void theOreDictionaryOutranksTheBlocksCoarseVanillaMaterial() throws Exception {
+        String gold = placeAndRead(X_GOLD, "minecraft:gold_block");
+
+        assertTrue("the specific name must win over the coarse one: " + gold,
+                gold.contains("\"material\":\"gold\""));
     }
 
     @Test
