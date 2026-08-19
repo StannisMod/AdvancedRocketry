@@ -11,7 +11,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.valkyrienskies.mod.common.ships.ShipData;
 import org.valkyrienskies.mod.common.ships.physics_data.ShipInertiaData;
-import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
 import zmaster587.advancedRocketry.ship.mass.ShipMassFrame;
 
 /**
@@ -158,14 +157,21 @@ public final class ShipInertiaWriter {
     }
 
     /**
-     * Drift is a DEFECT in the trigger set, so it is loud in a test build and merely visible in
-     * production: a player's game must not die over a mass that is 2% stale, but a test run that
-     * tolerates it silently is how the missing trigger survives to the next release.
+     * Drift is a DEFECT in the trigger set, so it is recorded and logged — never thrown.
+     *
+     * <p>This used to raise in a test build, on the reasoning that a run tolerating drift silently is
+     * how a missing trigger survives to the next release. The reasoning is right; the mechanism was
+     * wrong, and only became provably so once something actually detected drift. Every detection
+     * happens inside the world tick, from the ship-lifecycle event, whose contract forbids a handler
+     * to throw: an exception there leaves the tick with nothing between it and the server loop. The
+     * test then fails with "the process exited", which says nothing about mass — the throw destroyed
+     * the very signal it was meant to make loud.</p>
+     *
+     * <p>The obligation moved rather than went away: the trigger keeps each disagreement with its
+     * sign, a probe reads them back, and the assertion that fails a build lives in the test that
+     * reads it.</p>
      */
     private static void report(String message) {
-        if (TestProbeCommandRegistration.isTestMode()) {
-            throw new IllegalStateException(message);
-        }
         LOG.warn(message);
     }
 

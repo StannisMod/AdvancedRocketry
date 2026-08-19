@@ -672,23 +672,42 @@ public class TileAdvancedFlightComputer extends TileEntity
             // been flown holds its setting, and holds station again after a world reload instead of falling.
             // The setpoint is deliberately NOT zeroed and NOT re-captured here: the dismounted pilot's
             // cruise setting is his to come back to, never a reset-from-live-velocity.
-            if (!stationKeeping) {
+            // Physics ON regardless of whether anyone has ever flown this craft. A hull with a flight
+            // computer is a craft that should obey gravity, and until this line ran only after a first
+            // flight, a newly built ship left at altitude did not fall - it simply hung there, because
+            // the solver steps only bodies whose physics has been switched on. That is not
+            // station-keeping; it is a craft that was never being simulated at all.
+            VSIntegration.ensureShipPhysicsEnabled(world, getPos());
+
+            // WITH Flight Assist, an unmanned craft holds: it keeps executing the setting its pilot
+            // left it with. WITHOUT it, it is released and falls. Flight Assist IS the mode switch -
+            // the pilot's own on/off choice, persisted, and the same one that decides whether he gets
+            // cruise control while flying.
+            if (!flightAssistEnabled) {
+                // Released. Not "commanded to zero": commanding zero velocity is a hover, and a hover
+                // is assistance. The earlier revision did exactly that, on the reasoning that a
+                // coasting craft falls - which is the intended behaviour, read as a defect.
+                //
+                // Only the LINEAR command is dropped. The attitude hold stays, so the craft falls
+                // flat instead of tumbling: releasing thrust is what "no assist" means here, and
+                // starting an uncommanded spin is a larger change than the mode switch asks for.
                 commandedVelocity = null;
-                commandedAngVel = null;
-                targetAttitude = null;
+                if (attitudeReference == null) {
+                    attitudeReference = attitude;
+                }
+                commandedAngVel = new double[]{0.0, 0.0, 0.0};
+                targetAttitude = new double[]{attitudeReference.w, attitudeReference.x,
+                        attitudeReference.y, attitudeReference.z};
                 return;
             }
             if (attitudeReference == null) {
                 attitudeReference = attitude; // re-seed from the ship's current attitude after a reload
             }
-            VSIntegration.ensureShipPhysicsEnabled(world, getPos());
             // FA on: an idle input over the retained setpoint IS the cruise command (zero setpoint =
-            // hover). FA off: no cruise control exists - hold station at zero velocity explicitly
-            // (shipVelocityCommand would answer "coast", and a coasting hover falls).
-            commandedVelocity = flightAssistEnabled
-                    ? FreeFlightPhysics.shipVelocityCommand(FreeFlightInput.zero(), attitudeReference,
-                            true, velocitySetpoint, SHIP_MAX_SPEED)
-                    : new double[]{0.0, 0.0, 0.0};
+            // hover), which is what makes this an autopilot rather than a parking brake - the pilot
+            // stands up mid-flight and the ship flies on at the speed he left it at.
+            commandedVelocity = FreeFlightPhysics.shipVelocityCommand(FreeFlightInput.zero(),
+                    attitudeReference, true, velocitySetpoint, SHIP_MAX_SPEED);
             commandedAngVel = new double[]{0.0, 0.0, 0.0};
             targetAttitude = new double[]{attitudeReference.w, attitudeReference.x,
                     attitudeReference.y, attitudeReference.z};
@@ -1361,7 +1380,11 @@ public class TileAdvancedFlightComputer extends TileEntity
             Vector3d v = calc.getLinearVelocity();
             double gx = 0.0, gy = 0.0, gz = 0.0;
             if (VSConfig.doGravity) {
-                Vector3dc g = VSConfig.gravity();
+                // THIS world's gravity, through the same function the solver uses. The feed-forward
+                // cancels what the solver is about to add, so two answers would leave a craft told to
+                // hover climbing or sinking by their difference - and on a low-gravity body that
+                // difference is most of the field.
+                Vector3dc g = zmaster587.advancedRocketry.integration.vs.ArWorldGravity.of(world);
                 gx = g.x(); gy = g.y(); gz = g.z();
             }
             double[] a = FreeFlightPhysics.shipControlAccel(vCmd[0], vCmd[1], vCmd[2],

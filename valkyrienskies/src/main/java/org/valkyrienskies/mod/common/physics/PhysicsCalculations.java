@@ -243,7 +243,14 @@ public class PhysicsCalculations {
 
     private void applyGravity() {
         if (VSConfig.doGravity) {
-            addForceAtPoint(new Vector3d(), VSConfig.gravity().mul(physTickMass * getPhysicsTimeDeltaPerPhysTick(), new Vector3d()));
+            // Per WORLD, not one vector for the universe. A body's own gravitational multiplier used
+            // to stop at the mod boundary, so a ship felt Earth gravity on the Moon and in the void
+            // alike; the only reason that was not visible is that the flight controller's
+            // feed-forward cancelled exactly what this line added. The controller asks the same
+            // function, because the two must agree or a hovering craft climbs or sinks by their
+            // difference.
+            Vector3dc gravity = zmaster587.advancedRocketry.integration.vs.ArWorldGravity.of(getParent().getWorld());
+            addForceAtPoint(new Vector3d(), gravity.mul(physTickMass * getPhysicsTimeDeltaPerPhysTick(), new Vector3d()));
         }
     }
 

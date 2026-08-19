@@ -1285,6 +1285,38 @@ public class TestProbeCommand extends CommandBase {
         // as an arrangement that happened. A ship whose blocks are cut (a crossing) loses this input
         // with its tile — which is what a real pilot's client papers over by re-sending every tick, so a
         // test that needs input on the far side re-issues it there.
+        // fa-by-id <dim> <shipUuid> <bool> — set Flight Assist on the flight computer of the ship
+        // NAMED by that uuid, and report whether it resolved. FA is the unmanned mode switch: with it
+        // on an unpiloted craft keeps executing the setting its pilot left, with it off the craft is
+        // released and falls. Addressed by identity, never by position, because a world under test
+        // may hold a second craft and a positional answer there is plausible and wrong.
+        if (args.length >= 4 && "fa-by-id".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            java.util.UUID shipUuid;
+            try {
+                shipUuid = java.util.UUID.fromString(args[2]);
+            } catch (IllegalArgumentException notAnIdentity) {
+                send(sender, "{\"ok\":false,\"afcResolved\":false,\"error\":\"shipId is not a uuid\"}");
+                return;
+            }
+            BlockPos afcPos = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .flightComputerOf(world, shipUuid);
+            TileEntity te = afcPos == null ? null : world.getTileEntity(afcPos);
+            if (!(te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                send(sender, "{\"ok\":false,\"afcResolved\":false}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer afc =
+                    (zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te;
+            afc.setFlightAssistEnabled(Boolean.parseBoolean(args[3]));
+            send(sender, "{\"ok\":true,\"afcResolved\":true,\"flightAssist\":"
+                    + afc.isFlightAssistEnabled() + "}");
+            return;
+        }
         if (args.length >= 3 && "ff-input-by-id".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
