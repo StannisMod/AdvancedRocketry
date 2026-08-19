@@ -1,5 +1,7 @@
 package zmaster587.advancedRocketry.api.damage;
 
+import net.minecraft.world.World;
+
 /**
  * A block that has something to say about a body meeting it — armour, in one word.
  *
@@ -20,6 +22,14 @@ public interface IContactResponder {
     /**
      * Answer for one body meeting this block. Never null: return
      * {@link ContactResult#passedThrough(int)} to decline having an opinion.
+     *
+     * <p>The world is passed rather than carried on the {@link Contact} on purpose. A contact states
+     * the FACTS of a meeting — that is what lets a held beam, which is not a shot in any registry, use
+     * the same seam — while a block that spends ITSELF needs a handle on the game to do it with. One
+     * argument keeps both true, where a world on the contact would have made every future caller
+     * produce one and a static would have made the answer depend on who asked last.</p>
+     *
+     * @param world the world this meeting happened in; server side, never null
      */
-    ContactResult onContact(Contact contact);
+    ContactResult onContact(World world, Contact contact);
 }

@@ -2,6 +2,7 @@ package zmaster587.advancedRocketry.damage;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -11,6 +12,9 @@ import zmaster587.advancedRocketry.api.damage.ImpactRequest;
 import zmaster587.advancedRocketry.api.damage.StopReason;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.util.SweptVolume;
+
+import java.util.ArrayList;
+import java.util.List;
 import zmaster587.advancedRocketry.util.WeightEngine;
 
 /**
@@ -53,6 +57,16 @@ public final class StructureDamageEngine {
      * opposite wall should still be one impact.
      */
     private static final int GAP_TOLERANCE = 6;
+
+    /**
+     * The least of its voxel a block is ever treated as filling. A pane is not a wall and should not
+     * cost like one, but nothing is free either: a body still has to break the thing off its mounting,
+     * and a floor here is what stops a torch or a tripwire from being a hole in a hull.
+     */
+    private static final double MIN_OCCUPANCY = 0.1D;
+
+    /** One whole voxel at the origin — the box a block is asked to report its collision shape within. */
+    private static final AxisAlignedBB FULL_VOXEL = new AxisAlignedBB(0.0D, 0.0D, 0.0D, 1.0D, 1.0D, 1.0D);
 
     /**
      * Hard bound on how many blocks one walk may examine, derived from {@link #MAX_PATH_BLOCKS} and
@@ -400,7 +414,59 @@ public final class StructureDamageEngine {
         double resistance = WeightEngine.INSTANCE.getResistance(world, pos, kind);
         int maxStage = Math.max(1, DamageState.getMaxStage(world, pos));
         double perStage = (STAGE_COST_BASE + resistance * STAGE_COST_TOUGHNESS_MULT) / maxStage;
-        return Math.max(1, (int) Math.ceil(perStage * Math.max(0.0D, areaFactor)));
+        return Math.max(1, (int) Math.ceil(perStage * Math.max(0.0D, areaFactor)
+                * occupancyOf(world, pos)));
+    }
+
+    /**
+     * How much of its voxel this block actually fills, in {@code [MIN_OCCUPANCY, 1]}.
+     *
+     * <h3>Why a price has to know this at all</h3>
+     * <p>The law is an energy per unit of VOLUME removed — that is the whole of why the mechanical and
+     * ablation columns are the same law with different constants. A voxel is one cubic metre only when
+     * something fills it, and until this was asked a glass pane cost a solid block of glass to shoot
+     * through, a carpet cost a block of wool, and a coating filling an eighth of its voxel was eight
+     * times dearer to bore than the physics says. Every hull the tests fire at is built of full cubes,
+     * which is precisely the shape that hides it.</p>
+     *
+     * <h3>Why the collision LIST and not the bounding box</h3>
+     * <p>A bounding box is one box, so a shape made of several can only be summarised by it — and
+     * vanilla proves the point twice over: {@code BlockStairs} does not override {@code getBoundingBox}
+     * at all and reports a full cube, while {@code BlockFence} reports the envelope of its post and
+     * arms, which is mostly air. Both over-state, one enormously. The collision list is where a block
+     * states its real shape, box by box, so that is what is summed. Overlapping boxes would double
+     * count, which is why the sum is clamped: over-counting can only ever produce "a full cube", the
+     * answer we started from.</p>
+     */
+    private static double occupancyOf(World world, BlockPos pos) {
+        if (world == null || pos == null) {
+            return 1.0D;
+        }
+        IBlockState state = world.getBlockState(pos);
+        try {
+            List<AxisAlignedBB> boxes = new ArrayList<AxisAlignedBB>();
+            state.addCollisionBoxToList(world, pos, FULL_VOXEL.offset(pos), boxes, null, true);
+            double volume = 0.0D;
+            for (AxisAlignedBB box : boxes) {
+                volume += (box.maxX - box.minX) * (box.maxY - box.minY) * (box.maxZ - box.minZ);
+            }
+            if (volume > 0.0D) {
+                return Math.max(MIN_OCCUPANCY, Math.min(1.0D, volume));
+            }
+            // No collision at all — a torch, a plant, a tripwire. It is still SOMETHING, so it falls
+            // back to the shape it draws itself with rather than to nothing.
+            AxisAlignedBB drawn = state.getBoundingBox(world, pos);
+            if (drawn == null) {
+                return MIN_OCCUPANCY;
+            }
+            double drawnVolume = (drawn.maxX - drawn.minX) * (drawn.maxY - drawn.minY)
+                    * (drawn.maxZ - drawn.minZ);
+            return Math.max(MIN_OCCUPANCY, Math.min(1.0D, drawnVolume));
+        } catch (RuntimeException blockDidNotLikeBeingAsked) {
+            // A block may compute its shape from neighbours it expects to be loaded. It costs a full
+            // cube rather than throwing, which is the answer that changes nothing.
+            return 1.0D;
+        }
     }
 
     /**

@@ -20,6 +20,18 @@ public class AdvancedRocketryBlocks {
     public static Block blockPlanetAnalyser;
     public static Block blockLaunchpad;
     public static Block blockStructureTower;
+    /**
+     * Mirror plating, one block per FILM. The tiers are the reflectances of the metals mirrors are
+     * really made of, so the ladder is physics rather than invention: aluminium is the workhorse,
+     * silver the best in the visible band, and gold the infrared mirror — which is the band a weapon
+     * laser lives in, and the reason gold answers one weapon family and not another.
+     */
+    public static Block blockMirrorPlatingAluminium;
+    public static Block blockMirrorPlatingSilver;
+    public static Block blockMirrorPlatingGold;
+    /** Reactive plating: a charge that spends itself. Two thicknesses, and layering is allowed. */
+    public static Block blockReactivePlate;
+    public static Block blockReactiveBlock;
     public static Block blockRocketBuilder;
     public static Block blockGenericSeat;
     public static Block blockPilotSeat;

@@ -156,6 +156,19 @@ import java.util.Map.Entry;
 @Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = Constants.DEPENDENCIES)
 public class AdvancedRocketry {
 
+    /**
+     * How much absorbed energy a mirror's metal film sheds before it melts. Shared by every tier: a
+     * film is a film, and what separates aluminium from gold is how much of a hit it lets into that
+     * film rather than how much the film can take.
+     */
+    private static final int MIRROR_FILM_DISSIPATION = 4000;
+    /**
+     * How much of an impact one PLATE of reactive armour swallows; a full block takes twice. Set so
+     * that ordinary fire is eaten whole and a railgun-class round is not — which is the ordering the
+     * mechanic exists to produce, not a number anybody should read as sacred.
+     */
+    private static final int REACTIVE_PLATE_CAPACITY = 10000;
+
     private static final String PLANET = "Planet";
     public static final RecipeHandler machineRecipes = new RecipeHandler();
     public static final Logger logger = LogManager.getLogger(Constants.modId);
@@ -663,6 +676,20 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockBlastBrick = new BlockMultiBlockComponentVisible(Material.ROCK).setCreativeTab(tabAdvRocketry).setUnlocalizedName("blastBrick").setHardness(3F).setResistance(15F);
         AdvancedRocketryBlocks.blockStructureTower = new BlockAlphaTexture(Material.IRON).setUnlocalizedName("structuretower").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockLens = new BlockLens().setUnlocalizedName("lens").setCreativeTab(tabAdvRocketry).setHardness(0.3f);
+        // The tiers differ ONLY in reflectance, deliberately: the film they share is the same
+        // thickness, so what a better mirror buys is that less of each hit stays in it.
+        AdvancedRocketryBlocks.blockMirrorPlatingAluminium = new BlockMirrorPlating(0.90D, MIRROR_FILM_DISSIPATION)
+                .setUnlocalizedName("mirrorPlatingAluminium").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockMirrorPlatingSilver = new BlockMirrorPlating(0.96D, MIRROR_FILM_DISSIPATION)
+                .setUnlocalizedName("mirrorPlatingSilver").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockMirrorPlatingGold = new BlockMirrorPlating(0.97D, MIRROR_FILM_DISSIPATION)
+                .setUnlocalizedName("mirrorPlatingGold").setCreativeTab(tabAdvRocketry);
+        // Heavy plating swallows twice what light does; nothing else separates the two, because what a
+        // body meets is the voxel and not the shape inside it.
+        AdvancedRocketryBlocks.blockReactivePlate = new BlockReactivePlating(REACTIVE_PLATE_CAPACITY)
+                .setUnlocalizedName("reactivePlate").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockReactiveBlock = new BlockReactivePlating(REACTIVE_PLATE_CAPACITY * 2)
+                .setUnlocalizedName("reactiveBlock").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryBlocks.blockSolarPanel = new Block(Material.IRON).setUnlocalizedName("solarPanel").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockSolarArrayPanel = new BlockMultiBlockComponentVisibleAlphaTexture(Material.IRON).setUnlocalizedName("solararraypanel").setCreativeTab(tabAdvRocketry).setHardness(1).setResistance(1f);
         AdvancedRocketryBlocks.blockQuartzCrucible = new BlockQuartzCrucible().setUnlocalizedName("qcrucible").setCreativeTab(tabAdvRocketry);
@@ -878,6 +905,11 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockBlastBrick.setRegistryName("blastbrick"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockStructureTower.setRegistryName("structureTower"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLens.setRegistryName("blockLens"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMirrorPlatingAluminium.setRegistryName("mirrorPlatingAluminium"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMirrorPlatingSilver.setRegistryName("mirrorPlatingSilver"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMirrorPlatingGold.setRegistryName("mirrorPlatingGold"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockReactivePlate.setRegistryName("reactivePlate"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockReactiveBlock.setRegistryName("reactiveBlock"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSolarPanel.setRegistryName("solarPanel"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSolarArrayPanel.setRegistryName("solararraypanel"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockQuartzCrucible.setRegistryName("quartzcrucible"), null, false);

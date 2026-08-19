@@ -76,7 +76,7 @@ public final class ContactResolver {
 
         IContactResponder responder = responderAt(world, hit.block);
         if (responder != null) {
-            ContactResult answer = responder.onContact(contact);
+            ContactResult answer = responder.onContact(world, contact);
             if (answer != null) {
                 // A block that answered for itself did not walk anything, so the body is advanced past
                 // the block it was answered by — otherwise the next test finds the same block, asks
@@ -134,7 +134,23 @@ public final class ContactResolver {
      * frame in which the normal and the velocity are the same kind of thing. Restitution takes its
      * cut here, so a bounce costs a round something and two facing plates cannot keep one forever.
      */
+    /**
+     * The body's velocity mirrored in the face it met, in WORLD terms — what a block answering with a
+     * deflection has to hand back. Exposed because a block that computed this itself would be doing
+     * the frame conversion a second time, and the second time is where a subspace normal meets a
+     * world velocity and nobody notices. Answers null when the ship cannot be asked, which the caller
+     * should read as "let it through" rather than as a zero velocity.
+     */
+    public static Vec3d mirroredWorldVelocity(World world, Contact contact, double restitution) {
+        Vec3d local = mirrored(contact, restitution);
+        return local == null ? null : toWorldFrame(world, contact.getShipId(), local);
+    }
+
     private static Vec3d mirrored(Contact contact) {
+        return mirrored(contact, ARConfiguration.getCurrentConfig().ricochetRestitution);
+    }
+
+    private static Vec3d mirrored(Contact contact, double restitution) {
         Vec3d normal = contact.getNormal();
         Vec3d velocity = contact.getVelocity();
         if (normal == null || velocity == null) {
@@ -142,7 +158,7 @@ public final class ContactResolver {
         }
         double along = velocity.x * normal.x + velocity.y * normal.y + velocity.z * normal.z;
         Vec3d reflected = velocity.subtract(normal.scale(2.0D * along));
-        return reflected.scale(Math.max(0.0D, ARConfiguration.getCurrentConfig().ricochetRestitution));
+        return reflected.scale(Math.max(0.0D, restitution));
     }
 
     /** Back out of the block's frame, because what flies away flies away through the world. */

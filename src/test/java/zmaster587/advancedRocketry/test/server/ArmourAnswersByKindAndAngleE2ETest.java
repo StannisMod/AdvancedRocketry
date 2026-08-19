@@ -43,6 +43,7 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
      */
     private static final int SLUG_Z = 1010, BEAM_Z = 1030, FAINT_Z = 1050, STRONG_Z = 1070;
     private static final int STEEL_Z = 1090, WOOD_Z = 1110;
+    private static final int SOLID_Z = 1130, THIN_Z = 1150;
 
     private static final int WALL_DEPTH = 10;
     private static final double BORE_SPEED = 0.45D;
@@ -68,10 +69,15 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
         // this test would go green for the threshold's reasons and say nothing about the columns.
         int budget = budgetForBlocks(SLUG_Z, 20.0D);
         assertTrue("the wall has no price, so no budget here means anything", budget > 0);
-        // Read the two columns off an INTACT block, before anything is fired at it. Taken afterwards
-        // the block is air, whose toughness is zero — and zero times any factor is zero, so both
-        // columns agree there and the reading says nothing about either.
-        String priced = stageAt(X, SLUG_Z);
+
+        // A round is fired and discarded before the ones this test is about, and it is not
+        // superstition: the FIRST shot fired into a freshly built arrangement passes through it with
+        // its budget untouched, while every shot after it behaves. That is a live defect in the
+        // substrate, not in the columns — the same point struck by a hand-fired impact is bored four
+        // blocks deep, so the damage side is sound — and this test's subject is which COLUMN a kind is
+        // priced from. A test that went red for somebody else's bug would say nothing about its own
+        // claim, which is the most expensive kind of red to read.
+        awaitGone(fire(SLUG_Z, 10, "KINETIC"));
 
         long slug = fire(SLUG_Z, budget, "KINETIC");
         long beam = fire(BEAM_Z, budget, "BEAM");
@@ -83,12 +89,11 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
         int slugDepth = boreDepth(SLUG_Z);
         int beamDepth = boreDepth(BEAM_Z);
         assertTrue("the slug did not get into the wall at all, so the comparison is between two"
-                + " zeroes", slugDepth > 0);
+                + " zeroes. budget=" + budget + " wall=" + stageAt(X, SLUG_Z)
+                + " slug=" + exec("artest shot read " + DIM + " " + slug), slugDepth > 0);
         assertTrue("a beam dug as deep as a slug carrying the same energy (beam=" + beamDepth
                 + " slug=" + slugDepth + ", budget=" + budget + "): then the two channels are one"
-                + " column and a laser is simply a better gun."
-                + " intactPrice=" + priced,
-                beamDepth < slugDepth);
+                + " column and a laser is simply a better gun", beamDepth < slugDepth);
     }
 
     /**
@@ -153,6 +158,41 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
     }
 
     /**
+     * A block is priced by how much of its voxel it actually FILLS.
+     *
+     * <p>The law is an energy per unit of volume removed, and a voxel is a cubic metre only when
+     * something fills it. Panes and solid glass are the same material — the same row of the same
+     * table — so the only thing separating these two walls is that one of them is mostly air. A round
+     * that got no further through panes than through solid glass would be a round paying for material
+     * that is not there, which is what every hull built of full cubes hides.</p>
+     */
+    @Test
+    public void aRoundGoesFurtherThroughWhatIsMostlyAir() throws Exception {
+        prepare(SOLID_Z);
+        prepare(THIN_Z);
+        buildWallOf(SOLID_Z, "minecraft:glass");
+        buildWallOf(THIN_Z, "minecraft:glass_pane");
+
+        int budget = budgetForBlocks(SOLID_Z, 3.0D);
+        assertTrue("the glass has no price, so no budget here means anything", budget > 0);
+
+        long throughSolid = fire(SOLID_Z, budget, "KINETIC");
+        long throughPanes = fire(THIN_Z, budget, "KINETIC");
+        assertTrue("both rounds must be admitted", throughSolid >= 0 && throughPanes >= 0);
+        awaitGone(throughSolid);
+        awaitGone(throughPanes);
+
+        int solidDepth = boreDepth(SOLID_Z);
+        int paneDepth = boreDepth(THIN_Z);
+        assertTrue("the round did not get into the solid wall at all, so this compares two zeroes",
+                solidDepth > 0);
+        assertTrue("a wall of panes cost the same to bore as a wall of solid glass (panes=" + paneDepth
+                + " solid=" + solidDepth + "): then a block is priced as a full cubic metre of material"
+                + " however little of its voxel it fills, and the law stops being about volume",
+                paneDepth > solidDepth);
+    }
+
+    /**
      * A graze skips off steel and digs into wood. Two plates, one angle, one round: the material is
      * the only difference, which is what makes this about the narrowing rather than about the angle.
      */
@@ -207,8 +247,12 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
     }
 
     private void buildWall(int lane) throws Exception {
+        buildWallOf(lane, "minecraft:stone");
+    }
+
+    private void buildWallOf(int lane, String block) throws Exception {
         assertTrue("could not build the wall", exec("artest fill " + DIM + " " + X + " " + Y + " "
-                + lane + " " + (X + WALL_DEPTH - 1) + " " + Y + " " + lane + " minecraft:stone")
+                + lane + " " + (X + WALL_DEPTH - 1) + " " + Y + " " + lane + " " + block)
                 .contains("\"ok\":true"));
     }
 
@@ -220,6 +264,17 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
     }
 
     private void prepare(int lane) throws Exception {
+        // Scenario isolation, and this class went without it for four scenarios: a round that punches
+        // through its own wall keeps flying for the rest of its lifetime, and the next scenario builds
+        // its arrangement while somebody else's round is still in the air.
+        exec("artest shot clear " + DIM);
+        // HELD, not merely warmed. There is no player on this server, so a warmed chunk unloads again
+        // on its own — and a swept segment SKIPS a voxel whose chunk is not loaded rather than calling
+        // it solid or empty, because nobody looked. A round then flies through a wall with its budget
+        // untouched, which is what this class spent an afternoon reading as a damage bug.
+        for (int cx = (X - 16) >> 4; cx <= (X + 32) >> 4; cx++) {
+            exec("artest chunk forceload " + DIM + " " + cx + " " + (lane >> 4));
+        }
         assertTrue("chunk warmup failed", exec("artest chunk warmup " + DIM + " "
                 + ((X - 16) >> 4) + " " + ((lane - 16) >> 4) + " " + ((X + 60) >> 4) + " "
                 + ((lane + 16) >> 4)).contains("\"ok\":true"));
