@@ -7,6 +7,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.damage.ImpactKind;
+import zmaster587.advancedRocketry.api.damage.TravellingBody;
 import zmaster587.advancedRocketry.api.projectile.ShotEndReason;
 import zmaster587.advancedRocketry.api.projectile.ShotSpec;
 import zmaster587.advancedRocketry.damage.ImpactKindMapping;
@@ -227,8 +228,14 @@ public final class ShotSubstrate {
                 // A crossing found at zero distance is a bore this shot began on an earlier tick: it
                 // is standing in that block, and it paid for it then.
                 boolean resuming = structure.distance <= CROSSING_EPSILON * 2.0D;
-                ContactResolver.Resolution contact = ContactResolver.resolve(world, shot, structure,
-                        velocity, reachInside, resuming);
+                // The seam is handed the BODY's facts, not this shot: the same armour has to answer a
+                // bolt and a held beam, and neither of those is a record in this registry. Minting the
+                // impact identity here is what keeps a bore across several ticks from being refused as
+                // a duplicate of its own first contact.
+                TravellingBody body = new TravellingBody(shot.nextImpactId(), velocity, shot.getKind(),
+                        shot.getImpactEnergy(), shot.getRadius());
+                ContactResolver.Resolution contact = ContactResolver.resolve(world, body, structure,
+                        reachInside, resuming);
                 if (contact.result.isStopped()) {
                     // It came to rest where the walk stopped, not where it went in.
                     shot.setPosition(structure.point.add(direction.scale(contact.distance)));

@@ -19,6 +19,7 @@ import net.minecraftforge.fluids.capability.IFluidTankProperties;
 import net.minecraftforge.items.CapabilityItemHandler;
 import net.minecraftforge.items.IItemHandler;
 import zmaster587.advancedRocketry.api.ARConfiguration;
+import zmaster587.advancedRocketry.api.damage.ImpactKind;
 import zmaster587.advancedRocketry.block.BlockBipropellantRocketMotor;
 import zmaster587.advancedRocketry.block.BlockFuelTank;
 import zmaster587.advancedRocketry.block.BlockPressurizedFluidTank;
@@ -82,6 +83,14 @@ public enum WeightEngine {
     private Map<String, Double> toughnessByRegex = new LinkedHashMap<>();
     private Map<String, Double> toughnessMaterials = new HashMap<>();
     private double toughnessFallback = 2.0;
+    /**
+     * The ablation column: how much energy this block costs per unit of volume BOILED AWAY, as opposed
+     * to pushed through. Same units and the same resolution chain as toughness, and deliberately
+     * sparse — a block with no row here has its ablation derived from its toughness, so the table only
+     * ever has to name the materials whose two channels genuinely disagree.
+     */
+    private Map<String, Double> ablationIndividual = new HashMap<>();
+    private Map<String, Double> ablationByRegex = new LinkedHashMap<>();
 
     // Transient runtime caches (not persisted; cleared on load()).
     private final Map<String, Float> resolvedItemCache = new HashMap<>();
@@ -214,6 +223,71 @@ public enum WeightEngine {
         toughnessIndividual.put(registryName, toughness);
     }
 
+    /**
+     * How much this block resists ONE KIND of arrival, in the same units as toughness.
+     *
+     * <h3>Two channels of one law, not two mechanics</h3>
+     * <p>A slug is pushed through material; a beam boils it away. Both are "how much energy this stuff
+     * costs per unit of volume removed", so the law is the same and only the constant differs by kind.
+     * That is what makes a ceramic which shrugs off a beam and shatters under a slug two ROWS of one
+     * table rather than two special cases.</p>
+     *
+     * <h3>A block nobody wrote a row for</h3>
+     * <p>...keeps exactly today's single toughness for the mechanical kinds, so the plain hull the
+     * whole game is built out of behaves precisely as it did. Its ablation figure is DERIVED from that
+     * toughness by a single factor, because the alternative — defaulting the two columns equal — would
+     * quietly declare that a joule of laser digs as much hull as a joule of shell, which is both wrong
+     * and the opposite of the game being built.</p>
+     */
+    public float getResistance(Block block, ImpactKind kind) {
+        float mechanical = getToughness(block);
+        if (kind == null || !isThermalChannel(kind)) {
+            return mechanical;
+        }
+        String key = block == null || block.getRegistryName() == null
+                ? null : block.getRegistryName().toString();
+        if (key != null) {
+            Double override = ablationIndividual.get(key);
+            if (override != null) {
+                return override.floatValue();
+            }
+            Double regex = matchRegex(ablationByRegex, key);
+            if (regex != null) {
+                return regex.floatValue();
+            }
+        }
+        return (float) (mechanical * ARConfiguration.getCurrentConfig().ablationResistanceFactor);
+    }
+
+    /** The same question at a position. */
+    public float getResistance(World world, BlockPos pos, ImpactKind kind) {
+        return world == null || pos == null
+                ? (float) toughnessFallback
+                : getResistance(world.getBlockState(pos).getBlock(), kind);
+    }
+
+    /**
+     * Is this block METAL? Asked of the same material the toughness table already resolves by, so
+     * "is this metal" is a question that is already answered for every block in the game, vanilla
+     * ones included, and no new classification machinery is invented to ask it.
+     */
+    public boolean isMetal(World world, BlockPos pos) {
+        if (world == null || pos == null) {
+            return false;
+        }
+        return world.getBlockState(pos).getMaterial() == Material.IRON;
+    }
+
+    /** Which kinds arrive as heat to be conducted away rather than as something to be pushed through. */
+    public static boolean isThermalChannel(ImpactKind kind) {
+        return kind == ImpactKind.THERMAL || kind == ImpactKind.BEAM;
+    }
+
+    /** Register an explicit per-registry-name ablation resistance (highest precedence). */
+    public void setIndividualAblation(String registryName, double resistance) {
+        ablationIndividual.put(registryName, resistance);
+    }
+
     public float getWeight(Collection<ItemStack> stacks) {
         return stacks.stream().map(this::getWeight).reduce(0.0F, Float::sum);
     }
@@ -303,6 +377,8 @@ public enum WeightEngine {
             }
 
             toughnessIndividual = readMap(gson, root, "toughnessIndividual", mapType);
+            ablationIndividual = readMap(gson, root, "ablationIndividual", mapType);
+            ablationByRegex = readMap(gson, root, "ablationByRegex", mapType);
             toughnessByRegex = readMap(gson, root, "toughnessByRegex", linkedType);
             toughnessMaterials = readMap(gson, root, "toughnessMaterials", mapType);
             if (toughnessMaterials.isEmpty()) {

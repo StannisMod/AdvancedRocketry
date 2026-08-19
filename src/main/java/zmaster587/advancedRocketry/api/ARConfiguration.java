@@ -411,6 +411,51 @@ public class ARConfiguration {
     @ConfigProperty(needsSync = true)
     public double shotBodyRadiusCap = 2.0;
     /**
+     * How much dearer a block is to BOIL AWAY than to push through, when nothing has written it its
+     * own ablation row. Both figures are energy per unit of volume removed — the same dimension — and
+     * they are nowhere near the same magnitude: for steel, being pushed through costs of order a
+     * gigajoule per cubic metre while heating, melting and vaporising it costs tens of them. So per
+     * joule a kinetic round removes far more hull than a beam does, and a laser buys precision,
+     * instantaneity and nothing to reload instead of digging power.
+     */
+    @ConfigProperty(needsSync = true)
+    public double ablationResistanceFactor = 20.0;
+    /**
+     * The power density below which a beam does not drill at all — it warms the plate and the energy
+     * is conducted away — as energy per unit of the body's cross-section, in the units an impact
+     * budget is in. <b>Off by default, and the reason is worth reading before turning it on.</b>
+     *
+     * <p>The worry it was written for is real: a linear ablation law would let a faint beam held long
+     * enough cut a battleship. But the law is NOT linear in the way that worry assumes — a stage is
+     * bought whole or not at all, and a beam that cannot afford one keeps its energy and buys nothing
+     * this tick or any other. Since a stage costs `perStage x ablation x area / referenceArea`, "can
+     * this beam afford a stage" is ALREADY the question "is this beam intense enough", with a
+     * threshold of `perStage x ablation / referenceArea` that each block sets for itself. A faint beam
+     * therefore never accumulates, and the battleship is safe without this knob.</p>
+     *
+     * <p>What the knob still buys, at a value ABOVE that affordability line, is a gate a pack can
+     * raise deliberately, and the statement that a sub-threshold beam's energy is ABSORBED rather than
+     * carried on to whatever is behind the plate. Below that line it is inert — it can only refuse
+     * beams the pricing was going to refuse anyway. Set to zero so that it changes nothing until
+     * somebody rules on where the line should be.</p>
+     */
+    @ConfigProperty(needsSync = true)
+    public double beamAblationIntensityThreshold = 0.0;
+    /**
+     * How glancing a hit has to be before a solid round skips off METAL instead of digging in, as the
+     * angle between the round and the surface normal in degrees: 0 is square-on, 90 is a pure graze.
+     * Only metal deflects — a round never skips off a plank wall — so a player meets bouncing rounds
+     * where a player expects them. 90 disables ricochet entirely.
+     */
+    @ConfigProperty(needsSync = true)
+    public double ricochetIncidenceDegrees = 65.0;
+    /**
+     * How much of its speed a ricocheting round keeps. Below 1 a bounce costs something, which is what
+     * stops a round skipping between two plates forever; at 1 a graze is free.
+     */
+    @ConfigProperty(needsSync = true)
+    public double ricochetRestitution = 0.75;
+    /**
      * How many shots one world may carry at once. A refusal, not an eviction: dropping somebody
      * else's round to make room would turn a burst of cheap fire into a way of deleting incoming fire.
      */
@@ -736,6 +781,10 @@ public class ARConfiguration {
         arConfig.shotReflectionSpeedFloor = config.get(WEAPONS, "shotReflectionSpeedFloor", 0.05, "Speed in blocks per tick below which a shot deflected by a shield is ended at the shell instead of continuing. Prevents near-motionless rounds loitering against a shield", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.shotPenetrationSpeedFloor = config.get(WEAPONS, "shotPenetrationSpeedFloor", 0.05, "Speed in blocks per tick below which a round boring through a hull is treated as having come to rest inside it. Penetration costs a round its speed, and without a floor a spent one creeps forward forever", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.shotBodyRadiusCap = config.get(WEAPONS, "shotBodyRadiusCap", 2.0, "The widest a shot's body is treated as when it sweeps its way through blocks, in blocks. A body sweeps a cylinder rather than a line and the work one step does grows with the square of its width, so this bounds what an absurd calibre can cost the server. The declared cross-section still prices the shot; only the geometry is capped", 0.0, 8.0).getDouble();
+        arConfig.ricochetIncidenceDegrees = config.get(WEAPONS, "ricochetIncidenceDegrees", 65.0, "How glancing a hit must be before a solid round skips off METAL rather than digging in, in degrees from the surface normal: 0 is square-on, 90 a pure graze. Only metal deflects, so a round never skips off a plank wall. 90 disables ricochet", 0.0, 90.0).getDouble();
+        arConfig.ricochetRestitution = config.get(WEAPONS, "ricochetRestitution", 0.75, "How much of its speed a ricocheting round keeps. Below 1 a bounce costs something, which is what stops a round skipping between two plates forever", 0.0, 1.0).getDouble();
+        arConfig.ablationResistanceFactor = config.get(WEAPONS, "ablationResistanceFactor", 20.0, "How much dearer a block is to boil away than to push through, when nothing has written it its own ablation row. Both are energy per unit volume removed; they are nowhere near the same magnitude, which is why a laser buys precision rather than digging power. 1.0 makes a beam dig exactly like a slug", 0.01, 1000.0).getDouble();
+        arConfig.beamAblationIntensityThreshold = config.get(WEAPONS, "beamAblationIntensityThreshold", 0.0, "Energy per unit of a beam's cross-section below which it does not drill at all, its energy being absorbed as heat rather than carried onward. OFF by default: a stage is bought whole or not at all, so affordability is already an intensity threshold each block sets for itself, and a faint beam never accumulates. Raise this above that line only to gate beams the pricing would otherwise let through", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.maxShotsPerWorld = config.get(WEAPONS, "maxShotsPerWorld", 256, "How many shots one world may have in flight at once. Further fire is refused until some land; nothing already in flight is ever dropped to make room", 1, Integer.MAX_VALUE).getInt();
         arConfig.shotVisibilityRadius = config.get(WEAPONS, "shotVisibilityRadius", 256, "How near a player the path of a fired round must pass before that player is told about it and can see it drawn, in blocks. 0 disables shot replication entirely — the mechanic still works, nothing is drawn", 0, Integer.MAX_VALUE).getInt();
         arConfig.enableFireControlSensor = config.get(WEAPONS, "enableFireControlSensor", true, "Whether fire-control sensors search for targets. Off, a sensor acquires nothing, publishes nothing and draws no power: batteries are pointed by hand, as they were before sensors existed").getBoolean();

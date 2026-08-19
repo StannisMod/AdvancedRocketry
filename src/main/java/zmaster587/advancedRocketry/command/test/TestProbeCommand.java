@@ -13974,7 +13974,14 @@ public class TestProbeCommand extends CommandBase {
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
-                    if (world.setBlockState(new BlockPos(x, y, z), state)) {
+                    BlockPos at = new BlockPos(x, y, z);
+                    // A fill is the harness saying "this region is fresh". Setting the state alone is
+                    // not: recorded damage is keyed by POSITION and lives outside the block, and it is
+                    // cleared in production by the place and break EVENTS, which setting a state
+                    // directly never fires. So a scenario rebuilding a wall over an earlier scenario's
+                    // crater would arrive pre-damaged, and read as its own doing.
+                    zmaster587.advancedRocketry.damage.BlockDamageSavedData.get(world).clear(at);
+                    if (world.setBlockState(at, state)) {
                         placed++;
                     }
                 }

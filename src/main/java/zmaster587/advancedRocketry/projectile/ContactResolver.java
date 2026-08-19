@@ -10,7 +10,11 @@ import zmaster587.advancedRocketry.api.damage.ContactResult;
 import zmaster587.advancedRocketry.api.damage.IContactResponder;
 import zmaster587.advancedRocketry.api.damage.DamageReport;
 import zmaster587.advancedRocketry.api.damage.ImpactRequest;
+import zmaster587.advancedRocketry.api.damage.TravellingBody;
+import zmaster587.advancedRocketry.api.ARConfiguration;
+import zmaster587.advancedRocketry.api.damage.ImpactKind;
 import zmaster587.advancedRocketry.damage.ShipDamageService;
+import zmaster587.advancedRocketry.util.WeightEngine;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 
 /**
@@ -34,13 +38,6 @@ public final class ContactResolver {
     }
 
     /**
-     * Resolve one shot meeting one block.
-     *
-     * @param hit the crossing, carrying the block's own frame, the entry face in that frame and the
-     *            world point
-     * @param worldVelocity the shot's velocity in WORLD terms
-     */
-    /**
      * What happened, AND how far along its own direction the body got while it happened. The distance
      * is not part of {@link ContactResult} on purpose: a block answering a contact says what becomes
      * of the body, not how the substrate should move it, and giving armour a way to state a distance
@@ -56,15 +53,26 @@ public final class ContactResolver {
         }
     }
 
-    public static Resolution resolve(World world, Shot shot, StructureCrossing.Hit hit,
-                                     Vec3d worldVelocity, double reachBlocks, boolean resumingBore) {
-        if (world == null || shot == null || hit == null) {
+    /**
+     * Resolve one travelling body meeting one block.
+     *
+     * <p>It takes the body's FACTS rather than whatever record is carrying them, so that armour serves
+     * every weapon family: a shell out of a gun, a bolt, and a beam somebody is holding on a hull are
+     * three different things to own and one thing to answer.</p>
+     *
+     * @param body the body's own facts — velocity, kind, what it is still worth, how wide it is, and
+     *             the identity this meeting is remembered by
+     * @param hit  the crossing: the block's own frame, the entry face in that frame, the world point
+     */
+    public static Resolution resolve(World world, TravellingBody body, StructureCrossing.Hit hit,
+                                     double reachBlocks, boolean resumingBore) {
+        if (world == null || body == null || hit == null) {
             return new Resolution(ContactResult.stopped(), 0.0D);
         }
 
         Contact contact = new Contact(hit.block, hit.point, hit.entryFace,
-                inBlockFrame(world, hit, worldVelocity), shot.getKind(), shot.getImpactEnergy(),
-                shot.getRadius(), 1.0D, hit.shipId);
+                inBlockFrame(world, hit, body.getVelocity()), body.getKind(), body.getEnergy(),
+                body.getRadius(), 1.0D, hit.shipId);
 
         IContactResponder responder = responderAt(world, hit.block);
         if (responder != null) {
@@ -76,7 +84,77 @@ public final class ContactResolver {
                 return new Resolution(answer, answer.isStopped() ? 0.0D : 1.0D);
             }
         }
-        return defaultLaw(world, shot, contact, reachBlocks, resumingBore);
+        ContactResult skipped = ricochet(world, contact, body);
+        if (skipped != null) {
+            // A graze that skipped off did not walk into anything, so the body is moved past the block
+            // it bounced from, exactly as a block that answered for itself would have left it.
+            return new Resolution(skipped, 1.0D);
+        }
+        return defaultLaw(world, body, contact, reachBlocks, resumingBore);
+    }
+
+    /**
+     * The default ricochet: a solid round that meets METAL at a shallow enough angle skips off it.
+     *
+     * <p>Three narrowings, and each one is what keeps this from being a surprise. Only a body with
+     * MASS bounces — a beam has nothing to reflect and its energy is absorbed. Only METAL bounces, so
+     * a player meets skipping rounds off a steel hull and never off a plank wall. And only a shallow
+     * enough hit bounces, on an angle threshold that preserves the one ordering worth preserving: a
+     * squarer hit never bounces where a shallower one did not.</p>
+     *
+     * <p>Answers null when the body digs in — which is every case except a glancing hit on metal, and
+     * therefore the case the whole game is still made of.</p>
+     */
+    private static ContactResult ricochet(World world, Contact contact, TravellingBody body) {
+        if (!carriesMass(contact.getKind()) || contact.getEntryFace() == null) {
+            return null;
+        }
+        double threshold = ARConfiguration.getCurrentConfig().ricochetIncidenceDegrees;
+        if (threshold >= 90.0D || contact.getIncidenceDegrees() < threshold) {
+            return null;
+        }
+        if (!WeightEngine.INSTANCE.isMetal(world, contact.getPos())) {
+            return null;
+        }
+        Vec3d bounced = mirrored(contact);
+        if (bounced == null) {
+            return null;
+        }
+        Vec3d worldVelocity = toWorldFrame(world, contact.getShipId(), bounced);
+        return worldVelocity == null ? null : ContactResult.deflected(worldVelocity, body.getEnergy());
+    }
+
+    /** Which kinds are a lump of something travelling, as opposed to energy arriving. */
+    private static boolean carriesMass(ImpactKind kind) {
+        return kind == ImpactKind.KINETIC || kind == ImpactKind.EXPLOSIVE;
+    }
+
+    /**
+     * The body's velocity mirrored in the face it grazed, in the BLOCK's own frame — which is the only
+     * frame in which the normal and the velocity are the same kind of thing. Restitution takes its
+     * cut here, so a bounce costs a round something and two facing plates cannot keep one forever.
+     */
+    private static Vec3d mirrored(Contact contact) {
+        Vec3d normal = contact.getNormal();
+        Vec3d velocity = contact.getVelocity();
+        if (normal == null || velocity == null) {
+            return null;
+        }
+        double along = velocity.x * normal.x + velocity.y * normal.y + velocity.z * normal.z;
+        Vec3d reflected = velocity.subtract(normal.scale(2.0D * along));
+        return reflected.scale(Math.max(0.0D, ARConfiguration.getCurrentConfig().ricochetRestitution));
+    }
+
+    /** Back out of the block's frame, because what flies away flies away through the world. */
+    private static Vec3d toWorldFrame(World world, String shipId, Vec3d blockFrame) {
+        if (shipId == null) {
+            return blockFrame;
+        }
+        double[] rotated = VSIntegration.rotateToWorldFrameFor(world, shipId, blockFrame.x,
+                blockFrame.y, blockFrame.z);
+        // A ship that stopped answering between the crossing and here cannot be asked where "away"
+        // points. Answering null lets the body dig in instead, which is the recoverable mistake.
+        return rotated == null ? null : new Vec3d(rotated[0], rotated[1], rotated[2]);
     }
 
     /** How far a body of this radius reaches across, in square blocks. */
@@ -99,14 +177,14 @@ public final class ContactResolver {
      * energy behind a wider face buys less depth. At the reference cross-section the price is what it
      * always was.</p>
      */
-    private static Resolution defaultLaw(World world, Shot shot, Contact contact, double reachBlocks,
-                                         boolean resumingBore) {
+    private static Resolution defaultLaw(World world, TravellingBody body, Contact contact,
+                                         double reachBlocks, boolean resumingBore) {
         ImpactRequest request = resumingBore
-                ? ImpactRequest.resuming(shot.nextImpactId(), contact.getPoint(),
-                        directionOf(contact, shot), contact.getEnergy(), contact.getKind(),
+                ? ImpactRequest.resuming(body.getImpactId(), contact.getPoint(),
+                        body.getDirection(), contact.getEnergy(), contact.getKind(),
                         reachBlocks, areaOf(contact.getRadius()))
-                : ImpactRequest.penetrating(shot.nextImpactId(), contact.getPoint(),
-                        directionOf(contact, shot), contact.getEnergy(), contact.getKind(),
+                : ImpactRequest.penetrating(body.getImpactId(), contact.getPoint(),
+                        body.getDirection(), contact.getEnergy(), contact.getKind(),
                         reachBlocks, areaOf(contact.getRadius()));
         DamageReport report = ShipDamageService.apply(world, request);
 
@@ -117,18 +195,6 @@ public final class ContactResolver {
         // It got through what it met, or as far as this tick's travel allowed. Either way it is still
         // a shot, and the substrate advances it by what the walk says it covered.
         return new Resolution(ContactResult.passedThrough(residual), report.getDistanceWalked());
-    }
-
-    /**
-     * The world-frame direction the impact is declared along. Taken from the shot rather than from the
-     * contact's own velocity, because the contact carries a BLOCK-frame velocity and the damage
-     * service works in world terms — mixing the two is the frame bug this separation exists to make
-     * impossible.
-     */
-    private static Vec3d directionOf(Contact contact, Shot shot) {
-        Vec3d v = shot.getVelocity();
-        double speed = v.lengthVector();
-        return speed <= 1.0E-9D ? new Vec3d(0.0D, -1.0D, 0.0D) : v.scale(1.0D / speed);
     }
 
     /**

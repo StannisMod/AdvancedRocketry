@@ -96,7 +96,7 @@ public final class ShipDamageService {
             remember(world, request.getImpactId());
             return toReport(StructureDamageEngine.penetrate(world, point, request.getDirection(),
                     request.getBudget(), request.getReachBlocks(), request.getCrossSectionArea(),
-                    request.resumesInside()), null, world);
+                    request.resumesInside(), request.getKind()), null, world);
         }
 
         double[] shipPoint = VSIntegration.toShipFrameFor(world, shipId, point.x, point.y, point.z);
@@ -113,7 +113,8 @@ public final class ShipDamageService {
         StructureDamageEngine.WalkResult walk = StructureDamageEngine.penetrate(world,
                 new Vec3d(shipPoint[0], shipPoint[1], shipPoint[2]),
                 new Vec3d(shipDir[0], shipDir[1], shipDir[2]), request.getBudget(),
-                request.getReachBlocks(), request.getCrossSectionArea(), request.resumesInside());
+                request.getReachBlocks(), request.getCrossSectionArea(), request.resumesInside(),
+                request.getKind());
         return toReport(walk, shipId, world);
     }
 

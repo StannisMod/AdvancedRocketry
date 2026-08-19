@@ -6,6 +6,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.damage.DamageOutcome;
+import zmaster587.advancedRocketry.api.damage.ImpactKind;
 import zmaster587.advancedRocketry.api.damage.ImpactRequest;
 import zmaster587.advancedRocketry.api.damage.StopReason;
 import zmaster587.advancedRocketry.api.ARConfiguration;
@@ -110,6 +111,21 @@ public final class StructureDamageEngine {
     public static WalkResult penetrate(World world, Vec3d entry, Vec3d direction, int budget,
                                        double reachBlocks, double crossSectionArea,
                                        boolean resumesInside) {
+        return penetrate(world, entry, direction, budget, reachBlocks, crossSectionArea, resumesInside,
+                ImpactKind.KINETIC);
+    }
+
+    /**
+     * The same walk, told what KIND of arrival it is spending.
+     *
+     * <p>The kind picks the material column the price is read from — pushed through, or boiled away —
+     * and, for the thermal channel alone, decides whether the arrival is intense enough to remove any
+     * material at all. Everything else about the walk is identical: a caller that does not care hands
+     * {@code KINETIC} and gets exactly the walk this always was.</p>
+     */
+    public static WalkResult penetrate(World world, Vec3d entry, Vec3d direction, int budget,
+                                       double reachBlocks, double crossSectionArea,
+                                       boolean resumesInside, ImpactKind kind) {
         WalkResult result = new WalkResult();
         result.budgetLeft = budget;
         if (world == null || entry == null || direction == null
@@ -119,8 +135,19 @@ public final class StructureDamageEngine {
             return result;
         }
 
+        if (tooFaintToDrill(kind, budget, crossSectionArea)) {
+            // It warms the plate and is conducted away. The energy is gone either way — a beam too
+            // faint to drill is absorbed, not reflected and not carried onward — but no material is
+            // removed, which is the whole content of the threshold.
+            result.budgetSpent = budget;
+            result.budgetLeft = 0;
+            result.outcome = DamageOutcome.ABSORBED;
+            result.stopReason = StopReason.BUDGET_EXHAUSTED;
+            return result;
+        }
+
         Walk walk = new Walk(world, entry, direction, result, reachBlocks, crossSectionArea,
-                resumesInside);
+                resumesInside, kind);
         // The bound scales with the body, because the sweep does: holding a wide round to a ray's
         // voxel budget would not make it cheaper, it would make it stop looking a few blocks in and
         // report that it had come out the far side of a hull it was still inside.
@@ -142,6 +169,8 @@ public final class StructureDamageEngine {
         private final Vec3d farEnd;
 
         private final double areaFactor;
+        /** Which material column this walk is priced against. */
+        private final ImpactKind kind;
         /**
          * How wide the body is, in blocks, derived from the cross-section it was priced against —
          * there is one statement of a body's width and this is read from it, never declared twice.
@@ -160,7 +189,8 @@ public final class StructureDamageEngine {
         private Vec3d lastSolidExit;
 
         private Walk(World world, Vec3d entry, Vec3d direction, WalkResult result, double reachBlocks,
-                     double crossSectionArea, boolean resumesInside) {
+                     double crossSectionArea, boolean resumesInside, ImpactKind kind) {
+            this.kind = kind;
             this.skipThisVoxel = resumesInside;
             this.world = world;
             this.entry = entry;
@@ -260,7 +290,7 @@ public final class StructureDamageEngine {
                 // share of the budget, so charging it for the entire cross-section would take the
                 // width out of the round twice and leave a wide shot feebler than any physics says.
                 int spent = spendInto(world, pos, state, result,
-                        areaFactor * layer.shares.get(i), allowance);
+                        areaFactor * layer.shares.get(i), allowance, kind);
                 result.budgetSpent += spent;
                 result.budgetLeft -= spent;
             }
@@ -307,10 +337,10 @@ public final class StructureDamageEngine {
      * handed the purse, which is what lets one layer be divided between several of them.
      */
     private static int spendInto(World world, BlockPos pos, IBlockState state, WalkResult result,
-                                 double areaFactor, int allowance) {
+                                 double areaFactor, int allowance, ImpactKind kind) {
         int maxStage = DamageState.getMaxStage(world, pos);
         int stage = DamageState.getStage(world, pos);
-        int stageCost = stageCost(world, pos, areaFactor);
+        int stageCost = stageCost(world, pos, areaFactor, kind);
 
         int left = Math.max(0, allowance);
         int spent = 0;
@@ -353,10 +383,45 @@ public final class StructureDamageEngine {
      * anybody writing it down as a rule.
      */
     public static int stageCost(World world, BlockPos pos, double areaFactor) {
-        double toughness = WeightEngine.INSTANCE.getToughness(world, pos);
+        return stageCost(world, pos, areaFactor, ImpactKind.KINETIC);
+    }
+
+    /**
+     * What one stage costs a body of a given cross-section arriving as {@code kind}.
+     *
+     * <p>The kind picks the material constant and nothing else: a slug is priced against the block's
+     * resistance to being pushed through, a beam against its resistance to being boiled away. Same
+     * law, same units, different column — which is what makes a ceramic that shrugs off a beam and
+     * shatters under a slug two rows of a table rather than two mechanics. A block with no ablation
+     * row of its own has one derived from its toughness, so the mechanical price of every block in the
+     * game is exactly what it always was.</p>
+     */
+    public static int stageCost(World world, BlockPos pos, double areaFactor, ImpactKind kind) {
+        double resistance = WeightEngine.INSTANCE.getResistance(world, pos, kind);
         int maxStage = Math.max(1, DamageState.getMaxStage(world, pos));
-        double perStage = (STAGE_COST_BASE + toughness * STAGE_COST_TOUGHNESS_MULT) / maxStage;
+        double perStage = (STAGE_COST_BASE + resistance * STAGE_COST_TOUGHNESS_MULT) / maxStage;
         return Math.max(1, (int) Math.ceil(perStage * Math.max(0.0D, areaFactor)));
+    }
+
+    /**
+     * Is this arrival intense enough to remove material at all?
+     *
+     * <p>Only the thermal channel has a threshold, and it is not a balance nicety: material conducts
+     * heat away, so below some power density a beam warms a plate rather than drilling it. A linear
+     * law without one says a one-watt laser held long enough cuts a battleship, and makes a big
+     * emitter merely a faster small one. The intensity is the energy behind the body's own face —
+     * spreading the same energy over a wider beam makes it dimmer, exactly as it should.</p>
+     */
+    private static boolean tooFaintToDrill(ImpactKind kind, int budget, double crossSectionArea) {
+        if (!WeightEngine.isThermalChannel(kind)) {
+            return false;
+        }
+        double threshold = ARConfiguration.getCurrentConfig().beamAblationIntensityThreshold;
+        if (threshold <= 0.0D) {
+            return false;
+        }
+        double area = crossSectionArea <= 0.0D ? ImpactRequest.REFERENCE_AREA : crossSectionArea;
+        return budget / area < threshold;
     }
 
     /**
