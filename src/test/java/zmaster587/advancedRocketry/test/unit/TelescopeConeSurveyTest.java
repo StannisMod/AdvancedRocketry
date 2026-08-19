@@ -27,6 +27,7 @@ import zmaster587.advancedRocketry.universe.UniverseScale;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -48,8 +49,20 @@ public class TelescopeConeSurveyTest {
     private static final long SEED = 0xC0FFEEL;
     private static final long STEP = GalaxyGenConfig.DEFAULT_MIN_SPACING;
 
+    private double previousMargin;
+
+    @org.junit.Before
+    public void armResolveMargin() {
+        previousMargin = ARConfiguration.getCurrentConfig().telescopeResolveMarginMagnitudes;
+        // STATED, so nothing here depends on the shipped default staying put - except the one test
+        // that is explicitly about what the shipped default costs, which sets it again itself.
+        ARConfiguration.getCurrentConfig().telescopeResolveMarginMagnitudes =
+                ARConfiguration.DEFAULT_TELESCOPE_RESOLVE_MARGIN_MAGNITUDES;
+    }
+
     @After
     public void resetSeams() {
+        ARConfiguration.getCurrentConfig().telescopeResolveMarginMagnitudes = previousMargin;
         UniverseRegistry.setGenerator(null);
         UniverseRegistry.setStarLookup(null);
     }
@@ -309,6 +322,96 @@ public class TelescopeConeSurveyTest {
                 TelescopeScan.resolveCell(registry, seat, crystal, 1_000L, id -> "Body-" + id) > 0);
     }
 
+    @Test
+    public void theOperatorChoosesWhetherADetectionIsFollowedToTheBodies() {
+        // The instrument's own control, and the reason it is a control rather than a config key: over
+        // known sky an operator wants every body named, and into sky nobody has visited he wants a
+        // list of places worth flying to. A deep pointing on FULL fills a crystal many times faster.
+        //
+        // Both halves are asserted against the SAME look, because the claim is that the choice is
+        // what differs — a fixture that only checked the cheap side would pass against an instrument
+        // that had quietly stopped resolving anything at all.
+        // Close enough that the instrument could certainly make the system out, so what the test
+        // measures is the OPERATOR's choice and not the aperture's reach - those are two different
+        // reasons for a bare row and a fixture near the gate would confuse them.
+        UniverseRegistry registry = oneStarAt(10d, 1.15f, 100);
+        GalacticCoord seat = seatAt(10d);
+        List<TelescopeScan.Detection> hits = TelescopeScan.detect(registry, seat, HOME, 12d);
+        assertTrue("arrangement: the aperture must not be what limits this look",
+                hits.get(0).resolvable());
+        assertEquals("arrangement: exactly one system to follow up", 1, hits.size());
+
+        CrystalMemory coordsOnly = new CrystalMemory();
+        TelescopeScan.characterise(registry, hits.get(0), coordsOnly, 1_000L, id -> "Body-" + id,
+                false);
+        assertNull("recording positions only must name no body", coordsOnly.forBody(701));
+        assertEquals("but it must still write the address, or the look taught the operator nothing",
+                1, coordsOnly.size());
+
+        CrystalMemory full = new CrystalMemory();
+        TelescopeScan.characterise(registry, hits.get(0), full, 1_000L, id -> "Body-" + id, true);
+        assertNotNull("and the full setting must name the system's bodies", full.forBody(701));
+        assertTrue("which is strictly more than the address alone: " + full.size() + " vs "
+                + coordsOnly.size(), full.size() > coordsOnly.size());
+    }
+
+    @Test
+    public void seeingThatAStarIsThereAndMakingOutWhatOrbitsItAreDifferentObservations() {
+        // The mechanic the resolve margin buys, and the reason it is not a second aperture: ONE
+        // instrument, ONE star, and the only thing that differs is how far away it is. Near, the
+        // survey names the planet; far, it registers a point of light and writes the address.
+        double sunLike = StellarMagnitude.luminositySuns(1.15d, 100);
+        double detectAt = 12d;
+        double resolveAt = detectAt - ARConfiguration.DEFAULT_TELESCOPE_RESOLVE_MARGIN_MAGNITUDES;
+        double detectReach = StellarMagnitude.detectionRangeLightYears(sunLike, detectAt);
+        double resolveReach = StellarMagnitude.detectionRangeLightYears(sunLike, resolveAt);
+        assertTrue("arrangement: resolving must be the harder of the two, by a wide margin: "
+                        + resolveReach + " vs " + detectReach,
+                resolveReach * 4d < detectReach);
+
+        // Far: inside the aperture, outside what it can make out.
+        double far = (detectReach + resolveReach) / 2d;
+        UniverseRegistry farSky = oneStarAt(far, 1.15f, 100);
+        List<TelescopeScan.Detection> farHits =
+                TelescopeScan.detect(farSky, seatAt(far), HOME, detectAt);
+        assertEquals("arrangement: it must still REGISTER at this distance", 1, farHits.size());
+        assertFalse("but it must not be resolvable", farHits.get(0).resolvable());
+
+        CrystalMemory distant = new CrystalMemory();
+        TelescopeScan.characterise(farSky, farHits.get(0), distant, 1_000L, id -> "Body-" + id, true);
+        assertNull("so a survey must not name its planet", distant.forBody(701));
+        assertEquals("and must still write the address down", 1, distant.size());
+
+        // Near: the same star, the same instrument, the same request.
+        double near = resolveReach / 2d;
+        UniverseRegistry nearSky = oneStarAt(near, 1.15f, 100);
+        List<TelescopeScan.Detection> nearHits =
+                TelescopeScan.detect(nearSky, seatAt(near), HOME, detectAt);
+        assertEquals("arrangement: one star to make out", 1, nearHits.size());
+        assertTrue("this one must be resolvable", nearHits.get(0).resolvable());
+
+        CrystalMemory close = new CrystalMemory();
+        TelescopeScan.characterise(nearSky, nearHits.get(0), close, 1_000L, id -> "Body-" + id, true);
+        assertNotNull("and its planet must be named", close.forBody(701));
+    }
+
+    @Test
+    public void theMarginIsTheDifferenceBetweenSeeingAndMEASURING() {
+        // Where 6.5 comes from, stated as arithmetic so a retune has to argue with the derivation
+        // rather than with a taste: detection is called at a signal-to-noise of about 5, a usable
+        // spectrum wants about 100, and signal-to-noise grows as the square root of the photons —
+        // so the flux ratio is (100/5)^2 = 400, which is 2.5*log10(400) magnitudes.
+        double fluxRatio = (100d / 5d) * (100d / 5d);
+        assertEquals("the margin must be the SNR ratio and not a number someone liked",
+                2.5d * Math.log10(fluxRatio),
+                ARConfiguration.DEFAULT_TELESCOPE_RESOLVE_MARGIN_MAGNITUDES, 0.01d);
+
+        // And zero must genuinely turn it off, which is what "disable the flag" has to mean.
+        ARConfiguration.getCurrentConfig().telescopeResolveMarginMagnitudes = 0d;
+        assertEquals("a margin of zero makes anything detectable also resolvable",
+                TelescopeScan.limitMagnitude(), TelescopeScan.resolveLimitMagnitude(), 1e-9d);
+    }
+
     // ── detection is not characterisation ─────────────────────────────────────
 
     /** The real generator, counting the two questions separately. */
@@ -446,6 +549,15 @@ public class TelescopeConeSurveyTest {
                     shipped.limitMagnitude()).size();
         }
         long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        int resolvable = 0;
+        for (int i = 0; i < looks; i++) {
+            for (TelescopeScan.Detection hit : TelescopeScan.detect(registry, scan.cellAt(i), HOME,
+                    shipped.limitMagnitude())) {
+                if (hit.resolvable()) {
+                    resolvable++;
+                }
+            }
+        }
         long steps = (looks + shipped.cellsPerStep() - 1) / shipped.cellsPerStep();
 
         System.out.println("the shipped instrument reaches "
@@ -453,7 +565,7 @@ public class TelescopeConeSurveyTest {
                 + shipped.maxRangeSteps() + " territories); a full pointing is " + looks
                 + " looks in " + steps + " steps (" + (steps * shipped.baseTicks() / 20L)
                 + " s of clear night), registered " + detections + " systems, walked in "
-                + elapsedMs + " ms");
+                + elapsedMs + " ms, of which " + resolvable + " were close enough to make out");
 
         assertTrue("a full pointing must stay under the walk ceiling: " + looks,
                 looks <= ARConfiguration.DEFAULT_TELESCOPE_SCAN_MAX_CELLS);

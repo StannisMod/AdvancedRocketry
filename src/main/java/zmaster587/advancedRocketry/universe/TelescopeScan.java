@@ -88,13 +88,35 @@ public final class TelescopeScan {
         private final double apparentMagnitude;
         private final double distanceLightYears;
         private final double extinctionMagnitudes;
+        private final boolean resolvable;
 
+        /** A detection of unstated provenance — always resolvable; see {@link #resolvable()}. */
         public Detection(GalacticCoord anchor, double apparentMagnitude, double distanceLightYears,
                          double extinctionMagnitudes) {
+            this(anchor, apparentMagnitude, distanceLightYears, extinctionMagnitudes, true);
+        }
+
+        public Detection(GalacticCoord anchor, double apparentMagnitude, double distanceLightYears,
+                         double extinctionMagnitudes, boolean resolvable) {
             this.anchor = anchor;
             this.apparentMagnitude = apparentMagnitude;
             this.distanceLightYears = distanceLightYears;
             this.extinctionMagnitudes = extinctionMagnitudes;
+            this.resolvable = resolvable;
+        }
+
+        /**
+         * Whether this look was bright enough for the instrument to make out what is IN the system,
+         * as opposed to merely registering that it is there.
+         *
+         * <p><b>Decided where the aperture is known — in {@link #detect} — and carried.</b> It cannot
+         * be recomputed later against the configured instrument, because the instrument that took
+         * this look is not necessarily the one the configuration describes: a caller states the limit
+         * it is observing with, and asking the config afterwards would let those two disagree
+         * silently. A detection is a fact about a LOOK, and so is this.</p>
+         */
+        public boolean resolvable() {
+            return resolvable;
         }
 
         /** The anchor cell of the system that was registered. */
@@ -120,7 +142,8 @@ public final class TelescopeScan {
         @Override
         public String toString() {
             return "Detection[" + anchor.cellKey() + ", m=" + String.format("%.2f", apparentMagnitude)
-                    + ", " + String.format("%.1f", distanceLightYears) + " ly]";
+                    + ", " + String.format("%.1f", distanceLightYears) + " ly"
+                    + (resolvable ? "" : ", point only") + "]";
         }
     }
 
@@ -148,6 +171,7 @@ public final class TelescopeScan {
             return Collections.emptyList();
         }
         List<Detection> hits = new ArrayList<>(anchors.size());
+        double resolveLimit = limitMagnitude - resolveMarginMagnitudes();
         for (GalacticCoord anchor : anchors) {
             if (observer == null) {
                 hits.add(new Detection(anchor, Double.NEGATIVE_INFINITY, 0d, 0d));
@@ -172,7 +196,8 @@ public final class TelescopeScan {
             double extinction = registry.extinctionBetween(observer, anchor);
             double magnitude = clearSky + extinction;
             if (magnitude <= limitMagnitude) {
-                hits.add(new Detection(anchor, magnitude, lightYears, extinction));
+                hits.add(new Detection(anchor, magnitude, lightYears, extinction,
+                        magnitude <= resolveLimit));
             }
         }
         return hits;
@@ -194,6 +219,10 @@ public final class TelescopeScan {
      * mechanic — a reason to FLY somewhere rather than survey it from home — and it is why
      * concealment costs detail and never the look itself.</p>
      *
+     * <p><b>Brightness decides this too, not only the operator.</b> A system registered near the
+     * aperture's limit is a point of light and nothing more — see {@link #resolveLimitMagnitude()}.
+     * The operator's choice can only ever ask for LESS than the instrument could have told him.</p>
+     *
      * @param wholeSystem whether to enumerate the system's bodies, or record the address alone. The
      *                    operator's own choice: a full characterisation is the instrument's dear
      *                    setting and fills a crystal far faster
@@ -209,7 +238,7 @@ public final class TelescopeScan {
         registry.pinSystem(anchor);
         int written = 0;
         boolean namedSomething = false;
-        if (wholeSystem && !isObscuredAt(hit.extinctionMagnitudes())) {
+        if (wholeSystem && hit.resolvable() && !isObscuredAt(hit.extinctionMagnitudes())) {
             for (SystemBody body : registry.systemBodiesAt(anchor)) {
                 namedSomething = true;
                 if (memory.record(entryFor(body, observedTick, nameOf))) {
@@ -301,6 +330,29 @@ public final class TelescopeScan {
     /** The aperture the running game is configured with. Magnitudes: larger is fainter. */
     public static double limitMagnitude() {
         return ARConfiguration.getCurrentConfig().telescopeLimitingMagnitude;
+    }
+
+    /**
+     * How bright a system must be before this instrument can make out what is IN it — the aperture,
+     * less the margin characterisation costs.
+     *
+     * <p><b>Seeing that a point of light is there and measuring what orbits it are two different
+     * observations</b>, and the second wants far more photons: detection is conventionally called at
+     * a signal-to-noise of about 5, a usable spectrum at about 100, and signal-to-noise grows as the
+     * square root of what you collect — a flux ratio of 400, i.e. 6.5 magnitudes
+     * ({@link ARConfiguration#telescopeResolveMarginMagnitudes}).</p>
+     *
+     * <p>Everything registered but not resolved is still written down as a POSITION. That is the
+     * whole shape of the mechanic: a weak instrument hands back a list of places worth flying to,
+     * and a better one — or a visit — says what is at them.</p>
+     */
+    public static double resolveLimitMagnitude() {
+        return limitMagnitude() - resolveMarginMagnitudes();
+    }
+
+    /** How much brighter than its detection limit a system must be to be made out. Never negative. */
+    public static double resolveMarginMagnitudes() {
+        return Math.max(0d, ARConfiguration.getCurrentConfig().telescopeResolveMarginMagnitudes);
     }
 
     /**

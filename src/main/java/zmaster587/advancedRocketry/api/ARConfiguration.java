@@ -298,6 +298,24 @@ public class ARConfiguration {
     public static final double DEFAULT_TELESCOPE_LIMITING_MAGNITUDE = 8d;
     /** @see #DEFAULT_TELESCOPE_LIMITING_MAGNITUDE */
     public static final double DEFAULT_TELESCOPE_CONE_HALF_ANGLE_DEGREES = 1d;
+    /**
+     * How much BRIGHTER than the detection limit a system must be before an instrument can make out
+     * what is in it — 6.5 magnitudes, and the number is derived rather than chosen.
+     *
+     * <p>Seeing that a point of light is there and measuring what orbits it are not the same
+     * observation. Detection is conventionally called at a signal-to-noise of about 5 — enough to
+     * say "something is there". Characterisation is transit photometry and spectroscopy, and a
+     * usable spectrum wants an SNR around 100. Signal-to-noise grows as the square root of the
+     * photons collected, so the flux ratio between the two is {@code (100/5)² = 400}, and
+     * {@code 2.5·log10(400) = 6.5} magnitudes.</p>
+     *
+     * <p><b>What it costs at the shipped aperture</b>, measured: detection reaches 161 ly for a
+     * sun-like star and 1 359 ly for a blue giant; resolution reaches 8.1 ly and 68 ly. Against a
+     * mean star separation of 4.23 ly that means an early instrument resolves its nearest few
+     * neighbours and hands back coordinates for everything else — which is the progression the
+     * aperture ladder exists to sell.</p>
+     */
+    public static final double DEFAULT_TELESCOPE_RESOLVE_MARGIN_MAGNITUDES = 6.5d;
     /** @see #DEFAULT_TELESCOPE_LIMITING_MAGNITUDE */
     public static final int DEFAULT_TELESCOPE_SCAN_MAX_CELLS = 200_000;
     /** @see #DEFAULT_TELESCOPE_LIMITING_MAGNITUDE */
@@ -309,6 +327,8 @@ public class ARConfiguration {
     public double telescopeLimitingMagnitude;
     @ConfigProperty
     public double telescopeConeHalfAngleDegrees;
+    @ConfigProperty
+    public double telescopeResolveMarginMagnitudes;
     @ConfigProperty
     public int telescopeScanMaxCells;
     @ConfigProperty
@@ -556,6 +576,7 @@ public class ARConfiguration {
         arConfig.planetDiscoveryChance = config.get(PLANET, "planetDiscoveryChance", 5, "Chance of planet discovery in the warp controller, chance is 1/n", 1, Integer.MAX_VALUE).getInt();
         arConfig.telescopeLimitingMagnitude = config.get(PLANET, "telescopeLimitingMagnitude", DEFAULT_TELESCOPE_LIMITING_MAGNITUDE, "How faint a star an observatory can still register, in APPARENT MAGNITUDE - the scale astronomy measures brightness on, where SMALLER IS BRIGHTER and five magnitudes is a factor of a hundred in received light. This is the instrument's aperture, and it is what its reach is derived FROM: a survey walks outwards only as far as the brightest star it could possibly see would still be above this limit, so a better aperture reaches farther by seeing more rather than by being told a bigger number. Reference points: 6 is roughly the naked eye, 8 (the default) reaches a sun-like star at about 160 light years and a blue giant at 1360, and each 5 magnitudes multiplies every one of those distances by ten. Dust counts against the same limit, so a cloud in the way shortens the reach in exactly the way distance does.", -30d, 40d).getDouble();
         arConfig.telescopeConeHalfAngleDegrees = config.get(PLANET, "telescopeConeHalfAngleDegrees", DEFAULT_TELESCOPE_CONE_HALF_ANGLE_DEGREES, "How wide a patch of sky one pointing covers, in DEGREES from the axis to the edge. A survey is a cone with its apex at the observatory, so this is its opening: narrow in degrees, and still enormous at the far end because the same angle subtends more space the farther out it is read. Widening it multiplies the work by the SQUARE, so a pointing twice as wide is four times the survey.", 0.001d, 89d).getDouble();
+        arConfig.telescopeResolveMarginMagnitudes = config.get(PLANET, "telescopeResolveMarginMagnitudes", DEFAULT_TELESCOPE_RESOLVE_MARGIN_MAGNITUDES, "How much BRIGHTER than telescopeLimitingMagnitude a system must be before the instrument can make out what is IN it, in magnitudes. Seeing that a point of light is there and measuring what orbits it are not the same observation: detection is called at a signal-to-noise of about 5, while a usable spectrum wants about 100, and since signal-to-noise grows as the square root of the photons collected that is a flux ratio of 400 - i.e. 6.5 magnitudes. Everything the survey registers but cannot resolve is still written down as a POSITION, so a weak instrument hands back a list of places worth flying to and a better one tells you what is at them. Set it to 0 to make anything detectable also resolvable, which is how the survey behaved before the distinction existed.", 0d, 40d).getDouble();
         arConfig.telescopeScanMaxCells = config.get(PLANET, "telescopeScanMaxCells", DEFAULT_TELESCOPE_SCAN_MAX_CELLS, "Hard ceiling on how many LOOKS one survey may hold (one per star territory along the pointing, not one per cell of sky crossed). A pointing that would exceed it is SHORTENED until it fits, exactly as its width used to be narrowed - a sweep may be long, but never unbounded. At the shipped aperture and opening a full-depth pointing holds about 77 000 looks, so this leaves room to raise the aperture a little before the ceiling starts cutting the reach.", 1, Integer.MAX_VALUE).getInt();
         arConfig.telescopeScanBaseTicks = config.get(PLANET, "telescopeScanBaseTicks", DEFAULT_TELESCOPE_SCAN_BASE_TICKS, "Ticks one STEP of a survey takes. A pointing's cost in time is carried by how many steps it needs and not by how far it reaches, because a deeper pointing already holds proportionally more looks. Only applies with planetsMustBeDiscovered on; without research, an observation is instant.", 0, Integer.MAX_VALUE).getInt();
         arConfig.telescopeScanCellsPerStep = config.get(PLANET, "telescopeScanCellsPerStep", DEFAULT_TELESCOPE_SCAN_CELLS_PER_STEP, "How many looks one step of a survey resolves. This is the bound that stops a sweep from enumerating everything at once. With the shipped defaults a full-depth pointing is about 600 steps, i.e. roughly ten minutes of clear night.", 1, Integer.MAX_VALUE).getInt();
