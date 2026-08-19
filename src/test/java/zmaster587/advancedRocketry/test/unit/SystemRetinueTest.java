@@ -83,14 +83,18 @@ public class SystemRetinueTest {
         for (long sx = -supercells; sx <= supercells; sx++) {
             for (long sy = -supercells; sy <= supercells; sy++) {
                 for (long sz = -supercells; sz <= supercells; sz++) {
-                    Optional<GalacticCoord> a = g.anchorAt(seed,
-                            cell(sx * minSpacing, sy * minSpacing, sz * minSpacing));
-                    if (!a.isPresent() || !seen.add(a.get().cellKey())) {
-                        continue;
-                    }
-                    Optional<PlanetarySystem> sys = g.systemAt(seed, a.get());
-                    if (sys.isPresent() && sys.get().star().isPresent()) {
-                        out.add(a.get());
+                    // What the TERRITORY holds, not what its corner point resolves to. The lattice is
+                    // divided uniformly, so a point probe samples one seat in k-cubed — a sweep built
+                    // on one reads a populated field as an almost empty one.
+                    for (GalacticCoord a : g.anchorsInTerritory(seed,
+                            cell(sx * minSpacing, sy * minSpacing, sz * minSpacing), 64)) {
+                        if (!seen.add(a.cellKey())) {
+                            continue;
+                        }
+                        Optional<PlanetarySystem> sys = g.systemAt(seed, a);
+                        if (sys.isPresent() && sys.get().star().isPresent()) {
+                            out.add(a);
+                        }
                     }
                 }
             }

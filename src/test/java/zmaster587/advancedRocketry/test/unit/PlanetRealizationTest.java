@@ -57,16 +57,21 @@ public class PlanetRealizationTest {
     /**
      * The seat of a system near the origin.
      *
-     * <p>Probed one SUPER-CELL at a time, never cell by cell: a star's seat is one cell in a cube of
+     * <p>Probed one TERRITORY at a time, never cell by cell: a star's seat is one cell in a cube of
      * tens of millions, so a sweep of adjacent cells finds nothing however full the galaxy is. The
-     * partition is the thing to walk, and it is what the generator itself walks.</p>
+     * partition is the thing to walk, and it is what the generator itself walks — and it is asked
+     * what the whole territory HOLDS, because a territory is divided uniformly and resolving its
+     * corner point would sample one seat in k-cubed and read a full galaxy as an empty one.</p>
      */
     private static GalacticCoord systemAnchor(UniverseRegistry reg) {
         for (long i = 0; i <= 8; i++) {
-            Optional<GalacticCoord> anchor = reg.anchorForCell(
-                    GalacticCoord.ofSectorLocal(i * SPACING, 0L, 0L, 0L, 0L, 0L));
-            if (anchor.isPresent()) {
-                return anchor.get();
+            for (GalacticCoord anchor : reg.anchorsInTerritory(
+                    GalacticCoord.ofSectorLocal(i * SPACING, 0L, 0L, 0L, 0L, 0L), 64)) {
+                // A system with a STAR. A territory's seats include unbound worlds, which hold one
+                // world and no retinue - everything below is about a body that ORBITS something.
+                if (reg.starAt(anchor).isPresent()) {
+                    return anchor;
+                }
             }
         }
         return null;
@@ -95,19 +100,17 @@ public class PlanetRealizationTest {
      */
     private static SystemBody[] findPlanetWithMoon(UniverseRegistry reg) {
         for (long i = 0; i <= 8; i++) {
-            Optional<GalacticCoord> seat = reg.anchorForCell(
-                    GalacticCoord.ofSectorLocal(i * SPACING, 0L, 0L, 0L, 0L, 0L));
-            if (!seat.isPresent()) {
-                continue;
-            }
+            for (GalacticCoord seat : reg.anchorsInTerritory(
+                    GalacticCoord.ofSectorLocal(i * SPACING, 0L, 0L, 0L, 0L, 0L), 64)) {
             SystemBody parent = null;
-            for (SystemBody b : reg.systemBodiesAt(seat.get())) {
+            for (SystemBody b : reg.systemBodiesAt(seat)) {
                 if (b.kind() != SystemBodyKind.MOON && b.kind().canDescend()) {
                     parent = b;
                 } else if (b.kind() == SystemBodyKind.MOON && parent != null
                         && b.name().sameCell(parent.name())) {
                     return new SystemBody[] {parent, b};
                 }
+            }
             }
         }
         return new SystemBody[] {null, null};

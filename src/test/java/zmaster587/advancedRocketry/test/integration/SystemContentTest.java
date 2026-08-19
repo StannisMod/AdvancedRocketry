@@ -159,12 +159,17 @@ public class SystemContentTest {
         // insists on one is testing the coin.
         // It must be a seat with a STAR: the comparison is between one authored planet's orbit and one
         // procedural planet's, and a starless system has no orbits at all to compare with.
+        // Asked what each TERRITORY holds, never what its corner point resolves to: the lattice is
+        // divided uniformly, so a point probe samples one seat in k-cubed and a sweep built on it
+        // reads a populated field as an almost empty one.
         Optional<GalacticCoord> seat = Optional.empty();
         for (long i = 1; i <= 16 && !seat.isPresent(); i++) {
-            Optional<GalacticCoord> candidate = gen.anchorAt(0xBEEFL,
-                    GalacticCoord.ofSectorLocal(i * spacing, spacing, spacing, 0L, 0L, 0L));
-            if (candidate.isPresent() && gen.systemAt(0xBEEFL, candidate.get()).get().star().isPresent()) {
-                seat = candidate;
+            for (GalacticCoord candidate : gen.anchorsInTerritory(0xBEEFL,
+                    GalacticCoord.ofSectorLocal(i * spacing, spacing, spacing, 0L, 0L, 0L), 64)) {
+                if (gen.systemAt(0xBEEFL, candidate).get().star().isPresent()) {
+                    seat = Optional.of(candidate);
+                    break;
+                }
             }
         }
         assertTrue("the fixture needs an occupied super-cell with a star in it", seat.isPresent());

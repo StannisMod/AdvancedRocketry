@@ -339,7 +339,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                         for (long j = jLo; j <= jHi && !capped; j++) {
                             for (long m = mLo; m <= mHi && !capped; m++) {
                                 Optional<Generated> g = systemForLattice(seed,
-                                        Lattice.of(supX, supY, supZ, i, j, m, k, s, local.ownField));
+                                        Lattice.of(supX, supY, supZ, i, j, m, k, s, local.ownField,
+                                                local.dilution(), local.material));
                                 if (!g.isPresent()) {
                                     continue;
                                 }
@@ -820,9 +821,37 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
     @Override
     public Optional<GalacticCoord> anchorAt(long seed, GalacticCoord cell) {
-        Optional<Generated> g = systemForLattice(seed,
-                latticeAt(seed, cell.sectorX(), cell.sectorY(), cell.sectorZ()));
-        return g.isPresent() ? Optional.of(g.get().cell) : Optional.<GalacticCoord>empty();
+        // The SEAT and not the system: this is the hottest question in the game — every address
+        // resolution, every descent check and every look of a survey goes through it — and it does
+        // not need to know what stands at the seat in order to say where the seat is.
+        return seatForLattice(seed, latticeAt(seed, cell.sectorX(), cell.sectorY(), cell.sectorZ()));
+    }
+
+    @Override
+    public List<GalacticCoord> anchorsInTerritory(long seed, GalacticCoord cell, int limit) {
+        long s = config.minSpacing;
+        long supX = Math.floorDiv(cell.sectorX(), s);
+        long supY = Math.floorDiv(cell.sectorY(), s);
+        long supZ = Math.floorDiv(cell.sectorZ(), s);
+        LocalField local = localFieldAt(seed, supX, supY, supZ);
+        int k = local.subdivision;
+        long seats = (long) k * k * k;
+        if (k <= 1 || seats > Math.max(1, limit)) {
+            // Either there is nothing to enumerate, or there is far too much: a cluster nucleus
+            // divides one territory thousands of ways, and a census of it is not a look through a
+            // telescope. Sampling it is what a survey has always done there, and it stays a find.
+            return IGalaxyGenerator.super.anchorsInTerritory(seed, cell, limit);
+        }
+        List<GalacticCoord> anchors = new ArrayList<>();
+        for (long i = 0; i < k; i++) {
+            for (long j = 0; j < k; j++) {
+                for (long m = 0; m < k; m++) {
+                    seatForLattice(seed, Lattice.of(supX, supY, supZ, i, j, m, k, s, local.ownField,
+                            local.dilution(), local.material)).ifPresent(anchors::add);
+                }
+            }
+        }
+        return anchors;
     }
 
     @Override
@@ -868,6 +897,36 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         return sector > hi ? hi : sector;
     }
 
+    /**
+     * WHERE a lattice cell's system sits, without working out what it is — the occupancy draws and
+     * the seat, and not one body, star or name.
+     *
+     * <p>This is the difference between asking "is anything there" and "what is there", and it is
+     * the same split the survey is built on one layer up. Every draw below decides the seat by the
+     * cell's own hash, and none of them depends on what the system turns out to BE — a star and an
+     * unbound world seated in the same cube sit in the same place — so the answer here is exactly
+     * the cell {@link #systemForLattice} would report, at a fraction of the cost. Fabricating a
+     * system means drawing its type, its bulk and its companions, and a survey that fabricated one
+     * per seat it merely walked past spent nine tenths of its time on systems it then discarded.</p>
+     */
+    private Optional<GalacticCoord> seatForLattice(long seed, Lattice lattice) {
+        double bound = Math.max(lattice.material.bound, lattice.ownField);
+        if (bound > 0d && CellHash.norm(lattice.hash(seed, SALT_OCC))
+                < Math.min(1d, config.density * bound / lattice.dilution)) {
+            return Optional.of(seatIn(seed, lattice));
+        }
+        double profile = Math.max(lattice.material.total(), lattice.ownField);
+        if (!(profile > 0d)) {
+            return Optional.empty();
+        }
+        double occupancy = Math.min(1d,
+                config.density * config.rogue.abundance * profile / lattice.dilution);
+        if (CellHash.norm(lattice.hash(seed, SALT_ROGUE_OCC)) >= occupancy) {
+            return Optional.empty();
+        }
+        return Optional.of(seatIn(seed, lattice));
+    }
+
     /** The single system a lattice cell hosts (its cell coordinate + fabricated system), or empty. */
     private Optional<Generated> systemForLattice(long seed, Lattice lattice) {
         // OCCUPANCY IS DECIDED IN THE GALAXY'S OWN FRAME, so the profile does the drawing: the disc,
@@ -878,17 +937,19 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // the probability a cube is occupied cannot depend on where its seat would have landed. And
         // evaluated at t = 0 and never again: a time-dependent occupancy would pop systems in and out
         // of existence. Systems drift afterwards at their galaxy's own omega(r), which is the shear.
-        GalaxyField.Material material = galaxies.materialAtSector(seed,
-                lattice.lowX + lattice.edgeX / 2L, lattice.lowY + lattice.edgeY / 2L,
-                lattice.lowZ + lattice.edgeZ / 2L);
+        GalaxyField.Material material = lattice.material;
         // A cluster out in the void supplies its own field, because k³ times the halo is still nothing
         // and an intergalactic globular has to be a globular. Inside a galaxy ownField is zero and the
         // profile speaks, so this is the same number it always was everywhere anything already exists.
         double bound = Math.max(material.bound, lattice.ownField);
         // Keyed by the cell's LOW CORNER, which is globally unique whatever lattice it belongs to —
         // a coarse index would collide with a fine one wherever a cluster refines the field.
+        // ONE SUB-SEAT'S SHARE, not the territory's. Every territory is divided uniformly, so what
+        // is drawn here is its k-cubed-th part; summed back over the seats it is the same field at
+        // the same mean separation, and the only thing that has moved is the texture.
         boolean star = bound > 0d
-                && CellHash.norm(lattice.hash(seed, SALT_OCC)) < Math.min(1d, config.density * bound);
+                && CellHash.norm(lattice.hash(seed, SALT_OCC))
+                        < Math.min(1d, config.density * bound / lattice.dilution);
         if (!star) {
             // THE SECOND DRAW, on the cube the first one passed over. Stars need a galaxy to form in;
             // an unbound world does not, so out in the void this is the only roll there is, and inside
@@ -935,7 +996,10 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         if (!(profile > 0d)) {
             return Optional.empty(); // a galaxy cell with no galaxy in it: the deepest void, and empty
         }
-        double occupancy = Math.min(1d, config.density * config.rogue.abundance * profile);
+        // The whole point of the division: this number saturated at exactly 1.000000 before the
+        // territory was divided, and the measured abundance of 21 was indistinguishable from 3.
+        double occupancy = Math.min(1d,
+                config.density * config.rogue.abundance * profile / lattice.dilution);
         if (CellHash.norm(lattice.hash(seed, SALT_ROGUE_OCC)) >= occupancy) {
             return Optional.empty();
         }
@@ -1020,8 +1084,21 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         /** See {@link LocalField#ownField} — what a cluster out in the void brings with it. */
         final double ownField;
 
+        /**
+         * What share of its territory's occupancy this cell draws for — {@link LocalField#dilution()}.
+         *
+         * <p>It rides on the cell rather than being looked up at the draw, because the draw happens in
+         * {@code systemForLattice}, which is handed a cell and nothing else. A cell that did not know
+         * how finely its own territory was divided would have to ask the field again for a fact the
+         * partition already decided, and the two answers could differ at the clamp.</p>
+         */
+        final double dilution;
+
+        /** The material of the TERRITORY this cell belongs to — see {@link LocalField#material}. */
+        final GalaxyField.Material material;
+
         private Lattice(long lowX, long lowY, long lowZ, long edgeX, long edgeY, long edgeZ,
-                        double ownField) {
+                        double ownField, double dilution, GalaxyField.Material material) {
             this.lowX = lowX;
             this.lowY = lowY;
             this.lowZ = lowZ;
@@ -1029,11 +1106,13 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             this.edgeY = edgeY;
             this.edgeZ = edgeZ;
             this.ownField = ownField;
+            this.dilution = dilution;
+            this.material = material;
         }
 
         /** Sub-cell {@code (i, j, m)} of coarse super-cell {@code (supX, supY, supZ)}, at {@code k}. */
         static Lattice of(long supX, long supY, long supZ, long i, long j, long m, int k, long s,
-                          double ownField) {
+                          double ownField, double dilution, GalaxyField.Material material) {
             long baseX = supX * s;
             long baseY = supY * s;
             long baseZ = supZ * s;
@@ -1043,7 +1122,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             return new Lattice(baseX + loI, baseY + loJ, baseZ + loM,
                     Math.max(1L, Math.floorDiv((i + 1L) * s, (long) k) - loI),
                     Math.max(1L, Math.floorDiv((j + 1L) * s, (long) k) - loJ),
-                    Math.max(1L, Math.floorDiv((m + 1L) * s, (long) k) - loM), ownField);
+                    Math.max(1L, Math.floorDiv((m + 1L) * s, (long) k) - loM), ownField, dilution,
+                    material);
         }
 
         /** Its draw for one field, keyed by the low corner — globally unique at any subdivision. */
@@ -1081,10 +1161,18 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      */
     private static final class LocalField {
 
-        static final LocalField PLAIN = new LocalField(1, 0d);
-
-        /** {@code 1} in the ordinary field, and the covering cluster's {@code k} where there is one. */
+        /** How finely the field is divided, all the way down: the UNIFORM division times a cluster's. */
         final int subdivision;
+        /**
+         * The uniform division ALONE — the {@code k} every territory is divided by whether or not a
+         * cluster covers it, and therefore the number both occupancies are diluted by.
+         *
+         * <p>It is carried rather than recomputed because it can be CLAMPED: a coarse cell too small
+         * to divide keeps a coarser lattice, and diluting by a division that did not happen would
+         * empty the sky by a factor of twenty-seven. The dilution and the division are one decision,
+         * so they travel together.</p>
+         */
+        final int uniform;
         /**
          * The field a cluster BRINGS with it, or zero where the surrounding profile already speaks.
          *
@@ -1096,9 +1184,29 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
          */
         final double ownField;
 
-        LocalField(int subdivision, double ownField) {
+        /**
+         * The galaxy's material at this TERRITORY's centre — what decides how much of it is occupied.
+         *
+         * <p>Read once per territory and shared by every sub-seat inside it, and that is a statement
+         * about the model rather than a saving. The profile it comes from varies on the scale of a
+         * galaxy's disc, thousands of light years; a territory is three. Sampling it per sub-seat
+         * asked a smooth function twenty-seven times for the same answer — and it cost a survey a
+         * factor of twenty-seven on the one path a player waits for. What the original comment on
+         * this draw actually required is that the sampling point be fixed by the PARTITION rather
+         * than by where a seat would have landed, and a territory's centre is exactly that.</p>
+         */
+        final GalaxyField.Material material;
+
+        LocalField(int subdivision, int uniform, double ownField, GalaxyField.Material material) {
             this.subdivision = subdivision;
+            this.uniform = uniform;
             this.ownField = ownField;
+            this.material = material;
+        }
+
+        /** What one sub-seat's share of the territory's occupancy is: {@code uniform^3}. */
+        double dilution() {
+            return (double) uniform * uniform * uniform;
         }
     }
 
@@ -1112,23 +1220,76 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      */
     private static final double INTERGALACTIC_CLUSTER_FIELD = 1d;
 
+    /**
+     * How finely EVERY star territory is divided, before any cluster refines it further — the uniform
+     * lattice a free-floating population needs to be counted on.
+     *
+     * <p>Derived from the rogue abundance, because that is the quantity that could not be represented
+     * without it. An abundance is a NUMBER DENSITY: so many unbound worlds per star. Mapping it onto
+     * the star lattice as an occupancy PROBABILITY bounded it at one, so every abundance past
+     * {@code 1/density} = 2.86 was unrepresentable and the measured 21 saturated the lattice to
+     * exactly 1.000000 — 21 was indistinguishable from 3, and from 300. Dividing the territory
+     * {@code k = ceil(abundance^(1/3))} ways per axis gives {@code k^3} seats each holding
+     * {@code density*abundance/k^3}, and the number is legible again: 0.272 per sub-seat, a mean of
+     * 7.35 per territory at the shipped abundance.</p>
+     *
+     * <p><b>The division is uniform — stars included — and both occupancies are diluted by
+     * {@code k^3}.</b> Dividing only the unbound draw would put up to {@code k^3} anchors in one
+     * territory, and member-cell attribution would stop being single-valued: two cells of the same
+     * territory would belong to two different systems, which is what {@code anchorForCell} and every
+     * address in the game are built on. Dividing everything keeps the invariant's sentence literal —
+     * one anchor per lattice cell — and leaves the star field's DENSITY untouched: the same
+     * {@code density} spread over {@code k^3} times as many seats is the same number of stars, at the
+     * same mean separation, on a finer texture. What it costs is the MINIMUM separation two stars can
+     * have, which falls from a territory to a sub-cell — and that removes a lattice artefact rather
+     * than a guarantee, because the floor that matters ({@link UniverseScale#SEPARATION_FLOOR_AU})
+     * still has six times the room it needs.</p>
+     *
+     * <p>Capped at {@link #MAX_UNIFORM_SUBDIVISION}, which is what a single telescope look can still
+     * enumerate — see {@link TelescopeScan#MAX_SEATS_PER_LOOK}. Past that a survey would be back to
+     * sampling the field, and an abundance nothing can report is no better represented than one
+     * nothing can store.</p>
+     */
+    private int uniformSubdivision() {
+        double abundance = Math.max(1d, config.rogue.abundance);
+        long k = (long) Math.ceil(Math.cbrt(abundance));
+        return (int) Math.max(1L, Math.min(MAX_UNIFORM_SUBDIVISION, k));
+    }
+
+    /**
+     * The finest uniform division of a star territory, and the reason it is this number and not
+     * another: {@code 4^3 = 64} is {@link TelescopeScan#MAX_SEATS_PER_LOOK}, the most seats one look
+     * of a survey will enumerate before it goes back to sampling. The two are the same bound seen
+     * from the placement side and from the observing side, and neither may move alone.
+     */
+    private static final int MAX_UNIFORM_SUBDIVISION = 4;
+
     private LocalField localFieldAt(long seed, long supX, long supY, long supZ) {
         long s = config.minSpacing;
         // The CONTAINING galaxy: a cluster inside a satellite belongs to the satellite, and its nucleus
         // sits at the satellite's own centre. Absent out in the void, where a cluster may still sit.
-        Optional<Galaxy> galaxy = galaxies.galaxyContainingSector(seed, supX * s + s / 2L,
-                supY * s + s / 2L, supZ * s + s / 2L);
+        long centreX = supX * s + s / 2L;
+        long centreY = supY * s + s / 2L;
+        long centreZ = supZ * s + s / 2L;
+        Optional<Galaxy> galaxy = galaxies.galaxyContainingSector(seed, centreX, centreY, centreZ);
+        GalaxyField.Material material = galaxies.materialAtSector(seed, centreX, centreY, centreZ);
         Optional<StarCluster> cluster = clusters.clusterAt(seed, galaxy.orElse(null), supX, supY, supZ);
-        if (!cluster.isPresent()) {
-            return LocalField.PLAIN;
-        }
-        // A cluster cannot conjure room its coarse cell never had. Refining below the smallest cell a
-        // system can be more than a lone star in would not make a dense cluster — it would make a
-        // field of bare stars, which is the opposite of the thing. A spacing too tight to refine is a
-        // degenerate galaxy rather than an error, exactly as too tight a spacing already is.
+        // Neither a cluster nor the uniform division can conjure room the coarse cell never had.
+        // Refining below the smallest cell a system can be more than a lone star in would not make a
+        // dense field — it would make a field of bare stars, which is the opposite of the thing. A
+        // spacing too tight to refine is a degenerate galaxy rather than an error, exactly as too
+        // tight a spacing already is.
         long ceiling = Math.max(1L, s / UniverseScale.MIN_LATTICE_EDGE_CELLS);
-        int k = (int) Math.max(1L, Math.min(cluster.get().subdivision(), ceiling));
-        return new LocalField(k, galaxy.isPresent() ? 0d : INTERGALACTIC_CLUSTER_FIELD);
+        int uniform = (int) Math.max(1L, Math.min(uniformSubdivision(), ceiling));
+        if (!cluster.isPresent()) {
+            return new LocalField(uniform, uniform, 0d, material);
+        }
+        // The cluster's contrast rides ON TOP of the uniform division: it wants k^3 times the
+        // density, and it gets it by owning k^3 times as many of the same-sized seats. Multiplying
+        // rather than replacing is what keeps its contrast the same number it always was.
+        long k = Math.max(1L, Math.min((long) uniform * cluster.get().subdivision(), ceiling));
+        return new LocalField((int) k, uniform,
+                galaxy.isPresent() ? 0d : INTERGALACTIC_CLUSTER_FIELD, material);
     }
 
     /** The lattice cell a sector triple falls in. */
@@ -1140,12 +1301,14 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         LocalField local = localFieldAt(seed, supX, supY, supZ);
         int k = local.subdivision;
         if (k <= 1) {
-            return Lattice.of(supX, supY, supZ, 0L, 0L, 0L, 1, s, local.ownField);
+            return Lattice.of(supX, supY, supZ, 0L, 0L, 0L, 1, s, local.ownField, local.dilution(),
+                    local.material);
         }
         return Lattice.of(supX, supY, supZ,
                 subIndex(Math.floorMod(sectorX, s), s, k),
                 subIndex(Math.floorMod(sectorY, s), s, k),
-                subIndex(Math.floorMod(sectorZ, s), s, k), k, s, local.ownField);
+                subIndex(Math.floorMod(sectorZ, s), s, k), k, s, local.ownField, local.dilution(),
+                local.material);
     }
 
     /**

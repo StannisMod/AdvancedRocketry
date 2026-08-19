@@ -286,20 +286,37 @@ public class ARConfiguration {
     public int terraformPlanetSpeed;
     @ConfigProperty
     public int planetDiscoveryChance;
+    /**
+     * The shipped telescope-survey defaults, named so that the code that REGISTERS them and the test
+     * that MEASURES what they cost cannot drift apart. A default whose consequences are stated
+     * somewhere other than where the default lives is a number nobody is checking.
+     *
+     * <p>Measured together, at the stock star table and star spacing: a full-depth pointing holds
+     * about 77 000 looks, reaches 1 768 light years, registers of the order of thirty systems, and
+     * takes roughly six hundred steps.</p>
+     */
+    public static final double DEFAULT_TELESCOPE_LIMITING_MAGNITUDE = 8d;
+    /** @see #DEFAULT_TELESCOPE_LIMITING_MAGNITUDE */
+    public static final double DEFAULT_TELESCOPE_CONE_HALF_ANGLE_DEGREES = 1d;
+    /** @see #DEFAULT_TELESCOPE_LIMITING_MAGNITUDE */
+    public static final int DEFAULT_TELESCOPE_SCAN_MAX_CELLS = 200_000;
+    /** @see #DEFAULT_TELESCOPE_LIMITING_MAGNITUDE */
+    public static final int DEFAULT_TELESCOPE_SCAN_BASE_TICKS = 20;
+    /** @see #DEFAULT_TELESCOPE_LIMITING_MAGNITUDE */
+    public static final int DEFAULT_TELESCOPE_SCAN_CELLS_PER_STEP = 130;
+
     @ConfigProperty
-    public double telescopeScanRangeLightYears;
+    public double telescopeLimitingMagnitude;
     @ConfigProperty
-    public int telescopeScanHalfWidthSteps;
+    public double telescopeConeHalfAngleDegrees;
     @ConfigProperty
     public int telescopeScanMaxCells;
     @ConfigProperty
     public int telescopeScanBaseTicks;
     @ConfigProperty
-    public double telescopeScanTicksPerLightYear;
-    @ConfigProperty
     public int telescopeScanCellsPerStep;
     @ConfigProperty
-    public int telescopePassiveRadiusCells;
+    public int telescopePassiveRadiusSteps;
     @ConfigProperty
     public double telescopeObscuredAtMagnitudes;
     @ConfigProperty
@@ -537,15 +554,14 @@ public class ARConfiguration {
         //Planet
         arConfig.planetsMustBeDiscovered = config.get(PLANET, "planetsMustBeDiscovered", false, "Planets must be discovered in the warp controller before being visible").getBoolean();
         arConfig.planetDiscoveryChance = config.get(PLANET, "planetDiscoveryChance", 5, "Chance of planet discovery in the warp controller, chance is 1/n", 1, Integer.MAX_VALUE).getInt();
-        arConfig.telescopeScanRangeLightYears = config.get(PLANET, "telescopeScanRangeLightYears", 100d, "How far, in LIGHT YEARS, an observatory's region scan can be aimed. This is the instrument's horizon: beyond it the sky is not resolvable, which is what keeps an endless universe from being read off a telescope. A scan aimed farther is clamped to this. An operator aims in STEPS, and one step is one star's territory (the mean distance to a neighbouring star), so this reach divided by that spacing is how many steps out he may point it.", 0d, Double.MAX_VALUE).getDouble();
-        arConfig.telescopeScanHalfWidthSteps = config.get(PLANET, "telescopeScanHalfWidthSteps", 2, "Half-width, in STEPS, of the region one survey sweeps - one step being one star's territory, the same stride the sweep walks by. 0 means a single look, 1 a 3x3x3 patch of neighbouring territories, 2 a 5x5x5, and so on. Narrowed automatically when the resulting region would exceed telescopeScanMaxCells.", 0, Integer.MAX_VALUE).getInt();
-        arConfig.telescopeScanMaxCells = config.get(PLANET, "telescopeScanMaxCells", 1000, "Hard ceiling on how many cells one survey may LOOK AT (one per step, not one per cell of sky crossed). The width above is narrowed until the region fits under this. A sweep may be long, but never unbounded.", 1, Integer.MAX_VALUE).getInt();
-        arConfig.telescopeScanBaseTicks = config.get(PLANET, "telescopeScanBaseTicks", 200, "Ticks one STEP of a survey takes before distance is counted - the cost of holding the instrument on a patch of sky at all. Only applies with planetsMustBeDiscovered on; without research, an observation is instant.", 0, Integer.MAX_VALUE).getInt();
-        arConfig.telescopeScanTicksPerLightYear = config.get(PLANET, "telescopeScanTicksPerLightYear", 20d, "Extra ticks per light year of distance, per step. This is what makes a far region a longer survey than a near one.", 0d, Double.MAX_VALUE).getDouble();
-        arConfig.telescopeScanCellsPerStep = config.get(PLANET, "telescopeScanCellsPerStep", 5, "How many cells of the region one step of a survey resolves. This is the bound that stops a sweep from enumerating everything at once.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeLimitingMagnitude = config.get(PLANET, "telescopeLimitingMagnitude", DEFAULT_TELESCOPE_LIMITING_MAGNITUDE, "How faint a star an observatory can still register, in APPARENT MAGNITUDE - the scale astronomy measures brightness on, where SMALLER IS BRIGHTER and five magnitudes is a factor of a hundred in received light. This is the instrument's aperture, and it is what its reach is derived FROM: a survey walks outwards only as far as the brightest star it could possibly see would still be above this limit, so a better aperture reaches farther by seeing more rather than by being told a bigger number. Reference points: 6 is roughly the naked eye, 8 (the default) reaches a sun-like star at about 160 light years and a blue giant at 1360, and each 5 magnitudes multiplies every one of those distances by ten. Dust counts against the same limit, so a cloud in the way shortens the reach in exactly the way distance does.", -30d, 40d).getDouble();
+        arConfig.telescopeConeHalfAngleDegrees = config.get(PLANET, "telescopeConeHalfAngleDegrees", DEFAULT_TELESCOPE_CONE_HALF_ANGLE_DEGREES, "How wide a patch of sky one pointing covers, in DEGREES from the axis to the edge. A survey is a cone with its apex at the observatory, so this is its opening: narrow in degrees, and still enormous at the far end because the same angle subtends more space the farther out it is read. Widening it multiplies the work by the SQUARE, so a pointing twice as wide is four times the survey.", 0.001d, 89d).getDouble();
+        arConfig.telescopeScanMaxCells = config.get(PLANET, "telescopeScanMaxCells", DEFAULT_TELESCOPE_SCAN_MAX_CELLS, "Hard ceiling on how many LOOKS one survey may hold (one per star territory along the pointing, not one per cell of sky crossed). A pointing that would exceed it is SHORTENED until it fits, exactly as its width used to be narrowed - a sweep may be long, but never unbounded. At the shipped aperture and opening a full-depth pointing holds about 77 000 looks, so this leaves room to raise the aperture a little before the ceiling starts cutting the reach.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeScanBaseTicks = config.get(PLANET, "telescopeScanBaseTicks", DEFAULT_TELESCOPE_SCAN_BASE_TICKS, "Ticks one STEP of a survey takes. A pointing's cost in time is carried by how many steps it needs and not by how far it reaches, because a deeper pointing already holds proportionally more looks. Only applies with planetsMustBeDiscovered on; without research, an observation is instant.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeScanCellsPerStep = config.get(PLANET, "telescopeScanCellsPerStep", DEFAULT_TELESCOPE_SCAN_CELLS_PER_STEP, "How many looks one step of a survey resolves. This is the bound that stops a sweep from enumerating everything at once. With the shipped defaults a full-depth pointing is about 600 steps, i.e. roughly ten minutes of clear night.", 1, Integer.MAX_VALUE).getInt();
         arConfig.telescopeSurveyDataPerStep = config.get(PLANET, "telescopeSurveyDataPerStep", 0, "Distance data one step of a survey consumes, drawn from the observatory's data buses the same way its asteroid scan draws. A step with too little data waits rather than resolving, so an unfed instrument stalls instead of working for free. Zero (the default) means a survey costs nothing - what it should cost is a balance question, not a mechanic one.", 0, Integer.MAX_VALUE).getInt();
         arConfig.telescopeObscuredAtMagnitudes = config.get(PLANET, "telescopeObscuredAtMagnitudes", 5d, "How much dust a survey can see THROUGH, in magnitudes of visual extinction - the unit astronomy measures interstellar dust in. A nebula between the instrument and what it is looking at dims it; past this much, the survey can still tell that a system is there but can no longer make out its bodies, and writes the bare coordinate instead. The default is the real boundary at which faint objects behind a cloud disappear: ~1 magnitude is noticeable dimming, ~5 is where things start vanishing, ~10 is an opaque dark cloud. Raise it to see through thicker clouds; set it to 0 to turn concealment off entirely.", 0d, Double.MAX_VALUE).getDouble();
-        arConfig.telescopePassiveRadiusCells = config.get(PLANET, "telescopePassiveRadiusCells", 2, "How far, in CELLS, the passive local radar reaches around the observatory's own cell. Cells and not star territories: this mode watches the neighbourhood, where the planet in the next cell over is a different destination from its star. Passive costs nothing; the directed survey is what looks far away.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.telescopePassiveRadiusSteps = config.get(PLANET, "telescopePassiveRadiusSteps", 1, "How far, in STAR TERRITORIES, the passive local radar reaches around the observatory's own. 0 is the system you are standing in and nothing else; 1 (the default) adds the twenty-six territories around it. Territories and not cells: one look already yields every body of the system that owns it, so a radius counted in cells never reached a neighbour at all - two cells was a fifth of the way to the innermost planet of the system the instrument was already standing in. Passive costs nothing; the pointing is what looks far away.", 0, Integer.MAX_VALUE).getInt();
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();
         arConfig.forcePlayerRespawnInSpace = config.get(PLANET, "forcePlanetRespawn", false, "Allow bed respawn on planets even without breathable air. Requires 'allowPlanetRespawn=true'.").getBoolean();

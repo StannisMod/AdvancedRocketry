@@ -358,6 +358,26 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     }
 
     /** The stored (registered) system's star-id at this cell, or empty. Ignores the procedural generator. */
+    /**
+     * Every anchor seated in the star TERRITORY {@code cell} falls in — what one look of a survey
+     * owes the direction it is pointed in (see {@link IGalaxyGenerator#anchorsInTerritory}).
+     *
+     * <p>An authored or pinned anchor still wins over the whole territory, exactly as it does in
+     * {@link #anchorForCell}: a pack that placed a system there placed THE system there, and a
+     * procedural seat in the same cube would be a second answer to a question that has one.</p>
+     */
+    public List<GalacticCoord> anchorsInTerritory(GalacticCoord cell, int limit) {
+        GalacticCoord c = cell.cellCentre();
+        if (byCell.containsKey(c.cellKey())) {
+            return Collections.singletonList(c);
+        }
+        GalacticCoord stored = storedAnchorNear(c);
+        if (stored != null) {
+            return Collections.singletonList(stored);
+        }
+        return generator.anchorsInTerritory(worldSeed, c, limit);
+    }
+
     public OptionalInt starIdForCoord(GalacticCoord coord) {
         Integer id = byCell.get(coord.cellCentre().cellKey());
         return id == null ? OptionalInt.empty() : OptionalInt.of(id);

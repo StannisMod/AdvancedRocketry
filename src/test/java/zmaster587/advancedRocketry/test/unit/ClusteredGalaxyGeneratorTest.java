@@ -545,27 +545,36 @@ public class ClusteredGalaxyGeneratorTest {
     }
 
     @Test
-    public void anchorAtAttributesEveryCellOfAnOccupiedSuperCell() {
+    public void everyBodyOfASystemAttributesBackToThatSystemsAnchor() {
+        // MEMBER-CELL ATTRIBUTION, which is what every address in the game rests on: a body is
+        // reached, described and landed on through the system that owns its cell, so
+        // "which system owns this cell" must have exactly one answer and it must be the right one.
+        //
+        // It used to be stated as "every cell of a SUPER-CELL attributes to that super-cell's
+        // anchor", and that sentence stopped being true when the lattice began to be divided
+        // uniformly: a territory holds up to k-cubed seats, so two cells of one super-cell honestly
+        // belong to two different systems. What did NOT change — and what the old wording was
+        // standing in for — is that a system's own bodies all attribute back to it. That is the
+        // property the console, the descent trigger and the sky all read, and unlike the old one it
+        // is stated against the unit that actually owns a neighbourhood.
         GalaxyGenConfig config = cfg(0.9d, SPACING);
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
         long s = config.minSpacing;
         boolean checkedAny = false;
         for (long sup = -2; sup <= 2; sup++) {
-            Optional<GalacticCoord> anchor = gen.anchorAt(SEED, cell(sup * s, 0, 0));
-            if (!anchor.isPresent()) {
-                continue;
-            }
-            checkedAny = true;
-            // Every cell of the super-cell attributes to the SAME anchor (corners included).
-            for (long dx : new long[] {0, s - 1}) {
-                for (long dy : new long[] {0, s - 1}) {
-                    GalacticCoord member = cell(sup * s + dx, dy, 0);
-                    assertEquals("member " + member + " must attribute to the super-cell's anchor",
-                            anchor, gen.anchorAt(SEED, member));
+            for (GalacticCoord anchor : gen.anchorsInTerritory(SEED, cell(sup * s, 0, 0), 64)) {
+                checkedAny = true;
+                // The anchor itself point-resolves to the system, and to itself.
+                assertTrue(gen.systemAt(SEED, anchor).isPresent());
+                assertEquals("an anchor must attribute to itself",
+                        Optional.of(anchor), gen.anchorAt(SEED, anchor));
+
+                for (SystemBody body : gen.bodiesFor(SEED, anchor)) {
+                    assertEquals("body " + body.name().cellKey() + " of the system at "
+                                    + anchor.cellKey() + " must attribute back to it",
+                            Optional.of(anchor), gen.anchorAt(SEED, body.name()));
                 }
             }
-            // The anchor itself point-resolves to the system.
-            assertTrue(gen.systemAt(SEED, anchor.get()).isPresent());
         }
         assertTrue(checkedAny);
     }
@@ -798,23 +807,26 @@ public class ClusteredGalaxyGeneratorTest {
                     // every territory a star left empty, so counting systems measures occupancy 1.0
                     // and says nothing about how far apart the STARS stand — which is the quantity
                     // MEAN_STAR_SEPARATION_LY is about. (Measured here first: 4913 of 4913.)
-                    // Through the ANCHOR: systemAt answers on the seat cell alone, and a territory's
-                    // corner is not its seat.
-                    Optional<GalacticCoord> anchor = gen.anchorAt(SEED,
+                    // What the whole TERRITORY holds. Two things are wrong with resolving its
+                    // corner point instead: systemAt answers on the seat cell alone and a corner is
+                    // not a seat, AND the lattice is divided uniformly, so one point is one seat in
+                    // k-cubed — a sweep built on it measured a full field as 1.3 % occupied.
+                    for (GalacticCoord anchor : gen.anchorsInTerritory(SEED,
                             cell((long) i * config.minSpacing, (long) j * config.minSpacing,
-                                    (long) k * config.minSpacing));
-                    if (!anchor.isPresent()) {
-                        continue;
-                    }
-                    Optional<PlanetarySystem> here = gen.systemAt(SEED, anchor.get());
-                    if (here.isPresent() && here.get().star().isPresent()) {
-                        seated++;
+                                    (long) k * config.minSpacing), 64)) {
+                        Optional<PlanetarySystem> here = gen.systemAt(SEED, anchor);
+                        if (here.isPresent() && here.get().star().isPresent()) {
+                            seated++;
+                        }
                     }
                 }
             }
         }
         assertTrue("arrangement: the sweep must find a populated star field", seated > territories / 10);
 
+        // Stars PER TERRITORY, which is what the separation formula wants and is no longer the same
+        // thing as "the fraction of territories that hold one": a territory now holds up to k-cubed
+        // seats, so the two numbers come apart the moment more than one of them is taken.
         double occupancy = seated / (double) territories;
         double separation = UniverseScale.meanSeparationLy(config.minSpacing, occupancy);
         double claimed = UniverseScale.MEAN_STAR_SEPARATION_LY;
@@ -932,9 +944,15 @@ public class ClusteredGalaxyGeneratorTest {
         GalacticCoord anchor = null;
         for (int i = 0; i < 64 && anchor == null; i++) {
             GalacticCoord probe = GalacticCoord.ofSectorLocal((long) i * config.minSpacing, 0, 0, 0, 0, 0);
-            java.util.Optional<GalacticCoord> found = stock.anchorAt(SEED, probe);
-            if (found.isPresent() && !stock.bodiesFor(SEED, found.get()).isEmpty()) {
-                anchor = found.get();
+            for (GalacticCoord found : stock.anchorsInTerritory(SEED, probe, 64)) {
+                // A system with a RETINUE. A territory's seats include unbound worlds, which hold one
+                // body and no orbit law to move — so a probe that took the first seat it found would
+                // compare two derivations on a system neither of them can express differently.
+                if (stock.systemAt(SEED, found).flatMap(sys -> sys.star()).isPresent()
+                        && stock.bodiesFor(SEED, found).size() > 1) {
+                    anchor = found;
+                    break;
+                }
             }
         }
         assertTrue("arrangement: a system with bodies must be found near the origin", anchor != null);

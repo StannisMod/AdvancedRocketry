@@ -92,8 +92,11 @@ public class NebulaConcealmentTest {
     }
 
     private static int look(UniverseRegistry registry, CrystalMemory crystal) {
-        return TelescopeScan.resolveCell(registry, TARGET, crystal, 7_000L,
-                dimId -> "Body-" + dimId, HOME);
+        // An aperture nothing in this fixture can fall below, because what is under test is the
+        // DUST and not the brightness: a limit that also gated the look would make "the dusty case
+        // named nothing" true for two reasons and pin neither.
+        return TelescopeScan.resolveLook(registry, TARGET, crystal, 7_000L,
+                dimId -> "Body-" + dimId, HOME, Double.POSITIVE_INFINITY, true);
     }
 
     /** The column, in density-light-years, that the shipped threshold sits at. */

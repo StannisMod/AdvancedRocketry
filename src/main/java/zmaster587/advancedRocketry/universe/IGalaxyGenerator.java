@@ -108,6 +108,33 @@ public interface IGalaxyGenerator {
     }
 
     /**
+     * Every anchor seated inside the star TERRITORY that {@code cell} falls in — what one look of a
+     * survey owes the direction it is pointed in.
+     *
+     * <p>A survey strides by the territory, because that is the cube that holds at most one system
+     * and walking finer would spend a whole sweep re-reading one system's own neighbourhood. But a
+     * generator is free to divide that cube further, and then a stride that samples ONE point of it
+     * reports a fraction of the sky and calls it the sky. So a look asks for the territory's
+     * contents rather than for the point's, and the resolution of the answer is the generator's own
+     * business rather than the surveyor's.</p>
+     *
+     * <p><b>{@code limit} is a refusal, not a truncation.</b> A generator that would return more than
+     * {@code limit} anchors returns the single anchor at {@code cell} instead — the sampling a
+     * survey has always done inside a star cluster, where one look is a find and not a census.
+     * Returning the first {@code limit} of them would be worse than sampling: it would be a biased
+     * corner of the territory presented as its whole.</p>
+     *
+     * <p>Default: whatever {@link #anchorAt} answers, which is exactly right for a generator whose
+     * lattice has one seat per territory.</p>
+     */
+    default List<zmaster587.advancedRocketry.space.GalacticCoord> anchorsInTerritory(long seed,
+            zmaster587.advancedRocketry.space.GalacticCoord cell, int limit) {
+        Optional<zmaster587.advancedRocketry.space.GalacticCoord> anchor = anchorAt(seed, cell);
+        return anchor.isPresent() ? Collections.singletonList(anchor.get()) : Collections
+                .<zmaster587.advancedRocketry.space.GalacticCoord>emptyList();
+    }
+
+    /**
      * The tunables this generator was built from, when it has any — what a {@code <galaxyGen>} element
      * would have to say to reproduce it, and what the save fingerprints so a later load can tell that
      * the pack has been retuned underneath it.

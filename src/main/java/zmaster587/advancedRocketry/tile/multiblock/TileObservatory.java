@@ -111,6 +111,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private static final byte START_SCAN = 19;
     private static final byte ABORT_SCAN = 20;
     private static final byte PASSIVE_SWEEP = 21;
+    private static final byte TOGGLE_WHOLE_SYSTEM = 22;
     /** Progress id of the region-scan bar; the machine's own bar keeps id 0. */
     private static final int PROGRESS_SCAN = 1;
     /**
@@ -161,6 +162,17 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private int pendingDistanceDelta;
     /** Watching the neighbourhood rather than a distant patch. The two modes are exclusive. */
     private boolean passive;
+    /**
+     * Whether a detection is followed all the way to the system's BODIES, or only its address is
+     * written down.
+     *
+     * <p>An operational choice with a cost, so it lives on the instrument rather than in the
+     * configuration: characterising every find fills a crystal many times faster and is what an
+     * operator wants over known sky, while a deep pointing into sky nobody has been to is a list of
+     * places worth flying to. Default on, because that is what the survey did before it could tell
+     * the two questions apart.</p>
+     */
+    private boolean characteriseWholeSystem = true;
 
     public TileObservatory() {
         openProgress = 0;
@@ -415,6 +427,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         nbt.setInteger("scanDistance", scanDistance);
         nbt.setDouble("scanStepLy", stepLightYears);
         nbt.setBoolean("scanPassive", passive);
+        nbt.setBoolean("scanWholeSystem", characteriseWholeSystem);
     }
 
     @Override
@@ -439,6 +452,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
         stepLightYears = nbt.getDouble("scanStepLy");
         passive = nbt.getBoolean("scanPassive");
+        characteriseWholeSystem = !nbt.hasKey("scanWholeSystem") || nbt.getBoolean("scanWholeSystem");
 
         if (world != null && world.isRemote && prevSeed != lastSeed) {
             zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();
@@ -466,6 +480,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         nbt.setInteger("scanDirection", scanDirection);
         nbt.setInteger("scanDistance", scanDistance);
         nbt.setBoolean("scanPassive", passive);
+        nbt.setBoolean("scanWholeSystem", characteriseWholeSystem);
         return nbt;
     }
 
@@ -485,6 +500,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         scanDirection = nbt.getInteger("scanDirection");
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
         passive = nbt.getBoolean("scanPassive");
+        characteriseWholeSystem = !nbt.hasKey("scanWholeSystem") || nbt.getBoolean("scanWholeSystem");
     }
 
 
@@ -733,6 +749,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                     this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.mode.tooltip"), 40, 18));
 
+            // What a detection is followed up with. An operational choice with a cost, so it is a
+            // control on the instrument and not a setting in a file: over known sky an operator wants
+            // every body named, and into sky nobody has visited he wants a list of places to fly to.
+            modules.add(new ModuleButton(166, 66, 9,
+                    LibVulpes.proxy.getLocalizedString(characteriseWholeSystem
+                            ? "msg.observetory.scan.detail.full" : "msg.observetory.scan.detail.coords"),
+                    this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.detail.tooltip"), 40, 18));
+
             modules.add(new ModuleText(8, 116, scanStatusText(), 0x2d2d2d, false));
             modules.add(new ModuleText(8, 128,
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.keepcrystal"),
@@ -862,7 +887,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (origin == null) {
             return false;
         }
-        int radius = Math.max(0, ARConfiguration.getCurrentConfig().telescopePassiveRadiusCells);
+        int radius = Math.max(0, ARConfiguration.getCurrentConfig().telescopePassiveRadiusSteps);
         RegionScan sweep = buildScan(() -> RegionScan.local(origin, radius,
                 world.getTotalWorldTime(), RegionScan.Tuning.fromConfig()));
         if (sweep == null) {
@@ -890,6 +915,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     /** How far out the operator has the instrument aimed, in steps of one star's territory. */
     public int getScanDistance() {
         return scanDistance;
+    }
+
+    /** Whether a detection is followed all the way to the system's bodies, or only its address. */
+    public boolean isCharacterisingWholeSystem() {
+        return characteriseWholeSystem;
     }
 
     /** How far the current aim reaches, in light years, or zero before the server has said. */
@@ -930,13 +960,16 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             return 0;
         }
         int obscured = 0;
+        double limit = TelescopeScan.limitMagnitude();
         for (int index = from; index < from + count && index < scan.totalCells(); index++) {
-            GalacticCoord cell = scan.cellAt(index);
-            if (!registry.anchorForCell(cell).isPresent()) {
-                continue; // empty sky is not a hidden sky
-            }
-            if (TelescopeScan.isObscured(registry, origin, registry.anchorForCell(cell).get())) {
-                obscured++;
+            // The DETECTIONS and not the cells: empty sky is not a hidden sky, and neither is a star
+            // the instrument never registered. What the operator is being told about is the band in
+            // between - bright enough to see, too dim through the dust to make anything out.
+            for (TelescopeScan.Detection hit
+                    : TelescopeScan.detect(registry, scan.cellAt(index), origin, limit)) {
+                if (TelescopeScan.isObscuredAt(hit.extinctionMagnitudes())) {
+                    obscured++;
+                }
             }
         }
         return obscured;
@@ -1051,7 +1084,8 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         UniverseRegistry registry = UniverseRegistry.get(world);
         lastScanObscured += countObscured(registry, origin, activeScan, activeScan.cellsDone(), cells);
         lastScanDiscoveries += TelescopeScan.resolveBatch(registry, activeScan,
-                activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames(), origin);
+                activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames(), origin,
+                characteriseWholeSystem);
         activeScan = instant ? activeScan.completed(now) : activeScan.advanced(now, cells);
         if (activeScan.isComplete()) {
             activeScan = null;
@@ -1108,6 +1142,9 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         }
         if (buttonId == 8) {
             PacketHandler.sendToServer(new PacketMachine(this, PASSIVE_SWEEP));
+        }
+        if (buttonId == 9) {
+            PacketHandler.sendToServer(new PacketMachine(this, TOGGLE_WHOLE_SYSTEM));
         }
     }
 
@@ -1168,6 +1205,14 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                     int reach = RegionScan.Tuning.fromConfig().maxRangeSteps();
                     scanDistance = Math.max(1, Math.min(reach, scanDistance + nbt.getInteger("d")));
                 }
+                markDirty();
+                IBlockState st = world.getBlockState(pos);
+                world.notifyBlockUpdate(pos, st, st, 2);
+                player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
+                        getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            }
+            else if (id == TOGGLE_WHOLE_SYSTEM) {
+                characteriseWholeSystem = !characteriseWholeSystem;
                 markDirty();
                 IBlockState st = world.getBlockState(pos);
                 world.notifyBlockUpdate(pos, st, st, 2);

@@ -2642,7 +2642,12 @@ public class TestProbeCommand extends CommandBase {
                 // What ONE step of that aim is worth in cells — the instrument's own stride, readable
                 // while it is idle, so a fixture can be placed where the next look will actually land.
                 .append(",\"stepCells\":").append(tuning.strideCells())
-                .append(",\"passive\":").append(scope.isPassive());
+                .append(",\"passive\":").append(scope.isPassive())
+                // The aperture and the opening: what the instrument can SEE, which is what its reach
+                // above is derived from, and how wide a patch one pointing covers.
+                .append(",\"limitMagnitude\":").append(tuning.limitMagnitude())
+                .append(",\"halfAngleDeg\":").append(Math.toDegrees(tuning.halfAngleRadians()))
+                .append(",\"wholeSystem\":").append(scope.isCharacterisingWholeSystem());
         if (scan != null) {
             // The cell counts ship beside the region they are counted over, and the next deadline
             // beside the clock it is measured against: a sweep that will not advance must be able to
@@ -2662,7 +2667,19 @@ public class TestProbeCommand extends CommandBase {
                     .append(",\"ticksPerStep\":").append(scan.ticksPerStep())
                     .append(",\"estimatedTicks\":").append(scan.estimatedTicks())
                     .append(",\"progress\":").append(scan.progress())
-                    .append(",\"stepDue\":").append(scan.stepDue(now));
+                    .append(",\"stepDue\":").append(scan.stepDue(now))
+                    // Which SHAPE the survey is: a pointing has an apex and an opening, a local radar
+                    // has neither, and a test that cannot tell them apart cannot tell why a sweep
+                    // covered what it covered.
+                    .append(",\"pointing\":").append(scan.isPointing())
+                    .append(",\"shells\":").append(scan.cone() == null ? 0 : scan.cone().shells())
+                    // WHERE it is aimed, which the corners no longer say: a cone's bounding box is
+                    // the apex plus its reach on every axis, so re-aiming the same instrument leaves
+                    // min/max untouched. The direction is the aim.
+                    .append(",\"dir\":\"").append(scan.cone() == null ? ""
+                            : String.format(java.util.Locale.ROOT, "%.4f_%.4f_%.4f",
+                                    scan.cone().dirX(), scan.cone().dirY(), scan.cone().dirZ()))
+                    .append("\"");
         }
         return out.toString();
     }
@@ -11284,13 +11301,12 @@ public class TestProbeCommand extends CommandBase {
                     // The telescope's reach and what a look costs in time, all read at scan START,
                     // so flipping them at runtime is enough to exercise a short scan in a test
                     // without waiting out a production-length observation.
-                    "telescopeScanRangeLightYears",
-                    "telescopeScanHalfWidthSteps",
+                    "telescopeLimitingMagnitude",
+                    "telescopeConeHalfAngleDegrees",
                     "telescopeScanMaxCells",
                     "telescopeScanBaseTicks",
-                    "telescopeScanTicksPerLightYear",
                     "telescopeScanCellsPerStep",
-                    "telescopePassiveRadiusCells",
+                    "telescopePassiveRadiusSteps",
                     "telescopeSurveyDataPerStep",
                     // How much dust a survey sees through, in magnitudes. Flippable at runtime so a
                     // test can drive BOTH sides of concealment against one generated cloud.

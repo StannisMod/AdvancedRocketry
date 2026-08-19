@@ -506,9 +506,8 @@ public class MachineGuiClientGroupE2ETest extends AbstractSharedClientE2ETest {
         // is what this drives.
         exec("artest config set planetsMustBeDiscovered false");
         exec("artest config set telescopeScanBaseTicks 0");
-        exec("artest config set telescopeScanTicksPerLightYear 1");
-        exec("artest config set telescopeScanHalfWidthSteps 1");
-        exec("artest config set telescopeScanRangeLightYears 100");
+        exec("artest config set telescopeLimitingMagnitude 30");
+        exec("artest config set telescopeConeHalfAngleDegrees 20");
         String crystal = exec("artest telescope crystal " + where);
         scenario().requireArranged("could not put a crystal in the observatory: " + crystal,
                 crystal.contains("\"ok\":true"));

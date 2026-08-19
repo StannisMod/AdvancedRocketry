@@ -36,16 +36,18 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
      * the default game, where what the instrument reaches is resolved outright; on is the research
      * mode, where the sweep is paced and the time curve is the mechanic.
      */
-    private void surveySetup(boolean research, int cellsPerStep, double ticksPerLightYear)
+    private void surveySetup(boolean research, int cellsPerStep, int ticksPerStep)
             throws Exception {
         exec("artest config set planetsMustBeDiscovered " + research);
-        exec("artest config set telescopeScanBaseTicks 0");
-        exec("artest config set telescopeScanTicksPerLightYear " + ticksPerLightYear);
-        exec("artest config set telescopeScanRangeLightYears 100");
-        exec("artest config set telescopeScanHalfWidthSteps 1");
+        exec("artest config set telescopeScanBaseTicks " + ticksPerStep);
+        // An aperture that sees essentially anything, so what a fixture finds is decided by where it
+        // put the fixture and never by how bright the sky happened to draw it. A survey's photometry
+        // is pinned in the unit tier, where a star's luminosity can be stated.
+        exec("artest config set telescopeLimitingMagnitude 30");
+        exec("artest config set telescopeConeHalfAngleDegrees 20");
         exec("artest config set telescopeScanMaxCells 1000");
         exec("artest config set telescopeScanCellsPerStep " + cellsPerStep);
-        exec("artest config set telescopePassiveRadiusCells 1");
+        exec("artest config set telescopePassiveRadiusSteps 1");
     }
 
     /** How far apart, in cells, the looks of a directed survey stand in THIS server's universe. */
@@ -144,7 +146,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
     @Test
     public void withoutResearchWhatTheInstrumentReachesIsResolvedOutright() throws Exception {
         final int x = 4300;
-        surveySetup(false, 2, 40);
+        surveySetup(false, 2, 120);
         String[] home = observatoryWithCrystal(x);
         systemNearTheLookAt(x, home, 4);
 
@@ -164,8 +166,9 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         // One cell a step — the claim under test — and a step short enough that 27 of them fit in
         // the poll budget: at 20 ticks per sector of distance a single cell took 4 s, so the whole
         // region wanted 108 s against a 10 s budget and the sweep was blamed for the arithmetic.
-        // Priced per LIGHT YEAR now, and four steps out is ~17 of them, so the rate is a fraction.
-        surveySetup(true, 1, 0.2);
+        // Priced flat per STEP now: a pointing's cost in time is carried by how many steps it
+        // needs, because a deeper one already holds proportionally more looks.
+        surveySetup(true, 1, 3);
         String[] home = observatoryWithCrystal(x);
 
         String started = exec("artest telescope scan " + where(x) + " 1 0 0 4");
@@ -194,7 +197,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
     @Test
     public void stoppingASurveyIsFreeAndKeepsWhatWasAlreadyLearned() throws Exception {
         final int x = 4380;
-        surveySetup(true, 1, 60);
+        surveySetup(true, 1, 180);
         String[] home = observatoryWithCrystal(x);
         systemNearTheLookAt(x, home, 3);
 
@@ -215,7 +218,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
     @Test
     public void aimingAgainMovesTheRegionWithoutLosingWhatWasLearned() throws Exception {
         final int x = 4420;
-        surveySetup(true, 1, 60);
+        surveySetup(true, 1, 180);
         String[] home = observatoryWithCrystal(x);
 
         String first = exec("artest telescope scan " + where(x) + " 1 0 0 3");
@@ -224,8 +227,11 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
 
         String second = exec("artest telescope scan " + where(x) + " 0 0 1 5");
         assertTrue("re-aiming mid-survey must be allowed: " + second, second.contains("\"ok\":true"));
-        assertNotEquals("re-aiming must actually move the region",
-                text(first, "min"), text(second, "min"));
+        // The DIRECTION and not the corners. A pointing's bounding box is its apex plus its reach
+        // on every axis, so re-aiming the same instrument leaves min/max exactly where they were —
+        // the aim is where it is looking, which is a vector.
+        assertNotEquals("re-aiming must actually move the pointing",
+                text(first, "dir"), text(second, "dir"));
         assertTrue("and must keep every address already written: " + second,
                 field(second, "addresses") >= learned);
     }
@@ -233,7 +239,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
     @Test
     public void theLocalRadarSurveysTheObservatorysOwnNeighbourhood() throws Exception {
         final int x = 4460;
-        surveySetup(false, 4, 40);
+        surveySetup(false, 4, 120);
         String[] home = observatoryWithCrystal(x);
 
         String passive = exec("artest telescope passive " + where(x));
@@ -249,8 +255,9 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         long hi = Long.parseLong(maxKey.split("_")[0]);
         assertTrue("the radar must look around home (" + homeX + "), not at " + minKey + ".." + maxKey,
                 lo <= homeX && homeX <= hi);
-        assertEquals("and it must walk CELLS: close to home the next cell is a different destination",
-                1L, field(passive, "stride"));
+        assertEquals("and it must walk TERRITORIES: one look already yields every body of the system "
+                        + "that owns it, so a neighbourhood is measured in NEIGHBOURS",
+                field(passive, "stepCells"), field(passive, "stride"));
 
         // An observatory stands on a PLANET, never on its own star. Under the gate this test was
         // written against, the cell it is standing in reported empty and the machine could not name
@@ -265,7 +272,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         final int x = 4540;
         // Research on, one cell a step, a step long enough that the sweep is certainly mid-region
         // when the chunk goes away.
-        surveySetup(true, 1, 10);
+        surveySetup(true, 1, 30);
         observatoryWithCrystal(x);
 
         String started = exec("artest telescope scan " + where(x) + " 1 0 0 3");
@@ -293,7 +300,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
     @Test
     public void anUnfedInstrumentStallsInsteadOfSurveyingForFree() throws Exception {
         final int x = 4580;
-        surveySetup(true, 1, 1);
+        surveySetup(true, 1, 3);
         // A price no bare observatory can pay: it has no data buses, so it has no distance data.
         exec("artest config set telescopeSurveyDataPerStep 50");
         try {
@@ -315,7 +322,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
     @Test
     public void whatTheTelescopeWroteIsWhatAShipCanBeAimedBy() throws Exception {
         final int x = 4620;
-        surveySetup(false, 4, 1);
+        surveySetup(false, 4, 3);
         String[] home = observatoryWithCrystal(x);
         systemNearTheLookAt(x, home, 3);
 
@@ -344,7 +351,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         // The half of the defect that no amount of resolving would have fixed: the reach was stated
         // in cells, so 24 of them was 0.16 AU — a fifth of the way to Mercury — and every aim inside
         // the horizon stayed inside the solar system. A horizon is a LENGTH.
-        surveySetup(false, 4, 1);
+        surveySetup(false, 4, 3);
         observatoryWithCrystal(x);
 
         String idle = exec("artest telescope info " + where(x));

@@ -229,8 +229,14 @@ public class StarClusterTest {
                 found.centreSuperY(), found.centreSuperZ(), s);
         assertTrue("a cluster must be denser than the field beside it (" + inside + " vs " + outside
                 + ") for " + found, inside > outside);
-        assertTrue("and the field outside it must hold at most the one seat a coarse cell allows",
-                outside <= 1);
+        // The field outside is no longer "one seat per coarse cell" — every territory is divided
+        // uniformly so that a free-floating population can be counted — so what is pinned is the
+        // CONTRAST that makes a cluster a cluster. A cluster subdivides k times further and is meant
+        // to be k-cubed times denser; requiring only a factor of k keeps this a tripwire against the
+        // contrast collapsing rather than a re-measurement of the draw's variance.
+        assertTrue("a cluster must out-hold the field beside it by at least its own subdivision ("
+                        + inside + " vs " + outside + " at k=" + found.subdivision() + ")",
+                inside >= outside * found.subdivision());
     }
 
     @Test
