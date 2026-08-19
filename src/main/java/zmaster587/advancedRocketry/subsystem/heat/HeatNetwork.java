@@ -7,8 +7,10 @@ import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.capability.CapabilityHeatEmitter;
 import zmaster587.advancedRocketry.api.capability.CapabilityHeatPump;
+import zmaster587.advancedRocketry.api.capability.CapabilityHeatSink;
 import zmaster587.advancedRocketry.api.capability.IHeatEmitter;
 import zmaster587.advancedRocketry.api.capability.IHeatPump;
+import zmaster587.advancedRocketry.api.capability.IHeatSink;
 import zmaster587.advancedRocketry.atmosphere.AirState;
 import zmaster587.advancedRocketry.tile.heat.TileHeatChiller;
 import zmaster587.advancedRocketry.tile.heat.TileHeatIntakeDuct;
@@ -140,6 +142,7 @@ public final class HeatNetwork {
         }
         List<BlockPos> emitters = new ArrayList<>();
         List<BlockPos> pumps = new ArrayList<>();
+        List<BlockPos> sinks = new ArrayList<>();
         Set<BlockPos> seen = new HashSet<>();
         for (ISubsystemNetworkNode node : members) {
             if (!(node instanceof IHeatNode)) {
@@ -164,10 +167,14 @@ public final class HeatNetwork {
                 if (CapabilityHeatPump.get(tile) != null) {
                     pumps.add(neighbour);
                 }
+                if (CapabilityHeatSink.get(tile) != null) {
+                    sinks.add(neighbour);
+                }
             }
         }
         ((HeatNetworkState) raw).setEmitterPositions(emitters);
         ((HeatNetworkState) raw).setPumpPositions(pumps);
+        ((HeatNetworkState) raw).setSinkPositions(sinks);
     }
 
     /**
@@ -251,6 +258,14 @@ public final class HeatNetwork {
         // it, and the hot loop is the reservoir that knows both temperatures the exchange needs.
         Pumped fromAir = runAirCooledPumps(world, state, capacity, stored);
         stored += fromAir.delivered;
+
+        // What a machine standing beside the loop took OFF it and put somewhere that is not a loop -
+        // today the emergency dump, charging a lump of matter it is about to throw overboard. It runs
+        // before rejection because it is the ship's own choice and the radiators are not: what the
+        // pilot spent iron on should not be quietly undone by a surface that was going to shed anyway.
+        long sunk = drainIntoSinks(world, state, temperature(stored, capacity), stored);
+        stored -= sunk;
+        state.setSunkThisTick(sunk);
 
         // Signed: negative means the surface ran backwards and the environment put heat IN.
         long rejected = rejectHeat(environment, members, capacity, stored);
@@ -488,6 +503,39 @@ public final class HeatNetwork {
         // it was never this loop's — it reports it, so that delivery, work and what left the room can
         // all be read from one tick.
         return new Pumped(airTaken, delivered, workTotal);
+    }
+
+    /**
+     * Hand heat to every machine beside the loop that will take it away for good.
+     * <p>
+     * The loop decides how much moves, never the machine - the same asymmetry a radiator lives under.
+     * A sink is asked what it wants at THIS temperature, because the one sink there is only runs when
+     * the ship is already losing; and what it actually absorbs is what the loop loses, so a machine
+     * that took less than it asked for cannot make energy disappear.
+     */
+    private static long drainIntoSinks(World world, HeatNetworkState state, double loopKelvin,
+                                       long stored) {
+        List<BlockPos> sinkPositions = state.getSinkPositions();
+        if (sinkPositions.isEmpty() || stored <= 0L) {
+            return 0L;
+        }
+        long drained = 0L;
+        for (BlockPos sinkPos : sinkPositions) {
+            if (!world.isBlockLoaded(sinkPos)) {
+                continue;
+            }
+            IHeatSink sink = CapabilityHeatSink.get(world.getTileEntity(sinkPos));
+            if (sink == null) {
+                continue;
+            }
+            long available = Math.max(0L, stored - drained);
+            long wanted = Math.min(sink.getSinkRequestPerTick(loopKelvin), available);
+            if (wanted <= 0L) {
+                continue;
+            }
+            drained += Math.max(0L, sink.acceptHeat(wanted));
+        }
+        return Math.min(stored, drained);
     }
 
     /**

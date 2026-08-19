@@ -59,6 +59,8 @@ public class HeatNetworkState extends SubsystemNetworkState {
     private long pumpedInPending;
     /** The chillers bolted onto this loop, worked out when it was last rebuilt. */
     private List<BlockPos> pumpPositions = Collections.emptyList();
+    private List<BlockPos> sinkPositions = new java.util.ArrayList<>();
+    private long sunkThisTick;
 
     @Override
     public SubsystemNetworkState copy() {
@@ -73,6 +75,8 @@ public class HeatNetworkState extends SubsystemNetworkState {
         if (target instanceof HeatNetworkState) {
             HeatNetworkState heat = (HeatNetworkState) target;
             heat.storedHeat = storedHeat;
+            heat.sinkPositions = sinkPositions;
+            heat.sunkThisTick = sunkThisTick;
             heat.heatCapacity = heatCapacity;
             heat.temperatureKelvin = temperatureKelvin;
             heat.generationThisTick = generationThisTick;
@@ -139,6 +143,23 @@ public class HeatNetworkState extends SubsystemNetworkState {
     }
 
     /** The chillers bolted onto this loop. Re-derived whenever the loop is rebuilt. */
+    /** What machines beside the loop took away for good on the last tick. */
+    public long getSunkThisTick() {
+        return sunkThisTick;
+    }
+
+    void setSunkThisTick(long sunk) {
+        this.sunkThisTick = Math.max(0L, sunk);
+    }
+
+    public List<BlockPos> getSinkPositions() {
+        return sinkPositions;
+    }
+
+    void setSinkPositions(List<BlockPos> positions) {
+        this.sinkPositions = positions == null ? new java.util.ArrayList<BlockPos>() : positions;
+    }
+
     public List<BlockPos> getPumpPositions() {
         return pumpPositions;
     }

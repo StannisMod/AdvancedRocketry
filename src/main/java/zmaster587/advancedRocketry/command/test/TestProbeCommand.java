@@ -10905,7 +10905,12 @@ public class TestProbeCommand extends CommandBase {
                     // and world time does not advance inside one probe call - so the interval is
                     // set to 1 to make the sweep run on the tick the test asks for rather than on
                     // whichever tick the phase happens to land on.
-                    "shipHeatMeltCheckTicks"));
+                    "shipHeatMeltCheckTicks",
+                    // The dump's trigger and rate. A test of "it runs only when the ship is
+                    // already losing" has to arrange BOTH sides of that threshold, and naming the
+                    // temperature in the test instead would restate the tuned number.
+                    "shipHeatDumpTriggerKelvin",
+                    "shipHeatDumpThroughput"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -16775,6 +16780,46 @@ public class TestProbeCommand extends CommandBase {
             handleHeatCycle(server, sender, args);
             return;
         }
+        if (args.length >= 5 && "dump".equalsIgnoreCase(args[0])) {
+            // The emergency dump's own state: what the slug it holds has taken, what it can still
+            // take, and whether the port is clear. Reported separately because "charge went to zero"
+            // is BOTH "nothing happened" and "it fired", and a test must be able to tell those apart.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                    parseIntOr(args[4], 0));
+            net.minecraft.tileentity.TileEntity tile = world.getTileEntity(pos);
+            if (!(tile instanceof zmaster587.advancedRocketry.tile.heat.TileHeatDump)) {
+                send(sender, "{\"ok\":true,\"isDump\":false,\"charge\":0,\"headroom\":0,"
+                        + "\"hasStack\":false,\"obstruction\":0}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.heat.TileHeatDump dump =
+                    (zmaster587.advancedRocketry.tile.heat.TileHeatDump) tile;
+            net.minecraft.item.ItemStack held = dump.getStackInSlot(0);
+            if (args.length >= 7 && "load".equalsIgnoreCase(args[5])) {
+                net.minecraft.item.Item item = net.minecraft.item.Item.getByNameOrId(args[6]);
+                if (item == null) {
+                    send(sender, "{\"error\":\"unknown item id\",\"id\":\"" + escapeJson(args[6]) + "\"}");
+                    return;
+                }
+                dump.setInventorySlotContents(0, new net.minecraft.item.ItemStack(item, 1));
+                held = dump.getStackInSlot(0);
+            }
+            send(sender, "{\"ok\":true,\"isDump\":true,\"charge\":"
+                    + zmaster587.advancedRocketry.tile.heat.TileHeatDump.chargeOf(held)
+                    + ",\"headroom\":" + dump.headroom()
+                    + ",\"hasStack\":" + (!held.isEmpty())
+                    + ",\"obstruction\":" + dump.getObstruction()
+                    + ",\"chargedThisTick\":" + dump.getChargedThisTick()
+                    + ",\"powered\":" + dump.isPowered()
+                    + ",\"request\":" + dump.getSinkRequestPerTick(9999.0D) + "}");
+            return;
+        }
         if (args.length >= 2 && "item".equalsIgnoreCase(args[0])) {
             // The same question asked of an ITEM rather than a position: an item has no collision
             // boxes, so this is the path that falls back to the shape of the block it would place.
@@ -16997,6 +17042,7 @@ public class TestProbeCommand extends CommandBase {
                 + ",\"rejected\":" + after.getRejectedThisTick()
                 + ",\"heatStored\":" + after.getStoredHeat()
                 + ",\"heatCapacity\":" + after.getHeatCapacity()
+                + ",\"sunk\":" + after.getSunkThisTick()
                 + ",\"temperatureMilliK\":" + Math.round(after.getTemperatureKelvin() * 1000.0D)
                 + ",\"exchangers\":" + after.getExchangerCount()
                 + ",\"radiatingCells\":" + after.getRadiatingCells()
