@@ -77,7 +77,10 @@ public final class ContactResolver {
         IContactResponder responder = responderAt(world, hit.block);
         if (responder != null) {
             ContactResult answer = responder.onContact(world, contact);
-            if (answer != null) {
+            // Declining is not answering. A responder has a law about some arrivals and none about the
+            // rest, and the rest must fall through to the ordinary treatment — otherwise the only
+            // phrase available for "nothing to say" is one that means "through, for free".
+            if (answer != null && !answer.isNoOpinion()) {
                 // A block that answered for itself did not walk anything, so the body is advanced past
                 // the block it was answered by — otherwise the next test finds the same block, asks
                 // again, and a round argues with one plate until the tick's crossing budget runs out.

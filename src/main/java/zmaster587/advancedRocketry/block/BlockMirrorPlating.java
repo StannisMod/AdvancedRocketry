@@ -68,8 +68,13 @@ public class BlockMirrorPlating extends BlockPlating {
             return null;
         }
         if (!isRadiant(contact.getKind())) {
-            // A mirror is glass and foil. A slug does not care that it is shiny.
-            return ContactResult.passedThrough(contact.getEnergy());
+            // A mirror is glass and foil, and a solid round does not care that it is shiny — but it
+            // does have to get through it. Declining hands the meeting to the default law, which
+            // prices the film off the table and the eighth of a voxel it fills and breaks it like any
+            // other pane. Answering "passed through" here instead would let a round cross for nothing
+            // and leave the plating standing, which made it armour that only its own counter could
+            // remove.
+            return ContactResult.noOpinion();
         }
 
         int absorbed = (int) Math.ceil(contact.getEnergy() * (1.0D - reflectance));

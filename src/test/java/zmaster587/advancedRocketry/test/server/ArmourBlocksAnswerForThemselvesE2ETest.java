@@ -23,17 +23,27 @@ public class ArmourBlocksAnswerForThemselvesE2ETest extends AbstractSharedServer
     private static final int Y = 70, X = 2100;
     private static final int MIRROR_Z = 1200, MIRROR_SLUG_Z = 1220, BETTER_Z = 1240;
     private static final int REACTIVE_Z = 1260, REACTIVE_TWICE_Z = 1280, RAILGUN_Z = 1300;
+    private static final int PRICE_Z = 1320;
 
     private static final double SPEED = 0.45D;
     private static final Pattern ID = Pattern.compile("\"id\":(-?\\d+)");
     private static final Pattern VX = Pattern.compile("\"vx\":(-?[\\d.eE+-]+)");
+    private static final Pattern STAGE_COST = Pattern.compile("\"stageCost\":(-?\\d+)");
 
     /**
-     * A mirror returns a beam and lets a slug through, and the difference is the kind in the contact
-     * and nothing else — the same block, the same face, the same energy.
+     * A mirror returns a beam and is SMASHED by a solid round, and the difference is the kind in the
+     * contact and nothing else — the same block, the same face, the same energy.
+     *
+     * <p>The second half used to read "lets a solid round straight through", and it was pinning a
+     * defect. A mirror has no OPTICAL opinion about a solid round, and it said so by answering "passed
+     * through, carrying everything" — which is not "no opinion", it is "through, for free". So the
+     * round paid nothing, the film was untouched, and the one armour a beam could strip was the one
+     * kinetic fire could not. The block now DECLINES, and declining hands the meeting to the ordinary
+     * law: the film is priced off the table and the eighth of a voxel it fills, and it breaks like the
+     * glass it is.</p>
      */
     @Test
-    public void aMirrorReturnsABeamAndLetsASlugStraightThrough() throws Exception {
+    public void aMirrorReturnsABeamAndIsSmashedByASolidRound() throws Exception {
         prepare(MIRROR_Z);
         prepare(MIRROR_SLUG_Z);
         place("advancedrocketry:mirrorPlatingAluminium", MIRROR_Z);
@@ -47,10 +57,13 @@ public class ArmourBlocksAnswerForThemselvesE2ETest extends AbstractSharedServer
 
         long slug = fire(MIRROR_SLUG_Z, 3_000, "KINETIC");
         assertTrue("the slug was refused", slug >= 0);
-        assertTrue("a solid round bounced off glass and foil: a mirror has no opinion about a slug,"
-                + " and the kind in the contact is the only thing that separates the two cases: "
-                + read(slug), !awaitTurnedBack(slug));
-        assertTrue("the mirror is still standing after a slug went through it", stillThere(MIRROR_SLUG_Z));
+        assertTrue("a solid round bounced off glass and foil: a mirror has no OPTICAL opinion about"
+                + " a solid round, and the kind in the contact is the only thing that separates the"
+                + " two cases: " + read(slug), !awaitTurnedBack(slug));
+        awaitGone(slug);
+        assertTrue("the film is still standing after a solid round crossed it: then the round paid"
+                + " nothing for it, and a mirror is armour that only the weapon it was built to stop"
+                + " can remove", !stillThere(MIRROR_SLUG_Z));
     }
 
     /**
@@ -67,16 +80,26 @@ public class ArmourBlocksAnswerForThemselvesE2ETest extends AbstractSharedServer
         // exceeds what the film sheds, and a thirtieth of it does not.
         int killsAluminium = 60_000;
 
-        // CONTROL, and the test is worthless without it: the same energy as a SLUG must leave the
-        // plate standing. Ordinary damage does not know one mirror from another, so if it were doing
-        // the work below, this is where it would show — and the first cut of this test passed with the
-        // whole responder switched off, which is exactly what this catches.
-        long slug = fire(BETTER_Z, killsAluminium, "KINETIC");
-        assertTrue("the control round was refused", slug >= 0);
-        awaitGone(slug);
-        assertTrue("a slug carrying what the beams below carry destroyed the plating: then what kills"
-                + " a mirror here is ordinary damage, and nothing in this test is about mirrors",
-                stillThere(BETTER_Z));
+        // CONTROL, and the test is worthless without it — the first cut of this test passed with
+        // the whole responder switched off. It used to be a solid round carrying the same energy,
+        // which had to leave the plate standing; that stopped being available the day such a round
+        // started paying for the film and breaking it, which is correct and kills the old control.
+        //
+        // This is the stronger replacement, and it aims at the mechanism rather than at one sample:
+        // ordinary damage prices the two tiers IDENTICALLY, so it cannot produce a difference between
+        // them at all. Whatever separates aluminium from gold below is therefore the reflectance, and
+        // can be nothing else.
+        placeAt(X + 4, BETTER_Z, "advancedrocketry:mirrorPlatingGold");
+        long aluminiumCost = costOf(exec("artest damage stage " + DIM + " " + X + " " + Y + " "
+                + BETTER_Z));
+        long goldCost = costOf(exec("artest damage stage " + DIM + " " + (X + 4) + " " + Y + " "
+                + BETTER_Z));
+        assertTrue("the two mirror tiers cost different amounts to break by ordinary damage"
+                + " (aluminium=" + aluminiumCost + " gold=" + goldCost + "): then the ladder below can"
+                + " be produced without any mirror law at all, and this test measures the toughness"
+                + " table", aluminiumCost == goldCost);
+        placeAt(X + 4, BETTER_Z, "minecraft:air");
+
         long first = fire(BETTER_Z, killsAluminium, "BEAM");
         assertTrue("the beam was refused", first >= 0);
         awaitGone(first);
@@ -141,6 +164,49 @@ public class ArmourBlocksAnswerForThemselvesE2ETest extends AbstractSharedServer
         assertTrue("the full block let through what it should have swallowed whole: then twice the"
                 + " plating is not twice the protection and layering buys nothing",
                 clean(X + 2, RAILGUN_Z));
+    }
+
+    /**
+     * A mirror film is priced as the glass and foil it is, not as the hull plate its MATERIAL says.
+     *
+     * <p>Both plating families are declared {@code Material.IRON} — which is what they are mined and
+     * sounded like — and the damage table resolves by material when nothing has written a row. That
+     * priced a mirror film as solid hull.</p>
+     *
+     * <p><b>The comparator is REACTIVE plating, and the choice is the whole test.</b> The obvious
+     * comparison — a film against a solid block of iron — passes whether or not the mirror has a row
+     * of its own, because a film fills an eighth of its voxel and the volume alone makes it cheaper.
+     * It would measure the occupancy factor and report it as evidence about the table. Reactive
+     * plating is the same class, the same thickness and the same declared material, and it
+     * deliberately has NO row: its casing IS metal, and what makes it interesting is the charge rather
+     * than what the charge is wrapped in. So the two differ in exactly one thing, and a difference in
+     * price can come from exactly one place.</p>
+     *
+     * <p>Only the ORDERING is claimed. The numbers behind it are balance and will move; an assertion
+     * on them would go red the first time anyone retunes the table without breaking anything a player
+     * would notice.</p>
+     */
+    @Test
+    public void aMirrorFilmCostsLessToBreakThanTheMetalItsMaterialClaims() throws Exception {
+        prepare(PRICE_Z);
+        place("advancedrocketry:mirrorPlatingAluminium", PRICE_Z);
+        placeAt(X + 4, PRICE_Z, "advancedrocketry:reactivePlate");
+
+        String film = exec("artest damage stage " + DIM + " " + X + " " + Y + " " + PRICE_Z);
+        String metal = exec("artest damage stage " + DIM + " " + (X + 4) + " " + Y + " " + PRICE_Z);
+        long filmCost = costOf(film), metalCost = costOf(metal);
+
+        assertTrue("a mirror film costs what the identically shaped plating beside it costs (film="
+                + filmCost + " reactive=" + metalCost + "): the two differ only in that one has a row"
+                + " of its own, so this says the row is not being read at all and glass with foil on"
+                + " it still resists like hull plate. film=" + film + " reactive=" + metal,
+                filmCost < metalCost);
+    }
+
+    private static long costOf(String json) {
+        Matcher m = STAGE_COST.matcher(json);
+        assertTrue("no stageCost in: " + json, m.find());
+        return Long.parseLong(m.group(1));
     }
 
     // ---- driving

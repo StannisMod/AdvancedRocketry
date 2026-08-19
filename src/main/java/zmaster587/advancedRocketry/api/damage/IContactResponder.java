@@ -21,7 +21,14 @@ public interface IContactResponder {
 
     /**
      * Answer for one body meeting this block. Never null: return
-     * {@link ContactResult#passedThrough(int)} to decline having an opinion.
+     * {@link ContactResult#noOpinion()} to decline having one, and the default law decides instead —
+     * price, stages, ricochet, the lot — exactly as it does for a block that implements nothing.
+     *
+     * <p><b>Do not decline with {@link ContactResult#passedThrough(int)}.</b> That is an answer, and
+     * what it says is "through, carrying this much", so declining with the arriving energy says
+     * "through, for free". This javadoc told implementers to do exactly that until 2026-08-19, and
+     * mirror plating followed it: a solid round crossed the film spending nothing and left it standing,
+     * so the one armour a beam could strip was the one kinetic fire could not.</p>
      *
      * <p>The world is passed rather than carried on the {@link Contact} on purpose. A contact states
      * the FACTS of a meeting — that is what lets a held beam, which is not a shot in any registry, use

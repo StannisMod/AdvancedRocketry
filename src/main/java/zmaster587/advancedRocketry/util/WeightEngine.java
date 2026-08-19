@@ -380,6 +380,9 @@ public enum WeightEngine {
             ablationIndividual = readMap(gson, root, "ablationIndividual", mapType);
             ablationByRegex = readMap(gson, root, "ablationByRegex", mapType);
             toughnessByRegex = readMap(gson, root, "toughnessByRegex", linkedType);
+            if (toughnessByRegex.isEmpty()) {
+                toughnessByRegex = defaultToughnessByRegex();
+            }
             toughnessMaterials = readMap(gson, root, "toughnessMaterials", mapType);
             if (toughnessMaterials.isEmpty()) {
                 toughnessMaterials = defaultToughnessMaterials();
@@ -412,7 +415,7 @@ public enum WeightEngine {
         fallback = 0.1;
         fluidFallback = 0.001;
         toughnessIndividual = new HashMap<>();
-        toughnessByRegex = new LinkedHashMap<>();
+        toughnessByRegex = defaultToughnessByRegex();
         toughnessMaterials = defaultToughnessMaterials();
         toughnessFallback = 2.0;
     }
@@ -519,6 +522,33 @@ public enum WeightEngine {
      * survive retuning is the ordering, because that is what a player perceives when a shot goes
      * through a window and stops in the plating.
      */
+    /**
+     * Rows this mod ships for its own blocks, where the material alone gets them badly wrong.
+     *
+     * <p>Written as regexes rather than one row per block so that a family is priced as a family: the
+     * three mirror films differ in how much light they return, not in how hard the glass is, and a
+     * fourth tier should not need a fifth row.</p>
+     *
+     * <p><b>Mirror plating is glass and foil declared as {@code Material.IRON}</b> — iron because that
+     * is what it is mined and sounded like, which then priced a mirror film as hull plate. It answers
+     * a beam by its own law, so this row governs what it costs to smash: a solid round, an explosion,
+     * anything with no optics in it. Reactive plating deliberately has NO row: its casing IS metal,
+     * and what makes it interesting is the charge rather than what the charge is wrapped in.</p>
+     *
+     * <p>Seeded when the config carries no regex rows at all, exactly as the material table is — so a
+     * pack cannot express "no regex rows whatsoever". That is a real limitation and it is inherited
+     * rather than chosen; a pack that disagrees with a row overrides it by value, or by an individual
+     * row, which outranks every regex.</p>
+     */
+    private static Map<String, Double> defaultToughnessByRegex() {
+        Map<String, Double> m = new LinkedHashMap<>();
+        // LOWERCASE, and it is not a style choice: a registry name arrives here already lowercased,
+        // so a pattern written the way the block was declared ("mirrorPlating...") matches nothing and
+        // the row silently does not exist. The block keeps its declared price and nobody is told.
+        m.put("advancedrocketry:mirrorplating.*", 1.0);
+        return m;
+    }
+
     private static Map<String, Double> defaultToughnessMaterials() {
         Map<String, Double> m = new LinkedHashMap<>();
         m.put("AIR", 0.0);
