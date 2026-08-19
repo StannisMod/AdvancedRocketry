@@ -1284,6 +1284,10 @@ public class TestProbeCommand extends CommandBase {
             info.put("stage", zmaster587.advancedRocketry.damage.DamageState.getStage(world, pos));
             info.put("maxStage", zmaster587.advancedRocketry.damage.DamageState.getMaxStage(world, pos));
             info.put("stageCost", zmaster587.advancedRocketry.damage.StructureDamageEngine.stageCost(world, pos));
+            // What the SAME stage costs a beam: the ablation column, so a test can see which column
+            // it is being charged from rather than inferring it from a depth.
+            info.put("stageCostBeam", zmaster587.advancedRocketry.damage.StructureDamageEngine.stageCost(
+                    world, pos, 1.0D, zmaster587.advancedRocketry.api.damage.ImpactKind.BEAM));
             info.put("block", String.valueOf(world.getBlockState(pos).getBlock().getRegistryName()));
             String destroyed = zmaster587.advancedRocketry.damage.BlockDamageSavedData.get(world)
                     .getDestroyedBlockName(pos);

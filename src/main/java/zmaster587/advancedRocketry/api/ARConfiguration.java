@@ -433,14 +433,20 @@ public class ARConfiguration {
      * threshold of `perStage x ablation / referenceArea` that each block sets for itself. A faint beam
      * therefore never accumulates, and the battleship is safe without this knob.</p>
      *
-     * <p>What the knob still buys, at a value ABOVE that affordability line, is a gate a pack can
-     * raise deliberately, and the statement that a sub-threshold beam's energy is ABSORBED rather than
-     * carried on to whatever is behind the plate. Below that line it is inert — it can only refuse
-     * beams the pricing was going to refuse anyway. Set to zero so that it changes nothing until
-     * somebody rules on where the line should be.</p>
+     * <p>What the knob buys, at a value ABOVE that affordability line, is the thing the pricing does
+     * NOT do: a sub-threshold beam's energy is ABSORBED. Without it a beam too weak to mark a plate
+     * does not warm it — it passes clean through with everything it arrived with, a free x-ray of the
+     * hull. That, rather than the battleship, is why the threshold is set.</p>
+     *
+     * <p><b>The default sits above the affordability line of METAL.</b> The line is
+     * `perStage x ablation / referenceArea`, which each block sets for itself: with the shipped table
+     * that is of order 8 000 for stone and 38 500 for an iron block. At 50 000 a small emitter does
+     * nothing whatever to a metal hull, however long it is held, and its energy stays in the plate —
+     * which is the qualitative gap between a big emitter and a small one, and the reason a pulsed
+     * laser is worth building. Zero disables it and restores the x-ray.</p>
      */
     @ConfigProperty(needsSync = true)
-    public double beamAblationIntensityThreshold = 0.0;
+    public double beamAblationIntensityThreshold = 50000.0;
     /**
      * How glancing a hit has to be before a solid round skips off METAL instead of digging in, as the
      * angle between the round and the surface normal in degrees: 0 is square-on, 90 is a pure graze.
@@ -784,7 +790,7 @@ public class ARConfiguration {
         arConfig.ricochetIncidenceDegrees = config.get(WEAPONS, "ricochetIncidenceDegrees", 65.0, "How glancing a hit must be before a solid round skips off METAL rather than digging in, in degrees from the surface normal: 0 is square-on, 90 a pure graze. Only metal deflects, so a round never skips off a plank wall. 90 disables ricochet", 0.0, 90.0).getDouble();
         arConfig.ricochetRestitution = config.get(WEAPONS, "ricochetRestitution", 0.75, "How much of its speed a ricocheting round keeps. Below 1 a bounce costs something, which is what stops a round skipping between two plates forever", 0.0, 1.0).getDouble();
         arConfig.ablationResistanceFactor = config.get(WEAPONS, "ablationResistanceFactor", 20.0, "How much dearer a block is to boil away than to push through, when nothing has written it its own ablation row. Both are energy per unit volume removed; they are nowhere near the same magnitude, which is why a laser buys precision rather than digging power. 1.0 makes a beam dig exactly like a slug", 0.01, 1000.0).getDouble();
-        arConfig.beamAblationIntensityThreshold = config.get(WEAPONS, "beamAblationIntensityThreshold", 0.0, "Energy per unit of a beam's cross-section below which it does not drill at all, its energy being absorbed as heat rather than carried onward. OFF by default: a stage is bought whole or not at all, so affordability is already an intensity threshold each block sets for itself, and a faint beam never accumulates. Raise this above that line only to gate beams the pricing would otherwise let through", 0.0, Double.MAX_VALUE).getDouble();
+        arConfig.beamAblationIntensityThreshold = config.get(WEAPONS, "beamAblationIntensityThreshold", 50000.0, "Energy per unit of a beam's cross-section below which it removes nothing and its energy is absorbed as heat instead of being carried onward. The default sits above the affordability line of metal (order 38500 for an iron block), so a small emitter does nothing to a metal hull however long it is held. 0 disables it, and a sub-threshold beam then passes clean through the plate with everything it arrived with", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.maxShotsPerWorld = config.get(WEAPONS, "maxShotsPerWorld", 256, "How many shots one world may have in flight at once. Further fire is refused until some land; nothing already in flight is ever dropped to make room", 1, Integer.MAX_VALUE).getInt();
         arConfig.shotVisibilityRadius = config.get(WEAPONS, "shotVisibilityRadius", 256, "How near a player the path of a fired round must pass before that player is told about it and can see it drawn, in blocks. 0 disables shot replication entirely — the mechanic still works, nothing is drawn", 0, Integer.MAX_VALUE).getInt();
         arConfig.enableFireControlSensor = config.get(WEAPONS, "enableFireControlSensor", true, "Whether fire-control sensors search for targets. Off, a sensor acquires nothing, publishes nothing and draws no power: batteries are pointed by hand, as they were before sensors existed").getBoolean();

@@ -30,9 +30,19 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
 
     private static final int DIM = 0;
     /** A site of this class's own, clear of the other shot scenarios on this shared server. */
-    private static final int Y = 70, Z = 1010;
-    private static final int SLUG_X = 1700, BEAM_X = 1730, FAINT_X = 1760;
-    private static final int STEEL_X = 1790, WOOD_X = 1820;
+    private static final int Y = 70, X = 1700;
+    /**
+     * Every scenario gets its own LANE, and they are separated across the line of fire rather than
+     * along it.
+     *
+     * <p>Down one lane they were not separate at all: a round rich enough to be interesting punches
+     * through its own ten-block wall with budget in hand and flies on into the next scenario's wall
+     * twenty blocks downrange — so "how deep did the beam get" was measured on a hole the SLUG made.
+     * It passed for as long as the budgets were too small to leave the first wall, which is the worst
+     * way for an arrangement to be wrong: silently, until the numbers get interesting.</p>
+     */
+    private static final int SLUG_Z = 1010, BEAM_Z = 1030, FAINT_Z = 1050, STRONG_Z = 1070;
+    private static final int STEEL_Z = 1090, WOOD_Z = 1110;
 
     private static final int WALL_DEPTH = 10;
     private static final double BORE_SPEED = 0.45D;
@@ -49,28 +59,36 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
      */
     @Test
     public void aBeamBuysFarLessDepthThanASlugOfTheSameEnergy() throws Exception {
-        prepare(SLUG_X);
-        prepare(BEAM_X);
-        buildWall(SLUG_X);
-        buildWall(BEAM_X);
+        prepare(SLUG_Z);
+        prepare(BEAM_Z);
+        buildWall(SLUG_Z);
+        buildWall(BEAM_Z);
 
-        int budget = budgetForBlocks(SLUG_X, 4.0D);
+        // Rich enough that the beam is over the intensity threshold and genuinely drilling: below it
+        // this test would go green for the threshold's reasons and say nothing about the columns.
+        int budget = budgetForBlocks(SLUG_Z, 20.0D);
         assertTrue("the wall has no price, so no budget here means anything", budget > 0);
+        // Read the two columns off an INTACT block, before anything is fired at it. Taken afterwards
+        // the block is air, whose toughness is zero — and zero times any factor is zero, so both
+        // columns agree there and the reading says nothing about either.
+        String priced = stageAt(X, SLUG_Z);
 
-        long slug = fire(SLUG_X - 3.0D, budget, "KINETIC");
-        long beam = fire(BEAM_X - 3.0D, budget, "BEAM");
+        long slug = fire(SLUG_Z, budget, "KINETIC");
+        long beam = fire(BEAM_Z, budget, "BEAM");
         assertTrue("both shots must be admitted or the comparison is about one of them",
                 slug >= 0 && beam >= 0);
         awaitGone(slug);
         awaitGone(beam);
 
-        int slugDepth = boreDepth(SLUG_X);
-        int beamDepth = boreDepth(BEAM_X);
+        int slugDepth = boreDepth(SLUG_Z);
+        int beamDepth = boreDepth(BEAM_Z);
         assertTrue("the slug did not get into the wall at all, so the comparison is between two"
                 + " zeroes", slugDepth > 0);
         assertTrue("a beam dug as deep as a slug carrying the same energy (beam=" + beamDepth
-                + " slug=" + slugDepth + "): then the two channels are one column and a laser is"
-                + " simply a better gun", beamDepth < slugDepth);
+                + " slug=" + slugDepth + ", budget=" + budget + "): then the two channels are one"
+                + " column and a laser is simply a better gun."
+                + " intactPrice=" + priced,
+                beamDepth < slugDepth);
     }
 
     /**
@@ -84,20 +102,54 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
      */
     @Test
     public void aBeamCarryingABlocksWorthOfEnergyDoesNotScratchIt() throws Exception {
-        prepare(FAINT_X);
-        buildWall(FAINT_X);
+        prepare(FAINT_Z);
+        buildWall(FAINT_Z);
 
         // Exactly one block's worth at the mechanical column — a slug with this much destroys it.
-        int budget = budgetForBlocks(FAINT_X, 1.0D);
+        int budget = budgetForBlocks(FAINT_Z, 1.0D);
         assertTrue("the wall has no price, so this budget means nothing", budget > 0);
-        long id = fire(FAINT_X - 3.0D, budget, "BEAM");
+        long id = fire(FAINT_Z, budget, "BEAM");
         assertTrue("the substrate refused the beam", id >= 0);
         awaitGone(id);
 
-        assertTrue("a beam removed material with a slug's price for it (" + stageAt(FAINT_X) + "):"
+        assertTrue("a beam removed material with a slug's price for it (" + stageAt(X, FAINT_Z) + "):"
                 + " then boiling a block away costs what pushing through it costs, the two channels"
                 + " are one column, and a laser is simply a better gun",
-                stageOf(stageAt(FAINT_X)) == 0 && !destroyed(FAINT_X));
+                stageOf(stageAt(X, FAINT_Z)) == 0 && !destroyed(X, FAINT_Z));
+    }
+
+    /**
+     * The intensity threshold, as the one thing the price does not do.
+     *
+     * <p>Two beams into identical walls, the same body, the same wall, differing only in how much
+     * energy is behind that face. The weaker one could afford several stages — the price alone would
+     * let it dig — and it removes nothing, because it is not INTENSE enough; the stronger one digs.
+     * What makes this worth a test rather than a tuning note is where the weak beam's energy goes: it
+     * is absorbed by the plate. Without the threshold that beam does not warm the hull, it passes
+     * clean through it carrying everything it arrived with.</p>
+     */
+    @Test
+    public void aBeamBelowTheIntensityThresholdRemovesNothingWhileAStrongerOneDigs() throws Exception {
+        prepare(FAINT_Z);
+        prepare(STRONG_Z);
+        buildWall(FAINT_Z);
+        buildWall(STRONG_Z);
+
+        // Straddling the shipped threshold at the reference cross-section: both could afford stages
+        // on price, so the only thing separating them is intensity.
+        long faint = fire(FAINT_Z, 8_000, "BEAM");
+        long strong = fire(STRONG_Z, 14_000, "BEAM");
+        assertTrue("both beams must be admitted", faint >= 0 && strong >= 0);
+        awaitGone(faint);
+        awaitGone(strong);
+
+        assertTrue("a beam below the intensity threshold removed material anyway ("
+                + stageAt(X, FAINT_Z) + "): then the threshold is not a gate and a faint beam either digs"
+                + " or, worse, passes clean through the plate with all it arrived with",
+                stageOf(stageAt(X, FAINT_Z)) == 0 && !destroyed(X, FAINT_Z));
+        assertTrue("the stronger beam removed nothing either (" + stageAt(X, STRONG_Z) + "): then this"
+                + " run compared two refusals and the threshold is not where it was thought to be",
+                stageOf(stageAt(X, STRONG_Z)) > 0 || destroyed(X, STRONG_Z));
     }
 
     /**
@@ -106,90 +158,92 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
      */
     @Test
     public void aGrazingRoundSkipsOffSteelAndDigsIntoWood() throws Exception {
-        prepare(STEEL_X);
-        prepare(WOOD_X);
-        buildPlate(STEEL_X, "minecraft:iron_block");
-        buildPlate(WOOD_X, "minecraft:planks");
+        prepare(STEEL_Z);
+        prepare(WOOD_Z);
+        buildPlate(STEEL_Z, "minecraft:iron_block");
+        buildPlate(WOOD_Z, "minecraft:planks");
 
-        int budget = budgetForBlocks(WOOD_X, 4.0D);
+        int budget = budgetForBlocks(WOOD_Z, 4.0D);
         assertTrue("the plate has no price, so no budget here means anything", budget > 0);
 
         // The evidence is the round TURNING, not the plate being unmarked: a plate is unmarked by a
         // round that missed it entirely, and that reading would pass against a substrate with no
         // ricochet in it at all. It arrives descending, so a bounce off the top face is the moment
         // its vertical velocity goes UP.
-        long offSteel = grazeAt(STEEL_X, budget);
+        long offSteel = grazeAt(STEEL_Z, budget);
         assertTrue("the steel shot was refused", offSteel >= 0);
         boolean steelTurned = awaitClimbing(offSteel);
         assertTrue("a round grazing a steel plate never turned — it dug in, and metal is the one"
                 + " material a glancing hit is supposed to skip off: " + read(offSteel),
                 steelTurned);
         assertTrue("the steel plate took damage from a round that skipped off it: "
-                + firstTouched(STEEL_X), firstTouched(STEEL_X) == null);
+                + firstTouched(STEEL_Z), firstTouched(STEEL_Z) == null);
 
-        long intoWood = grazeAt(WOOD_X, budget);
+        long intoWood = grazeAt(WOOD_Z, budget);
         assertTrue("the wood shot was refused", intoWood >= 0);
         boolean woodTurned = awaitClimbing(intoWood);
         assertTrue("the same round at the same angle skipped off WOOD: a plank wall must never bounce"
                 + " a shell, or ricochet stops being where a player expects it: " + read(intoWood),
                 !woodTurned);
         assertTrue("the round neither turned nor marked the wooden plate anywhere along it — then it"
-                + " missed, and this run compared nothing", firstTouched(WOOD_X) != null);
+                + " missed, and this run compared nothing", firstTouched(WOOD_Z) != null);
     }
 
     // ---- driving
 
     /** Straight down the X axis into the face of the wall: square-on, so nothing can ricochet. */
-    private long fire(double x, int energy, String kind) throws Exception {
-        return idOf(exec("artest shot fire " + DIM + " " + x + " " + (Y + 0.5D) + " " + (Z + 0.5D)
-                + " " + BORE_SPEED + " 0 0 " + energy + " 1200 " + kind + " 0.25 1.0"));
+    private long fire(int lane, int energy, String kind) throws Exception {
+        return idOf(exec("artest shot fire " + DIM + " " + (X - 3.0D) + " " + (Y + 0.5D) + " "
+                + (lane + 0.5D) + " " + BORE_SPEED + " 0 0 " + energy + " 1200 " + kind + " 0.25 1.0"));
     }
 
     /**
      * A round arriving at a very shallow angle to the plate's top face: mostly along it, barely into
      * it. The plate is one block thick and the round comes in from above and beside.
      */
-    private long grazeAt(int plateX, int energy) throws Exception {
-        return idOf(exec("artest shot fire " + DIM + " " + (plateX - 4.0D) + " " + (Y + 1.4D) + " "
-                + (Z + 0.5D) + " 2.0 -0.12 0 " + energy + " 1200 KINETIC 0.25 1.0"));
+    private long grazeAt(int lane, int energy) throws Exception {
+        return idOf(exec("artest shot fire " + DIM + " " + (X - 1.0D) + " " + (Y + 1.6D) + " "
+                + (lane + 0.5D) + " 1.5 -0.2 0 " + energy + " 1200 KINETIC 0.25 1.0"));
     }
 
-    private void buildWall(int fromX) throws Exception {
-        assertTrue("could not build the wall", exec("artest fill " + DIM + " " + fromX + " " + Y + " "
-                + Z + " " + (fromX + WALL_DEPTH - 1) + " " + Y + " " + Z + " minecraft:stone")
+    private void buildWall(int lane) throws Exception {
+        assertTrue("could not build the wall", exec("artest fill " + DIM + " " + X + " " + Y + " "
+                + lane + " " + (X + WALL_DEPTH - 1) + " " + Y + " " + lane + " minecraft:stone")
                 .contains("\"ok\":true"));
     }
 
     /** One block thick and long enough to be grazed along, with clear air above it. */
-    private void buildPlate(int fromX, String block) throws Exception {
-        assertTrue("could not build the plate", exec("artest fill " + DIM + " " + fromX + " " + Y + " "
-                + (Z - 1) + " " + (fromX + 8) + " " + Y + " " + (Z + 1) + " " + block)
+    private void buildPlate(int lane, String block) throws Exception {
+        assertTrue("could not build the plate", exec("artest fill " + DIM + " " + X + " " + Y + " "
+                + (lane - 1) + " " + (X + 8) + " " + Y + " " + (lane + 1) + " " + block)
                 .contains("\"ok\":true"));
     }
 
-    private void prepare(int wallX) throws Exception {
+    private void prepare(int lane) throws Exception {
         assertTrue("chunk warmup failed", exec("artest chunk warmup " + DIM + " "
-                + ((wallX - 16) >> 4) + " " + ((Z - 16) >> 4) + " " + ((wallX + 24) >> 4) + " "
-                + ((Z + 16) >> 4)).contains("\"ok\":true"));
-        assertTrue("could not clear the site", exec("artest fill " + DIM + " " + (wallX - 8) + " "
-                + (Y - 2) + " " + (Z - 4) + " " + (wallX + 20) + " " + (Y + 6) + " " + (Z + 4)
+                + ((X - 16) >> 4) + " " + ((lane - 16) >> 4) + " " + ((X + 60) >> 4) + " "
+                + ((lane + 16) >> 4)).contains("\"ok\":true"));
+        // Cleared far past the wall along the line of fire: a round that punches through must fly out
+        // into empty air rather than into the next thing this class built.
+        assertTrue("could not clear the site", exec("artest fill " + DIM + " " + (X - 8) + " "
+                + (Y - 2) + " " + (lane - 3) + " " + (X + 60) + " " + (Y + 6) + " " + (lane + 3)
                 + " minecraft:air").contains("\"ok\":true"));
     }
 
     // ---- reading
 
-    private int boreDepth(int wallX) throws Exception {
+    private int boreDepth(int lane) throws Exception {
         int depth = 0;
         for (int i = 0; i < WALL_DEPTH; i++) {
-            if (stageOf(stageAt(wallX + i)) > 0 || destroyed(wallX + i)) {
+            if (stageOf(stageAt(X + i, lane)) > 0 || destroyed(X + i, lane)) {
                 depth = i + 1;
             }
         }
         return depth;
     }
 
-    private int budgetForBlocks(int wallX, double blocks) throws Exception {
-        String state = stageAt(wallX);
+    private int budgetForBlocks(int lane, double blocks) throws Exception {
+        String state = stageAt(X, lane);
         Matcher cost = STAGE_COST.matcher(state);
         Matcher stages = MAX_STAGE.matcher(state);
         if (!cost.find() || !stages.find()) {
@@ -199,12 +253,12 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
                 * Math.max(1, Integer.parseInt(stages.group(1))) * blocks);
     }
 
-    private String stageAt(int x) throws Exception {
-        return exec("artest damage stage " + DIM + " " + x + " " + Y + " " + Z);
+    private String stageAt(int x, int lane) throws Exception {
+        return exec("artest damage stage " + DIM + " " + x + " " + Y + " " + lane);
     }
 
-    private boolean destroyed(int x) throws Exception {
-        String state = stageAt(x);
+    private boolean destroyed(int x, int lane) throws Exception {
+        String state = stageAt(x, lane);
         return state.contains("\"wasDestroyed\":true") || state.contains("\"block\":\"minecraft:air\"");
     }
 
@@ -239,14 +293,14 @@ public class ArmourAnswersByKindAndAngleE2ETest extends AbstractSharedServerTest
     }
 
     /** Anywhere along the plate, the first block that took something — or null if none did. */
-    private String firstTouched(int plateX) throws Exception {
-        for (int x = plateX; x <= plateX + 8; x++) {
+    private String firstTouched(int lane) throws Exception {
+        for (int x = X; x <= X + 8; x++) {
             for (int dz = -1; dz <= 1; dz++) {
-                String state = exec("artest damage stage " + DIM + " " + x + " " + Y + " " + (Z + dz));
+                String state = exec("artest damage stage " + DIM + " " + x + " " + Y + " " + (lane + dz));
                 boolean gone = state.contains("\"wasDestroyed\":true")
                         || state.contains("\"block\":\"minecraft:air\"");
                 if (gone || stageOf(state) > 0) {
-                    return x + "," + (Z + dz) + " -> " + state;
+                    return x + "," + (lane + dz) + " -> " + state;
                 }
             }
         }
