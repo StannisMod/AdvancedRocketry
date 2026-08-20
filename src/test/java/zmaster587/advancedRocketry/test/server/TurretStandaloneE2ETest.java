@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.test.server;
 
 import org.junit.Test;
+import org.valkyrienskies.mod.common.ships.chunk_claims.ShipChunkAllocator;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,10 +32,17 @@ public class TurretStandaloneE2ETest extends AbstractSharedServerTest {
     private static final double SURFACE_GRAVITY_PER_TICK_SQUARED = 0.03D;
 
     /**
-     * Inside the region Valkyrien Skies allocates ship blocks in — its chunk allocator starts at
-     * chunk X 320000, so anything past block X ~5.12 million is shipyard.
+     * Inside the region Valkyrien Skies allocates ship blocks in, DERIVED from the allocator rather
+     * than written down here.
+     *
+     * <p>It was a literal (block X 5 120 400) until the shipyard moved out to make room for the
+     * universe's cell bound, and the literal then named ordinary world coordinates: the gun placed
+     * there was not aboard anything, it assembled and ticked exactly as a gun on the ground should,
+     * and the test reported that as production having stopped waiting. Where the shipyard IS belongs
+     * to the allocator; what this test claims is only that a gun inside it does nothing.</p>
      */
-    private static final int SHIPYARD_X = 5_120_400;
+    private static final int SHIPYARD_X =
+            (ShipChunkAllocator.CHUNK_X_START << 4) + 400;
 
     @Test
     public void aGunWithNoNetworkFiresAtWhatItWasPointedAt() throws Exception {
