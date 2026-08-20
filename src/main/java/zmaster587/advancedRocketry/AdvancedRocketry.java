@@ -1205,6 +1205,7 @@ public class AdvancedRocketry {
 
         CapabilitySpaceArmor.register();
         zmaster587.advancedRocketry.api.capability.CapabilityWear.register();
+        zmaster587.advancedRocketry.api.capability.CapabilityDamageAware.register();
         //Need to raise the Max Entity Radius to allow player interaction with rockets
         World.MAX_ENTITY_RADIUS = 20;
 

@@ -3,7 +3,11 @@ package zmaster587.advancedRocketry.damage;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import zmaster587.advancedRocketry.AdvancedRocketry;
+import zmaster587.advancedRocketry.api.capability.CapabilityDamageAware;
+import zmaster587.advancedRocketry.api.damage.DamageOccurrence;
 import zmaster587.advancedRocketry.api.damage.DamageOutcome;
+import zmaster587.advancedRocketry.api.damage.IDamageAware;
 import zmaster587.advancedRocketry.api.damage.DamageReport;
 import zmaster587.advancedRocketry.api.damage.ImpactRequest;
 import zmaster587.advancedRocketry.api.damage.SelectionMode;
@@ -105,9 +109,11 @@ public final class ShipDamageService {
         String shipId = shipAt(world, point, request.getDirection());
         if (shipId == null) {
             remember(world, request.getImpactId());
-            return toReport(StructureDamageEngine.penetrate(world, point, request.getDirection(),
-                    request.getBudget(), request.getReachBlocks(), request.getCrossSectionArea(),
-                    request.resumesInside(), request.getKind()), null, world);
+            StructureDamageEngine.WalkResult walked = StructureDamageEngine.penetrate(world, point,
+                    request.getDirection(), request.getBudget(), request.getReachBlocks(),
+                    request.getCrossSectionArea(), request.resumesInside(), request.getKind());
+            tellTheUnits(world, walked, request, null);
+            return toReport(walked, null, world);
         }
 
         double[] shipPoint = VSIntegration.toShipFrameFor(world, shipId, point.x, point.y, point.z);
@@ -126,6 +132,7 @@ public final class ShipDamageService {
                 new Vec3d(shipDir[0], shipDir[1], shipDir[2]), request.getBudget(),
                 request.getReachBlocks(), request.getCrossSectionArea(), request.resumesInside(),
                 request.getKind());
+        tellTheUnits(world, walk, request, shipId);
         return toReport(walk, shipId, world);
     }
 
@@ -215,6 +222,47 @@ public final class ShipDamageService {
             }
         }
         return null;
+    }
+
+    /**
+     * Tell every unit the walk advanced what happened to it.
+     *
+     * <p>Published HERE rather than by the engine because the two facts a unit needs and the engine
+     * cannot supply live at this layer: the CAUSE (the engine is handed a budget and a kind, never the
+     * request) and the HULL (the engine walks in whatever frame it was given and names no ship). The
+     * engine's job was to notice; this one's is to say who and why.</p>
+     *
+     * <p><b>A unit that no longer exists is told anyway.</b> The engine hands back the listener it took
+     * out of a block on the way to destroying it, because the blow that ends a unit is the occurrence
+     * that unit most needs — and by now there is no tile at that position to look up. A survivor is
+     * looked up normally.</p>
+     *
+     * <p>An exception from a unit's own reaction is contained: the stage is already written and the
+     * budget already spent, so one unit throwing must not cost the rest of the hull its news, and it
+     * must not turn a resolved impact into a failed one.</p>
+     */
+    private static void tellTheUnits(World world, StructureDamageEngine.WalkResult walk,
+                                     ImpactRequest request, String shipId) {
+        if (walk == null || walk.touched.isEmpty()) {
+            return;
+        }
+        for (StructureDamageEngine.Touched t : walk.touched) {
+            IDamageAware unit = t.dying != null ? t.dying
+                    : CapabilityDamageAware.get(world.getTileEntity(t.pos));
+            if (unit == null) {
+                continue;
+            }
+            Vec3d where = toWorld(world, shipId,
+                    new Vec3d(t.pos.getX() + 0.5D, t.pos.getY() + 0.5D, t.pos.getZ() + 0.5D));
+            try {
+                unit.onDamage(new DamageOccurrence(request.getCause(), request.getKind(), world,
+                        t.pos, where, t.stageBefore, t.stageAfter, t.maxStage, t.budgetSpent, shipId));
+            } catch (RuntimeException unitThrew) {
+                AdvancedRocketry.logger.error("a unit threw while reacting to damage at " + t.pos
+                        + " (" + request.getCause() + "): the damage stands, the reaction is lost",
+                        unitThrew);
+            }
+        }
     }
 
     private static DamageReport toReport(StructureDamageEngine.WalkResult walk, String shipId, World world) {

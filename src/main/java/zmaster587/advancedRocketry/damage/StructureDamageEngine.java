@@ -6,7 +6,9 @@ import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import zmaster587.advancedRocketry.api.capability.CapabilityDamageAware;
 import zmaster587.advancedRocketry.api.damage.DamageOutcome;
+import zmaster587.advancedRocketry.api.damage.IDamageAware;
 import zmaster587.advancedRocketry.api.damage.ImpactKind;
 import zmaster587.advancedRocketry.api.damage.ImpactRequest;
 import zmaster587.advancedRocketry.api.damage.StopReason;
@@ -347,6 +349,7 @@ public final class StructureDamageEngine {
                                  double areaFactor, int allowance, ImpactKind kind) {
         int maxStage = DamageState.getMaxStage(world, pos);
         int stage = DamageState.getStage(world, pos);
+        int stageBefore = stage;
         int stageCost = stageCost(world, pos, areaFactor, kind);
 
         int left = Math.max(0, allowance);
@@ -366,11 +369,18 @@ public final class StructureDamageEngine {
             BlockDamageSavedData.get(world).recordDestroyed(pos, state.getBlock(),
                     state.getBlock().getMetaFromState(state));
             DamageState.setStage(world, pos, stage);
+            // Taken out of the block while there still IS one. A unit's own destruction is the
+            // occurrence it most needs — what a failing engine does about being killed is its own
+            // business (a chemical one goes like TNT, an ion one merely ceases to exist) — and one
+            // line below there is no tile left to ask. Captured here, told by the layer above.
+            IDamageAware dying = CapabilityDamageAware.get(world.getTileEntity(pos));
             world.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
             result.blocksDestroyed++;
+            result.touched.add(new Touched(pos, stageBefore, stage, maxStage, spent, dying));
         } else {
             DamageState.setStage(world, pos, stage);
             result.blocksStaged++;
+            result.touched.add(new Touched(pos, stageBefore, stage, maxStage, spent, null));
         }
         return spent;
     }
@@ -515,6 +525,40 @@ public final class StructureDamageEngine {
         return new Vec3d(v.x * s, v.y * s, v.z * s);
     }
 
+    /**
+     * One unit this walk advanced — the facts, and nothing derived from them.
+     *
+     * <p>The engine records rather than publishes because it does not know enough to publish: it walks
+     * in the frame it was given and can name no ship, and it is handed a budget and a kind rather than
+     * the request, so it can name no cause either. Both live one layer up, which is why that layer
+     * does the telling.</p>
+     */
+    public static final class Touched {
+        /** In the frame the walk ran in — subspace aboard a ship, the world's own otherwise. */
+        public final BlockPos pos;
+        public final int stageBefore;
+        public final int stageAfter;
+        public final int maxStage;
+        public final int budgetSpent;
+        /**
+         * The unit's own listener, taken out of the block just before the block stopped existing;
+         * {@code null} for a block that survived, whose tile can simply be looked up when the news is
+         * delivered. A destroyed unit has no tile to look up any more, and it is the one that most
+         * needs to hear.
+         */
+        public final IDamageAware dying;
+
+        Touched(BlockPos pos, int stageBefore, int stageAfter, int maxStage, int budgetSpent,
+                IDamageAware dying) {
+            this.pos = pos;
+            this.stageBefore = stageBefore;
+            this.stageAfter = stageAfter;
+            this.maxStage = maxStage;
+            this.budgetSpent = budgetSpent;
+            this.dying = dying;
+        }
+    }
+
     /** What one walk did, in the frame it walked. The seam above maps the points back to world. */
     public static final class WalkResult {
         public DamageOutcome outcome = DamageOutcome.NOTHING_STRUCK;
@@ -526,6 +570,8 @@ public final class StructureDamageEngine {
         public int penetrationDepth;
         /** How far along its direction the walk got before it stopped, in blocks. */
         public double distanceWalked;
+        /** Every unit this walk advanced, in the order it reached them. */
+        public final List<Touched> touched = new ArrayList<Touched>();
         public Vec3d entryPoint;
         public Vec3d exitPoint;
     }

@@ -1333,6 +1333,18 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"cleared\":" + before + "}");
             return;
         }
+        if ("occurrences".equalsIgnoreCase(args[0])) {
+            // occurrences [clear] — what the damage service TOLD the units. The recorder attaches to
+            // every tile on a harness server, so "nothing recorded" means nothing was delivered, not
+            // that nobody was listening.
+            DamageOccurrenceRecorder.ensureRegistered();
+            if (args.length >= 2 && "clear".equalsIgnoreCase(args[1])) {
+                send(sender, "{\"ok\":true,\"cleared\":" + DamageOccurrenceRecorder.clear() + "}");
+                return;
+            }
+            send(sender, DamageOccurrenceRecorder.json());
+            return;
+        }
         if (args.length >= 3 && "impact-memory".equalsIgnoreCase(args[0])) {
             // impact-memory <dim> <impactId> — is this identity already spent, and since when. A
             // refusal reports only that it was seen; WHEN it was seen is what names the other caller.
@@ -21193,6 +21205,108 @@ public class TestProbeCommand extends CommandBase {
                 net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
                         new net.minecraftforge.event.entity.living.LivingEvent.LivingUpdateEvent(fakePlayer));
             }
+        }
+    }
+
+    /**
+     * Records the {@link zmaster587.advancedRocketry.api.damage.DamageOccurrence}s delivered to units,
+     * by ATTACHING the capability to every tile on a harness server.
+     *
+     * <p>Attaching rather than implementing is the point: it is exactly the route a foreign mod takes
+     * to make somebody else's machine damage-aware, so what this exercises is the shipped delivery
+     * path and not a private one. Nothing in production carries {@code IDamageAware} yet — enrolling a
+     * real unit means designing that unit's own consequence, which is its owner's decision — so
+     * without this the interface would have no consumer and no test could tell whether it delivers.</p>
+     *
+     * <p>Test mode only, and the list is a bounded, single-writer diagnostic that OUTLIVES a scenario
+     * on a shared server: {@code /artest damage occurrences clear} is how a scenario claims a clean
+     * one.</p>
+     */
+    public static final class DamageOccurrenceRecorder {
+
+        private static final int CAPACITY = 256;
+        private static final java.util.List<String> SEEN = new java.util.ArrayList<String>();
+        private static volatile boolean registered = false;
+
+        public static synchronized void ensureRegistered() {
+            if (registered) {
+                return;
+            }
+            net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new DamageOccurrenceRecorder());
+            registered = true;
+        }
+
+        static synchronized void record(zmaster587.advancedRocketry.api.damage.DamageOccurrence o) {
+            if (SEEN.size() >= CAPACITY) {
+                SEEN.remove(0);
+            }
+            SEEN.add("{\"cause\":\"" + o.getCause() + "\",\"kind\":"
+                    + (o.getKind() == null ? "null" : "\"" + o.getKind() + "\"")
+                    + ",\"x\":" + o.getPos().getX() + ",\"y\":" + o.getPos().getY()
+                    + ",\"z\":" + o.getPos().getZ()
+                    + ",\"stageBefore\":" + o.getStageBefore()
+                    + ",\"stageAfter\":" + o.getStageAfter()
+                    + ",\"maxStage\":" + o.getMaxStage()
+                    + ",\"spent\":" + o.getBudgetSpent()
+                    + ",\"destroyed\":" + o.isDestroyed()
+                    + ",\"ship\":" + (o.getShipId() == null ? "null" : "\"" + o.getShipId() + "\"")
+                    + ",\"hasWorld\":" + (o.getWorld() != null)
+                    + ",\"hasWhere\":" + (o.getWhere() != null) + "}");
+        }
+
+        static synchronized String json() {
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"count\":").append(SEEN.size())
+                    .append(",\"occurrences\":[");
+            for (int i = 0; i < SEEN.size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(SEEN.get(i));
+            }
+            return sb.append("]}").toString();
+        }
+
+        static synchronized int clear() {
+            int had = SEEN.size();
+            SEEN.clear();
+            return had;
+        }
+
+        @net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+        public void onAttach(net.minecraftforge.event.AttachCapabilitiesEvent<
+                net.minecraft.tileentity.TileEntity> event) {
+            if (zmaster587.advancedRocketry.api.capability.CapabilityDamageAware.DAMAGE_AWARE == null) {
+                return;
+            }
+            event.addCapability(new net.minecraft.util.ResourceLocation("advancedrocketry",
+                    "test_damage_recorder"), new RecorderProvider());
+        }
+    }
+
+    /** The provider half of the recorder attachment; one listener per tile, holding nothing. */
+    private static final class RecorderProvider
+            implements net.minecraftforge.common.capabilities.ICapabilityProvider {
+        private final zmaster587.advancedRocketry.api.damage.IDamageAware listener =
+                new zmaster587.advancedRocketry.api.damage.IDamageAware() {
+            @Override
+            public void onDamage(zmaster587.advancedRocketry.api.damage.DamageOccurrence occurrence) {
+                DamageOccurrenceRecorder.record(occurrence);
+            }
+        };
+
+        @Override
+        public boolean hasCapability(net.minecraftforge.common.capabilities.Capability<?> capability,
+                                     net.minecraft.util.EnumFacing facing) {
+            return capability
+                    == zmaster587.advancedRocketry.api.capability.CapabilityDamageAware.DAMAGE_AWARE;
+        }
+
+        @Override
+        public <T> T getCapability(net.minecraftforge.common.capabilities.Capability<T> capability,
+                                   net.minecraft.util.EnumFacing facing) {
+            return capability
+                    == zmaster587.advancedRocketry.api.capability.CapabilityDamageAware.DAMAGE_AWARE
+                    ? (T) listener : null;
         }
     }
 

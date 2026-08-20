@@ -36,6 +36,7 @@ public final class ImpactRequest {
     private final double reachBlocks;
     private final double crossSectionArea;
     private final boolean resumesInside;
+    private final DamageCause cause;
 
     /** The cross-section a budget is priced against unless the caller says otherwise. */
     public static final double REFERENCE_AREA = Math.PI * 0.25D * 0.25D;
@@ -66,6 +67,33 @@ public final class ImpactRequest {
         this.selectionMode = selectionMode == null ? SelectionMode.PENETRATING : selectionMode;
         this.reachBlocks = reachBlocks <= 0.0D ? 0.0D : reachBlocks;
         this.crossSectionArea = crossSectionArea <= 0.0D ? REFERENCE_AREA : crossSectionArea;
+        this.cause = DamageCause.IMPACT;
+    }
+
+    /** Copy constructor for {@link #withCause}; the only field that differs is the cause. */
+    private ImpactRequest(ImpactRequest from, DamageCause cause) {
+        this.impactId = from.impactId;
+        this.point = from.point;
+        this.direction = from.direction;
+        this.budget = from.budget;
+        this.kind = from.kind;
+        this.selectionMode = from.selectionMode;
+        this.reachBlocks = from.reachBlocks;
+        this.crossSectionArea = from.crossSectionArea;
+        this.resumesInside = from.resumesInside;
+        this.cause = cause == null ? DamageCause.IMPACT : cause;
+    }
+
+    /**
+     * The same request, declared as a different KIND OF EVENT.
+     *
+     * <p>Every geometric field means what it meant — something arrived at a point and spent a budget
+     * along a direction — so this changes nothing about how the damage resolves. What it changes is
+     * what the units it reaches are TOLD happened to them, and a hull scraping a canyon wall is not a
+     * hull being shot at, however identical the arithmetic.</p>
+     */
+    public ImpactRequest withCause(DamageCause newCause) {
+        return newCause == null || newCause == this.cause ? this : new ImpactRequest(this, newCause);
     }
 
     /** A solid body striking at a point and boring along its direction of travel. */
@@ -99,6 +127,15 @@ public final class ImpactRequest {
                                          double crossSectionArea) {
         return new ImpactRequest(impactId, point, direction, budget, kind, SelectionMode.PENETRATING,
                 reachBlocks, crossSectionArea, true);
+    }
+
+    /**
+     * What kind of event this was, for the units it reaches. Defaults to {@link DamageCause#IMPACT},
+     * which is what every geometric request is unless its caller says otherwise — the damage layer
+     * resolves all of them identically and only the telling differs.
+     */
+    public DamageCause getCause() {
+        return cause;
     }
 
     /** Identity for retry refusal; see the class note. */
