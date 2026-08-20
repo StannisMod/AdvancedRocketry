@@ -485,6 +485,11 @@ public class TileAdvancedFlightComputer extends TileEntity
         // and every aboard tag resolve a ship BY that id, falling back to "whichever craft is nearest"
         // exactly where the world holds more than one. Costs one claim test per tick until it takes.
         bindDurableIdToThisShip();
+        // The mass this craft is actually carrying, re-measured on a slow round. Content and crew
+        // change with no block ever changing - a tank empties, somebody steps aboard - so no block
+        // event can catch them and there is nothing to subscribe to; a cadence is the only honest
+        // answer. Cheap enough at this period: one pass over the hull every few seconds per ship.
+        tickMassRound();
         FreeFlightPhysics.Quat attitude = VSIntegration.getShipAttitude(world, getPos());
         if (attitude == null) {
             return; // not on a physics ship (or physics mod absent)
@@ -1156,6 +1161,39 @@ public class TileAdvancedFlightComputer extends TileEntity
      * craft to be simulated, so binding through one meant that a ship parked with nobody aboard - the
      * ordinary state of a hull mid-jump - could never be named at all.</p>
      */
+    /**
+     * How many ticks between two full mass measurements of this ship. `tunable`. Slow on purpose: the
+     * per-block delta path keeps structure current between rounds, and this exists for what that path
+     * cannot see.
+     */
+    private static final int MASS_ROUND_TICKS = 100;
+
+    /**
+     * Re-measure this ship's mass on a slow round, on a phase of this ship's OWN.
+     *
+     * <p>The phase comes from the ship's identity rather than from the clock, so a fleet of craft does
+     * not put every hull walk on the same tick and leave the other ninety-nine idle. That is the whole
+     * reason the offset is here and not a bare {@code % 100}.</p>
+     */
+    private void tickMassRound() {
+        String vsShipId = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                .shipIdManagingBlock(world, getPos());
+        if (vsShipId == null) {
+            return; // not on a physics ship, or the mod is absent: nothing to weigh
+        }
+        java.util.UUID uuid;
+        try {
+            uuid = java.util.UUID.fromString(vsShipId);
+        } catch (IllegalArgumentException notAUuid) {
+            return;
+        }
+        long phase = Math.floorMod(uuid.getLeastSignificantBits(), MASS_ROUND_TICKS);
+        if (Math.floorMod(world.getTotalWorldTime() + phase, MASS_ROUND_TICKS) != 0L) {
+            return;
+        }
+        zmaster587.advancedRocketry.integration.vs.ShipMassTrigger.backgroundRound(world, uuid);
+    }
+
     private void bindDurableIdToThisShip() {
         bindAttempts++;
         if (durableIdBound) {

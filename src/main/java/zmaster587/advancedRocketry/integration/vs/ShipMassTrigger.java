@@ -109,6 +109,43 @@ public final class ShipMassTrigger {
         ShipInertiaWriter.applyTo(record, authority, String.valueOf(event.shipUuid));
     }
 
+    /**
+     * The slow background round: re-measure this ship and write what the measurement says.
+     *
+     * <p>The event triggers above cover the moments a hull's STRUCTURE changes wholesale. They cannot
+     * cover content and crew, which change with no block ever changing — a tank empties, a crate is
+     * filled, somebody steps aboard — and there is no event for any of it worth subscribing to. So the
+     * flight computer calls this on its own cadence, and the ship's mass follows what it is actually
+     * carrying instead of what it was carrying when it was built.</p>
+     *
+     * <p><b>No drift report here, deliberately.</b> Between two rounds the content legitimately
+     * changed; reporting the difference would file a burned tank of fuel as a defect and bury the one
+     * signal this recorder exists for — a block delta that went missing. A round that finds nothing to
+     * weigh is counted as skipped and nothing is written: a craft mid-crossing owns no blocks for a
+     * moment, and zeroing its mass would hand the solver a tensor it inverts every step.</p>
+     */
+    public static synchronized void backgroundRound(net.minecraft.world.World world,
+                                                    java.util.UUID shipUuid) {
+        try {
+            ShipMassFrame authority = ShipHullMass.frameOf(world, shipUuid);
+            recomputes++;
+            if (authority == null) {
+                skipped++;
+                return;
+            }
+            ShipData ship = VSBridge.shipDataByUuid(world, shipUuid);
+            if (ship == null) {
+                skipped++;
+                return;
+            }
+            ShipInertiaWriter.applyTo(ship.getInertiaData(), authority, String.valueOf(shipUuid));
+        } catch (Throwable failure) {
+            // Same reasoning as the event handler: this runs inside the world tick, and a mass model
+            // that kills the tick is worse than one that cannot compute.
+            LOG.error("background mass round failed for " + shipUuid, failure);
+        }
+    }
+
     private static void noteDrift(String description) {
         LOG.warn(description);
         if (DRIFT.size() >= MAX_DRIFT) {
