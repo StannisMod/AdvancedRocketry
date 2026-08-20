@@ -55,6 +55,7 @@ public final class PacketRegistry {
             PacketSpaceClockSync.class,
             PacketShotSpawn.class,
             PacketShotEnd.class,
+            PacketBeamState.class,
     };
 
     private PacketRegistry() {

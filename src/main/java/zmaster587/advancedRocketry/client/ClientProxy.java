@@ -413,6 +413,7 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new RocketEventHandler());
         MinecraftForge.EVENT_BUS.register(new DelayedParticleRenderingEventHandler());
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.client.render.RenderShots());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.client.render.RenderBeams());
         MinecraftForge.EVENT_BUS.register(ModuleContainerPan.class);
         MinecraftForge.EVENT_BUS.register(new RenderComponents());
 

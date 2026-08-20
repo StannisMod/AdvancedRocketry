@@ -468,11 +468,13 @@ public class ARConfiguration {
     @ConfigProperty(needsSync = true)
     public int maxShotsPerWorld = 256;
     /**
-     * How near a player's eye a round's PATH must pass before that player is told about it, in
-     * blocks. A shot is a server record, so being told is the only way a client can draw one; sending
-     * every round to everybody in the world would put a battery's whole rate of fire on every
-     * player's connection, including the ones on the far side of a planet. Zero switches the
-     * replication off: the mechanic still works and nothing is drawn.
+     * How near a player's eye a round's PATH — or a held beam's lit LENGTH — must pass before that
+     * player is told about it, in blocks. Weapon fire is a server record, so being told is the only
+     * way a client can draw any of it; sending every round to everybody in the world would put a
+     * battery's whole rate of fire on every player's connection, including the ones on the far side
+     * of a planet. Zero switches the whole drawing channel off: the mechanics still work and nothing
+     * is drawn. One radius covers both families deliberately — it is the same question about the
+     * same guns, and two knobs would be two answers.
      */
     @ConfigProperty(needsSync = true)
     public int shotVisibilityRadius = 256;
@@ -792,7 +794,7 @@ public class ARConfiguration {
         arConfig.ablationResistanceFactor = config.get(WEAPONS, "ablationResistanceFactor", 20.0, "How much dearer a block is to boil away than to push through, when nothing has written it its own ablation row. Both are energy per unit volume removed; they are nowhere near the same magnitude, which is why a laser buys precision rather than digging power. 1.0 makes a beam dig exactly like a slug", 0.01, 1000.0).getDouble();
         arConfig.beamAblationIntensityThreshold = config.get(WEAPONS, "beamAblationIntensityThreshold", 50000.0, "Energy per unit of a beam's cross-section below which it removes nothing and its energy is absorbed as heat instead of being carried onward. The default sits above the affordability line of metal (order 38500 for an iron block), so a small emitter does nothing to a metal hull however long it is held. 0 disables it, and a sub-threshold beam then passes clean through the plate with everything it arrived with", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.maxShotsPerWorld = config.get(WEAPONS, "maxShotsPerWorld", 256, "How many shots one world may have in flight at once. Further fire is refused until some land; nothing already in flight is ever dropped to make room", 1, Integer.MAX_VALUE).getInt();
-        arConfig.shotVisibilityRadius = config.get(WEAPONS, "shotVisibilityRadius", 256, "How near a player the path of a fired round must pass before that player is told about it and can see it drawn, in blocks. 0 disables shot replication entirely — the mechanic still works, nothing is drawn", 0, Integer.MAX_VALUE).getInt();
+        arConfig.shotVisibilityRadius = config.get(WEAPONS, "shotVisibilityRadius", 256, "How near a player the path of a fired round, or the lit length of a held beam, must pass before that player is told about it and can see it drawn, in blocks. 0 disables weapon-fire replication entirely — the mechanics still work, nothing is drawn", 0, Integer.MAX_VALUE).getInt();
         arConfig.enableFireControlSensor = config.get(WEAPONS, "enableFireControlSensor", true, "Whether fire-control sensors search for targets. Off, a sensor acquires nothing, publishes nothing and draws no power: batteries are pointed by hand, as they were before sensors existed").getBoolean();
         arConfig.fireControlSensorRadius = config.get(WEAPONS, "fireControlSensorRadius", 96.0, "How far a fire-control sensor can look, in blocks. Its envelope — a target inside it may still be too poorly resolved to shoot at", 1.0, 1024.0).getDouble();
         arConfig.fireControlSensorScanIntervalTicks = config.get(WEAPONS, "fireControlSensorScanIntervalTicks", 10, "Ticks between sweeps. The cadence at which a sensor reconsiders which contact to hand its battery, not the rate at which the guns follow it", 1, 200).getInt();

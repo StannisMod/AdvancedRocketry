@@ -20,6 +20,7 @@ import net.minecraftforge.energy.EnergyStorage;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.sensor.TargetTrack;
 import zmaster587.advancedRocketry.api.weapon.GunSpec;
+import zmaster587.advancedRocketry.projectile.BeamReplication;
 import zmaster587.advancedRocketry.projectile.HeldBeam;
 import zmaster587.advancedRocketry.api.weapon.TurretDriveState;
 import zmaster587.advancedRocketry.damage.DamageState;
@@ -150,6 +151,9 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
             // for it. Firing is a separate, deliberate act — see fireOnce.
             mechanism.tick(spec.getTraverseDegreesPerTick());
             syncCommandIfChanged();
+            // Nothing under this hand lights a beam, so a gun taken over while burning is a gun that
+            // has stopped: said out loud, or the last state it reported would stand forever.
+            extinguishBeam();
             return;
         }
 
@@ -175,7 +179,10 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
             holdBeam(onTarget && !isHoldingFire(), shipId);
             return;
         }
+        // Rebuilt into a thrower while it was burning: the light goes out, and whoever was watching
+        // is told so, exactly as if the trigger had been released.
         beamLit = false;
+        beamChannel.update(world, pos, beamStartedAt, beamEndedAt, false);
 
         if (!onTarget || isHoldingFire() || !canFireNow()) {
             return;
@@ -229,28 +236,38 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
      * cannot tell "not shooting" from "cannot shoot yet".</p>
      */
     private void holdBeam(boolean wantsToFire, String shipId) {
+        beamLit = burnOneTick(wantsToFire, shipId);
+        // Told here and nowhere else, so every way of NOT burning — no trigger, too hot, saving up,
+        // no line of fire — reaches the players watching by the same road as burning does.
+        beamChannel.update(world, pos, beamStartedAt, beamEndedAt, beamLit);
+    }
+
+    /**
+     * Burn for one tick if everything allows it, and answer whether the beam is lit.
+     *
+     * <p>Every refusal is a {@code false} rather than a silent return: what a player sees is decided
+     * from the answer, and a path that ended without saying so would leave a beam drawn on a gun that
+     * had stopped firing.</p>
+     */
+    private boolean burnOneTick(boolean wantsToFire, String shipId) {
         int perTick = spec.getBeamPowerPerTick();
         if (!wantsToFire || perTick <= 0) {
-            beamLit = false;
-            return;
+            return false;
         }
         if (heat >= spec.getHeatCapacity()) {
-            beamLit = false;
-            return;
+            return false;
         }
         int quantum = perTick * BEAM_QUANTUM_TICKS;
         if (beamRecharging) {
             if (energy.getEnergyStored() < quantum) {
-                beamLit = false;
-                return;
+                return false;
             }
             beamRecharging = false;
         } else if (energy.getEnergyStored() < perTick) {
             // The feed could not keep up. Go dark and start saving rather than sputtering.
             beamRecharging = true;
-            beamLit = false;
             markDirty();
-            return;
+            return false;
         }
 
         // The SAME muzzle a round leaves from, and the same refusal when the line of fire is not
@@ -259,19 +276,19 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         TurretFireControl.Muzzle muzzle = TurretFireControl.muzzleOf(world, pos, shipId,
                 mechanism.getAimDirection(), spec, assemblyReach, random);
         if (muzzle == null) {
-            beamLit = false;
-            return;
+            return false;
         }
         HeldBeam.Emission emission = HeldBeam.emit(world, muzzle.point, muzzle.direction,
                 BEAM_RANGE_BLOCKS, perTick, spec.getKind(), spec.getProjectileRadius(), shipId);
         energy.extractEnergy(perTick, false);
         heat += spec.getHeatPerShot();
-        beamLit = true;
+        beamStartedAt = muzzle.point;
         beamEndedAt = emission.endedAt;
         if (emission.hitSomething()) {
             shotsFired++;
         }
         markDirty();
+        return true;
     }
 
     /**
@@ -291,8 +308,15 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
     private boolean beamLit;
     /** Dark and saving up, because the feed could not keep up. Persisted — it is a real refusal. */
     private boolean beamRecharging;
-    /** Where the beam ended last time it was lit; for instruments and, later, for drawing it. */
+    /** Where the beam left the gun last time it was lit — the muzzle, in world coordinates. */
+    private Vec3d beamStartedAt;
+    /** Where the beam ended last time it was lit; for instruments and for drawing it. */
     private Vec3d beamEndedAt;
+    /**
+     * What the players nearby have been told about this gun's beam. Owned by the gun because the
+     * beam is: there is no register of live beams to look one up in.
+     */
+    private final BeamReplication.Channel beamChannel = new BeamReplication.Channel();
 
     /** Is this gun burning right now? */
     public boolean isBeamLit() {
@@ -752,6 +776,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
     @Override
     public void invalidate() {
         super.invalidate();
+        extinguishBeam();
         SubsystemNetworkRegistry.unregister(this);
         if (world != null && !world.isRemote) {
             SubsystemNetworkManager.markDirty(WeaponNetworkDomain.INSTANCE, world);
@@ -762,8 +787,22 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
     @Override
     public void onChunkUnload() {
         super.onChunkUnload();
+        extinguishBeam();
         SubsystemNetworkRegistry.unregister(this);
         registered = false;
+    }
+
+    /**
+     * Put out whatever was being drawn for this gun.
+     *
+     * <p>A gun that is blown up or unloaded stops burning without any tick in which to say so, and
+     * the client would otherwise hold the last segment it was sent until it went stale. The staleness
+     * timeout is still the backstop — this is only the fast path, and it is the one that runs when
+     * somebody breaks the gun in front of you.</p>
+     */
+    private void extinguishBeam() {
+        beamLit = false;
+        beamChannel.update(world, pos, beamStartedAt, beamEndedAt, false);
     }
 
     // ---- linker: the no-network way to give a gun a target

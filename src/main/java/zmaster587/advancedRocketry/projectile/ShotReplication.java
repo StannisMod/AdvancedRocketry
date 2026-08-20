@@ -1,7 +1,5 @@
 package zmaster587.advancedRocketry.projectile;
 
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.ARConfiguration;
@@ -9,7 +7,8 @@ import zmaster587.advancedRocketry.api.projectile.ShotEndReason;
 import zmaster587.advancedRocketry.api.projectile.ShotSpec;
 import zmaster587.advancedRocketry.network.PacketShotEnd;
 import zmaster587.advancedRocketry.network.PacketShotSpawn;
-import zmaster587.libVulpes.network.PacketHandler;
+
+import java.util.function.Supplier;
 
 /**
  * Who gets told about a round, and who does not.
@@ -42,29 +41,21 @@ public final class ShotReplication {
     }
 
     /** Tell everybody whose view the round will pass through. */
-    public static void announceSpawn(World world, long id, ShotSpec spec) {
-        int radius = ARConfiguration.getCurrentConfig().shotVisibilityRadius;
-        if (world == null || world.isRemote || spec == null || radius <= 0) {
+    public static void announceSpawn(World world, final long id, final ShotSpec spec) {
+        if (world == null || world.isRemote || spec == null) {
             return;
         }
         Vec3d origin = spec.getOrigin();
         int horizon = Math.min(spec.getLifetimeTicks(), PATH_HORIZON_TICKS);
         Vec3d far = origin.add(spec.getVelocity().scale(horizon));
-        double radiusSq = (double) radius * radius;
-
-        PacketShotSpawn packet = null;
-        for (EntityPlayer player : world.playerEntities) {
-            if (!(player instanceof EntityPlayerMP)) {
-                continue;
-            }
-            if (distanceSqToSegment(player.posX, player.posY, player.posZ, origin, far) > radiusSq) {
-                continue;
-            }
-            if (packet == null) {
-                packet = PacketShotSpawn.of(id, spec);
-            }
-            PacketHandler.sendToPlayer(packet, (EntityPlayerMP) player);
-        }
+        ProximityBroadcast.sendNearSegment(world, origin, far,
+                ARConfiguration.getCurrentConfig().shotVisibilityRadius,
+                new Supplier<PacketShotSpawn>() {
+                    @Override
+                    public PacketShotSpawn get() {
+                        return PacketShotSpawn.of(id, spec);
+                    }
+                });
     }
 
     /**
@@ -72,44 +63,19 @@ public final class ShotReplication {
      * was told about the launch: a player far enough away to be out of range here cannot see the
      * impact either, and their own copy of the round ages out on its stated lifetime.
      */
-    public static void announceEnd(World world, long id, Vec3d point, ShotEndReason reason) {
-        int radius = ARConfiguration.getCurrentConfig().shotVisibilityRadius;
-        if (world == null || world.isRemote || point == null || radius <= 0) {
+    public static void announceEnd(World world, final long id, final Vec3d point,
+                                   final ShotEndReason reason) {
+        if (world == null || world.isRemote || point == null) {
             return;
         }
-        double radiusSq = (double) radius * radius;
-        PacketShotEnd packet = null;
-        for (EntityPlayer player : world.playerEntities) {
-            if (!(player instanceof EntityPlayerMP)) {
-                continue;
-            }
-            double dx = player.posX - point.x;
-            double dy = player.posY - point.y;
-            double dz = player.posZ - point.z;
-            if (dx * dx + dy * dy + dz * dz > radiusSq) {
-                continue;
-            }
-            if (packet == null) {
-                packet = PacketShotEnd.of(id, point, reason);
-            }
-            PacketHandler.sendToPlayer(packet, (EntityPlayerMP) player);
-        }
+        ProximityBroadcast.sendNearSegment(world, point, point,
+                ARConfiguration.getCurrentConfig().shotVisibilityRadius,
+                new Supplier<PacketShotEnd>() {
+                    @Override
+                    public PacketShotEnd get() {
+                        return PacketShotEnd.of(id, point, reason);
+                    }
+                });
     }
 
-    /** Squared distance from a point to the segment {@code from..to}. */
-    static double distanceSqToSegment(double px, double py, double pz, Vec3d from, Vec3d to) {
-        double dx = to.x - from.x;
-        double dy = to.y - from.y;
-        double dz = to.z - from.z;
-        double lengthSq = dx * dx + dy * dy + dz * dz;
-        double t = 0.0D;
-        if (lengthSq > 1.0E-9D) {
-            t = ((px - from.x) * dx + (py - from.y) * dy + (pz - from.z) * dz) / lengthSq;
-            t = Math.max(0.0D, Math.min(1.0D, t));
-        }
-        double cx = from.x + dx * t - px;
-        double cy = from.y + dy * t - py;
-        double cz = from.z + dz * t - pz;
-        return cx * cx + cy * cy + cz * cz;
-    }
 }
