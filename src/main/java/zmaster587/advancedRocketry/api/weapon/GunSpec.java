@@ -39,8 +39,27 @@ public final class GunSpec {
     private final double projectileRadius;
     private final double projectileMass;
     private final ImpactKind kind;
+    private final int beamPowerPerTick;
     private final int partCount;
     private final java.util.EnumSet<GunInput> inputs;
+
+    /**
+     * The power a HELD beam puts on target each tick, or {@code 0} for a gun that fires discrete
+     * rounds. It is what makes a gun a beam: there is no separate "weapon type" field, because a type
+     * field and a power field could disagree, and then two places would decide what this gun is.
+     *
+     * <p>Per TICK rather than per shot, and the difference is the family: a discrete gun spends its
+     * energy at intervals and its damage arrives in lumps, while a beam spends every tick it is lit
+     * and its depth grows with how long it is held.</p>
+     */
+    public int getBeamPowerPerTick() {
+        return beamPowerPerTick;
+    }
+
+    /** Does this gun HOLD a beam rather than throw rounds? */
+    public boolean isBeam() {
+        return beamPowerPerTick > 0;
+    }
 
     private GunSpec(Builder builder) {
         this.muzzleSpeed = builder.muzzleSpeed;
@@ -59,15 +78,26 @@ public final class GunSpec {
         this.partCount = builder.partCount;
         this.inputs = java.util.EnumSet.copyOf(builder.inputs.isEmpty()
                 ? java.util.EnumSet.of(GunInput.FORGE_ENERGY) : builder.inputs);
+        this.beamPowerPerTick = builder.beamPowerPerTick;
     }
 
     /**
-     * Whether this assembly can fire at all. A build missing the one part that makes it a gun — a
-     * barrel — has no muzzle speed and no round worth firing, and saying so here means every call
-     * site asks one question instead of each inventing its own idea of "complete".
+     * Whether this assembly can deliver anything at all. Saying so here means every call site asks one
+     * question instead of each inventing its own idea of "complete".
+     *
+     * <p><b>There are two ways to be a weapon, and the first version of this knew only one.</b> A
+     * build missing the part that makes it a thrower — a barrel — has no muzzle speed and no round
+     * worth firing. A BEAM has neither of those by nature and is a weapon anyway: what it has is power
+     * per tick. Written as "throws a round OR holds a beam" rather than as a list of required fields,
+     * because a list of fields is a definition that quietly excludes the next family: the beam was
+     * built, wired, charged, aimed and reported `operable:false`, and every layer above dutifully
+     * refused to fire it.</p>
      */
     public boolean isOperable() {
-        return muzzleSpeed > 0.0D && impactEnergy > 0 && partCount > 0;
+        if (partCount <= 0) {
+            return false;
+        }
+        return (muzzleSpeed > 0.0D && impactEnergy > 0) || beamPowerPerTick > 0;
     }
 
     /** Blocks per TICK, world frame once the mount has rotated it. */
@@ -167,6 +197,7 @@ public final class GunSpec {
         private double projectileRadius = 0.25D;
         private double projectileMass = 1.0D;
         private ImpactKind kind = ImpactKind.KINETIC;
+        private int beamPowerPerTick;
         private int partCount;
         private final java.util.EnumSet<GunInput> inputs = java.util.EnumSet.noneOf(GunInput.class);
         private double contributionScale = 1.0D;
@@ -206,6 +237,18 @@ public final class GunSpec {
         /** Faster feed = shorter interval. Floored at one tick, which is the physical limit. */
         public Builder speedUpFireIntervalBy(int ticks) {
             this.fireIntervalTicks = Math.max(1, this.fireIntervalTicks - scaled(Math.max(0, ticks)));
+            return this;
+        }
+
+        /**
+         * Declare — or add to — the power this gun holds on target each tick as a BEAM.
+         *
+         * <p>An emitter contributes power here the way a barrel contributes muzzle speed, so a bigger
+         * laser is a laser with more emitters rather than a laser with a bigger number written beside
+         * it. Anything above zero makes the gun a beam.</p>
+         */
+        public Builder addBeamPowerPerTick(int power) {
+            this.beamPowerPerTick += scaled(Math.max(0, power));
             return this;
         }
 

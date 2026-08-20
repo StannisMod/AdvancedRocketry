@@ -59,7 +59,8 @@ public class AdvancedRocketryBlocks {
     public static Block blockTurret;
     public static Block blockGunBarrel;
     public static Block blockGunAmmoFeed;
-    public static Block blockGunCooling;
+    public static Block blockGunBeamEmitter;
+	public static Block blockGunCooling;
     /** The one thing the weapons network adds: a place to point every gun at once. */
     public static Block blockWeaponConsole;
     /**

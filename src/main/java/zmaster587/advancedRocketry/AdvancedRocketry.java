@@ -774,6 +774,16 @@ public class AdvancedRocketry {
                         .addHeatPerShot(2)
                         .declareInput(zmaster587.advancedRocketry.api.weapon.GunInput.FORGE_ENERGY))
                 .setUnlocalizedName("gunAmmoFeed").setCreativeTab(tabAdvRocketry);
+        // The one part that makes a gun a BEAM rather than a thrower. Power per TICK, so a bigger
+        // laser is a laser with more emitters rather than a bigger number written beside one; the
+        // declared kind is what makes it priced against the ablation column and absorbed whole by a
+        // shell instead of being thrown back off it.
+        AdvancedRocketryBlocks.blockGunBeamEmitter = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
+                builder -> builder.addBeamPowerPerTick(4_000).setKind(
+                        zmaster587.advancedRocketry.api.damage.ImpactKind.BEAM)
+                        .addHeatPerShot(1).addHeatCapacity(20)
+                        .declareInput(zmaster587.advancedRocketry.api.weapon.GunInput.FORGE_ENERGY))
+                .setUnlocalizedName("gunBeamEmitter").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryBlocks.blockGunCooling = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
                 builder -> builder.addHeatCapacity(40).addCoolingPerTick(2).addTraverseDegreesPerTick(0.5D))
                 .setUnlocalizedName("gunCooling").setCreativeTab(tabAdvRocketry);
@@ -986,6 +996,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockFireControlSensor.setRegistryName("fireControlSensor"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunBarrel.setRegistryName("gunBarrel"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunAmmoFeed.setRegistryName("gunAmmoFeed"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunBeamEmitter.setRegistryName("gunBeamEmitter"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunCooling.setRegistryName("gunCooling"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGuidanceComputer.setRegistryName("guidanceComputer"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockAdvancedFlightComputer.setRegistryName("advancedFlightComputer"));

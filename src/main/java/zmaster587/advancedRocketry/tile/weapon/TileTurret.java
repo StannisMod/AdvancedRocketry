@@ -20,6 +20,7 @@ import net.minecraftforge.energy.EnergyStorage;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.sensor.TargetTrack;
 import zmaster587.advancedRocketry.api.weapon.GunSpec;
+import zmaster587.advancedRocketry.projectile.HeldBeam;
 import zmaster587.advancedRocketry.api.weapon.TurretDriveState;
 import zmaster587.advancedRocketry.damage.DamageState;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
@@ -167,6 +168,15 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         }
         boolean onTarget = mechanism.tick(spec.getTraverseDegreesPerTick());
         syncCommandIfChanged();
+
+        if (spec.isBeam()) {
+            // A beam is not fired, it is HELD: there is no interval to wait out and no round to
+            // admit, so the whole of "is it shooting" is whether it is lit this tick.
+            holdBeam(onTarget && !isHoldingFire(), shipId);
+            return;
+        }
+        beamLit = false;
+
         if (!onTarget || isHoldingFire() || !canFireNow()) {
             return;
         }
@@ -204,6 +214,104 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
      * skipped the heat or the cooldown would be strictly better than the same gun on a console,
      * which is a balance decision nobody made.
      */
+    /**
+     * One tick of holding the beam, or of not holding it.
+     *
+     * <h3>The duty cycle, which is the one place a continuous weapon is interesting</h3>
+     * <p>A gun that cannot afford a shot simply does not fire it. A beam has no shot to skip, so a
+     * starved one would otherwise flicker at whatever rate its feed happened to deliver — firing on
+     * the ticks a little energy arrived and dying on the ones it did not. Instead it goes DARK,
+     * accumulates a quantum — enough to burn for {@link #BEAM_QUANTUM_TICKS} ticks without help — and
+     * only then lights again. So a weapon on a weak feed fires in real bursts a player can see and
+     * plan around, rather than delivering the same average power as an unreadable stutter.</p>
+     *
+     * <p>The state is exposed rather than kept private: a ship's fire control cannot be flown if it
+     * cannot tell "not shooting" from "cannot shoot yet".</p>
+     */
+    private void holdBeam(boolean wantsToFire, String shipId) {
+        int perTick = spec.getBeamPowerPerTick();
+        if (!wantsToFire || perTick <= 0) {
+            beamLit = false;
+            return;
+        }
+        if (heat >= spec.getHeatCapacity()) {
+            beamLit = false;
+            return;
+        }
+        int quantum = perTick * BEAM_QUANTUM_TICKS;
+        if (beamRecharging) {
+            if (energy.getEnergyStored() < quantum) {
+                beamLit = false;
+                return;
+            }
+            beamRecharging = false;
+        } else if (energy.getEnergyStored() < perTick) {
+            // The feed could not keep up. Go dark and start saving rather than sputtering.
+            beamRecharging = true;
+            beamLit = false;
+            markDirty();
+            return;
+        }
+
+        // The SAME muzzle a round leaves from, and the same refusal when the line of fire is not
+        // clear. A beam that computed its own origin started inside the gun's own blocks and cut the
+        // weapon apart from the inside on its first tick.
+        TurretFireControl.Muzzle muzzle = TurretFireControl.muzzleOf(world, pos, shipId,
+                mechanism.getAimDirection(), spec, assemblyReach, random);
+        if (muzzle == null) {
+            beamLit = false;
+            return;
+        }
+        HeldBeam.Emission emission = HeldBeam.emit(world, muzzle.point, muzzle.direction,
+                BEAM_RANGE_BLOCKS, perTick, spec.getKind(), spec.getProjectileRadius(), shipId);
+        energy.extractEnergy(perTick, false);
+        heat += spec.getHeatPerShot();
+        beamLit = true;
+        beamEndedAt = emission.endedAt;
+        if (emission.hitSomething()) {
+            shotsFired++;
+        }
+        markDirty();
+    }
+
+    /**
+     * How long a beam must be able to burn unaided before it may light again after being starved.
+     * One second: long enough that a burst is a thing a player sees rather than a flicker.
+     */
+    private static final int BEAM_QUANTUM_TICKS = 20;
+
+    /**
+     * How far a held beam reaches. A beam does not fly, so it has no lifetime to run out — what
+     * bounds it is a declared range, and the range is here rather than on the spec because nothing
+     * about a gun's construction says how far light goes.
+     */
+    private static final double BEAM_RANGE_BLOCKS = 64.0D;
+
+    /** Lit THIS tick. Not persisted: a beam's lifetime is exactly as long as its gun is holding it. */
+    private boolean beamLit;
+    /** Dark and saving up, because the feed could not keep up. Persisted — it is a real refusal. */
+    private boolean beamRecharging;
+    /** Where the beam ended last time it was lit; for instruments and, later, for drawing it. */
+    private Vec3d beamEndedAt;
+
+    /** Is this gun burning right now? */
+    public boolean isBeamLit() {
+        return beamLit;
+    }
+
+    /**
+     * Is this gun dark because it is saving up rather than because nobody asked it to fire? The
+     * distinction fire control cannot be built without.
+     */
+    public boolean isBeamRecharging() {
+        return beamRecharging;
+    }
+
+    /** Where the beam last ended, or null if it has not been lit. */
+    public Vec3d getBeamEndedAt() {
+        return beamEndedAt;
+    }
+
     private boolean launch(String shipId) {
         String stamped = faction != null ? faction : getEffectiveAccessCode();
         long id = TurretFireControl.fire(world, pos, shipId, mechanism.getAimDirection(), spec,
@@ -455,7 +563,14 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
      * refill from empty, and one that shrank should not be holding more than it can.
      */
     private void resizeBufferFor(GunSpec newSpec) {
+        // A thrower is sized by what a shot costs; a BEAM has no shot, so sized by what it burns —
+        // and it must hold more than one quantum, or the gun can never accumulate the thing it goes
+        // dark to accumulate and is dark forever. That failure is silent: a permanently unlit beam
+        // reports exactly what a correctly recharging one reports.
         int wanted = Math.max(MIN_ENERGY_BUFFER, newSpec.getEnergyPerShot() * 40);
+        if (newSpec.isBeam()) {
+            wanted = Math.max(wanted, newSpec.getBeamPowerPerTick() * BEAM_QUANTUM_TICKS * 2);
+        }
         if (wanted == energy.getMaxEnergyStored()) {
             return;
         }
@@ -724,6 +839,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         mechanism.writeToNBT(mount);
         nbt.setTag("mount", mount);
         nbt.setInteger("energy", energy.getEnergyStored());
+        nbt.setBoolean("beamRecharging", beamRecharging);
         nbt.setInteger("energyMax", energy.getMaxEnergyStored());
         nbt.setInteger("heat", heat);
         nbt.setInteger("cooldown", fireCooldown);
@@ -756,6 +872,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         }
         int max = Math.max(MIN_ENERGY_BUFFER, nbt.getInteger("energyMax"));
         energy = new EnergyStorage(max, max, max, Math.min(max, nbt.getInteger("energy")));
+        beamRecharging = nbt.getBoolean("beamRecharging");
         heat = nbt.getInteger("heat");
         fireCooldown = nbt.getInteger("cooldown");
         shotsFired = nbt.getInteger("shots");

@@ -533,6 +533,12 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"heat\":" + turret.getHeat()
                     + ",\"heatCapacity\":" + spec.getHeatCapacity()
                     + ",\"energy\":" + turret.getEnergyStored()
+                    // The beam half: lit is "burning right now", recharging is "dark because it
+                    // is saving up", and the two are different answers a fire control needs to
+                    // tell apart. beamPower is 0 for a gun that throws rounds.
+                    + ",\"beamPower\":" + spec.getBeamPowerPerTick()
+                    + ",\"beamLit\":" + turret.isBeamLit()
+                    + ",\"beamRecharging\":" + turret.isBeamRecharging()
                     + ",\"yaw\":" + mount.getYaw()
                     + ",\"pitch\":" + mount.getPitch()
                     + ",\"saturated\":" + mount.isSaturated()
