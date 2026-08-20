@@ -117,6 +117,38 @@ public class PlanetRealizationTest {
     }
 
     @Test
+    public void aMoonGetsItsOwnWorldAndNotItsPlanetsOne() {
+        // A moon is built in its PARENT's cell so the family travels as one destination, which makes
+        // a cell the address of several worlds. Realization used to be keyed on the cell alone: once
+        // the planet had a world, asking about the moon answered with the planet's, so a descent
+        // aimed at a moon put the ship on the planet - and a moon could never be realized at all.
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        SystemBody[] pair = findPlanetWithMoon(reg);
+        assertNotNull("arrangement: a planet with a moon must be findable", pair[0]);
+        assertNotNull("arrangement: and the moon with it", pair[1]);
+        GalacticCoord cell = pair[0].name();
+        assertTrue("arrangement: the two must share one cell", pair[1].name().sameCell(cell));
+        reg.pinSystem(cell);
+
+        java.util.List<SystemBody> family = reg.realizableBodiesAt(cell);
+        assertTrue("arrangement: the cell must hold at least the two of them", family.size() >= 2);
+        int planetVariant = reg.variantOf(pair[0]).getAsInt();
+        int moonVariant = reg.variantOf(pair[1]).getAsInt();
+        assertNotEquals("a planet and its moon must not be the same body", planetVariant, moonVariant);
+
+        assertTrue(reg.realizeBody(cell, planetVariant, 4001));
+
+        assertFalse("the moon must NOT inherit the planet's world",
+                reg.realizedDimAt(cell, moonVariant).isPresent());
+        assertTrue("and the moon must still be able to get one of its own",
+                reg.realizeBody(cell, moonVariant, 4002));
+        assertEquals("which is its own and not the planet's", 4002,
+                reg.realizedDimAt(cell, moonVariant).getAsInt());
+        assertEquals("while the planet keeps the world it was given", 4001,
+                reg.realizedDimAt(cell, planetVariant).getAsInt());
+    }
+
+    @Test
     public void theProceduralGalaxyOffersLandableBodiesThatHaveNoWorldYet() {
         // The precondition of everything below, and the defect the whole batch exists to fix: the
         // generator places bodies a ship could stand on, and not one of them is a descent target.
@@ -203,9 +235,9 @@ public class PlanetRealizationTest {
 
         assertTrue("touching a procedural system must pin it before anything is written into it",
                 reg.pinSystem(cell));
-        assertTrue("the pinned body must accept a dimension", reg.realizeBody(cell, 4242));
+        assertTrue("the pinned body must accept a dimension", reg.realizeBody(cell, 0, 4242));
 
-        OptionalInt realized = reg.realizedDimAt(cell);
+        OptionalInt realized = reg.realizedDimAt(cell, 0);
         assertTrue("the cell must now report a realized world", realized.isPresent());
         assertEquals(4242, realized.getAsInt());
 
@@ -231,13 +263,13 @@ public class PlanetRealizationTest {
         GalacticCoord cell = findLandableCell(reg);
         assertNotNull(cell);
         reg.pinSystem(cell);
-        assertTrue(reg.realizeBody(cell, 777));
+        assertTrue(reg.realizeBody(cell, 0, 777));
 
         assertEquals("asking again must answer the SAME world", 777,
-                reg.realizedDimAt(cell).getAsInt());
+                reg.realizedDimAt(cell, 0).getAsInt());
         assertTrue("re-realizing with the same id is a no-op, not a failure",
-                reg.realizeBody(cell, 777));
-        assertEquals(777, reg.realizedDimAt(cell).getAsInt());
+                reg.realizeBody(cell, 0, 777));
+        assertEquals(777, reg.realizedDimAt(cell, 0).getAsInt());
     }
 
     @Test
@@ -246,10 +278,10 @@ public class PlanetRealizationTest {
         GalacticCoord cell = findLandableCell(reg);
         assertNotNull(cell);
         reg.pinSystem(cell);
-        assertTrue(reg.realizeBody(cell, 100));
+        assertTrue(reg.realizeBody(cell, 0, 100));
 
-        assertFalse("a body must never be re-pointed at a different world", reg.realizeBody(cell, 200));
-        assertEquals("and it must still hold the first one", 100, reg.realizedDimAt(cell).getAsInt());
+        assertFalse("a body must never be re-pointed at a different world", reg.realizeBody(cell, 0, 200));
+        assertEquals("and it must still hold the first one", 100, reg.realizedDimAt(cell, 0).getAsInt());
     }
 
     @Test
@@ -260,8 +292,8 @@ public class PlanetRealizationTest {
         GalacticCoord cell = findLandableCell(reg);
         assertNotNull(cell);
         assertFalse("an unpinned system must refuse the rewrite rather than lose it silently",
-                reg.realizeBody(cell, 55));
-        assertFalse(reg.realizedDimAt(cell).isPresent());
+                reg.realizeBody(cell, 0, 55));
+        assertFalse(reg.realizedDimAt(cell, 0).isPresent());
     }
 
     @Test
@@ -306,7 +338,7 @@ public class PlanetRealizationTest {
         }
         assertNotNull(before);
         reg.pinSystem(cell);
-        assertTrue(reg.realizeBody(cell, 999));
+        assertTrue(reg.realizeBody(cell, 0, 999));
 
         SystemBody after = null;
         for (SystemBody b : reg.bodiesAt(cell)) {

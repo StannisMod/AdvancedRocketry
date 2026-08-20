@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.test.unit;
 
+import java.util.Collections;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -606,5 +607,67 @@ public class TelescopeConeSurveyTest {
         assertEquals("an aperture pointed at a sky with no star types reaches nothing", 0d,
                 empty.maxRangeLightYears(), 0d);
         assertEquals("which is still a pointing, of one territory", 1, empty.maxRangeSteps());
+    }
+
+    // ── what a look may teach the ground it was made from ─────────────────────
+
+    @Test
+    public void aLookReportsOnlyTheBodiesItActuallyMadeOut() {
+        // The coupling that lets an observatory teach the world underneath it: the instrument may
+        // pass on a body only when it RESOLVED one. A star has no dimension of its own, so of the
+        // fixture's two objects exactly one can ever be taught.
+        double sunLike = StellarMagnitude.luminositySuns(1.15d, 100);
+        double near = StellarMagnitude.detectionRangeLightYears(sunLike, 12d - 6.5d) / 2d;
+        UniverseRegistry registry = oneStarAt(near, 1.15f, 100);
+        List<TelescopeScan.Detection> hits = TelescopeScan.detect(registry, seatAt(near), HOME, 12d);
+        assertEquals("arrangement: one system to look at", 1, hits.size());
+        assertTrue("arrangement: and it must be resolvable at this distance", hits.get(0).resolvable());
+
+        List<Integer> taught = new ArrayList<>();
+        TelescopeScan.characterise(registry, hits.get(0), new CrystalMemory(), 1_000L,
+                id -> "Body-" + id, true, taught::add);
+
+        assertEquals("exactly the planet, and not the star that has no world: " + taught,
+                Collections.singletonList(701), taught);
+    }
+
+    @Test
+    public void aLookThatOnlyREGISTEREDTeachesNothing() {
+        // Inside the aperture, outside what it can make out. The crystal still gets the address -
+        // that is the whole mechanic - but nothing about the system may reach the ground, because
+        // nothing about it was learned.
+        double sunLike = StellarMagnitude.luminositySuns(1.15d, 100);
+        double detectReach = StellarMagnitude.detectionRangeLightYears(sunLike, 12d);
+        double resolveReach = StellarMagnitude.detectionRangeLightYears(sunLike, 12d - 6.5d);
+        double far = (detectReach + resolveReach) / 2d;
+        UniverseRegistry registry = oneStarAt(far, 1.15f, 100);
+        List<TelescopeScan.Detection> hits = TelescopeScan.detect(registry, seatAt(far), HOME, 12d);
+        assertEquals("arrangement: it must still register", 1, hits.size());
+        assertFalse("arrangement: and must not be resolvable", hits.get(0).resolvable());
+
+        CrystalMemory memory = new CrystalMemory();
+        List<Integer> taught = new ArrayList<>();
+        TelescopeScan.characterise(registry, hits.get(0), memory, 1_000L, id -> "Body-" + id,
+                true, taught::add);
+
+        assertTrue("a point of light teaches the ground nothing: " + taught, taught.isEmpty());
+        assertEquals("but the address is still written down", 1, memory.size());
+    }
+
+    @Test
+    public void recordingPositionsOnlyTeachesNothingEither() {
+        // The operator's own choice, not the aperture's limit. Asking for less must also GIVE less
+        // to the ground, or "positions only" would quietly be a full survey for tier-1.
+        double sunLike = StellarMagnitude.luminositySuns(1.15d, 100);
+        double near = StellarMagnitude.detectionRangeLightYears(sunLike, 12d - 6.5d) / 2d;
+        UniverseRegistry registry = oneStarAt(near, 1.15f, 100);
+        List<TelescopeScan.Detection> hits = TelescopeScan.detect(registry, seatAt(near), HOME, 12d);
+        assertTrue("arrangement: the aperture must not be what limits this", hits.get(0).resolvable());
+
+        List<Integer> taught = new ArrayList<>();
+        TelescopeScan.characterise(registry, hits.get(0), new CrystalMemory(), 1_000L,
+                id -> "Body-" + id, false, taught::add);
+
+        assertTrue("an operator recording addresses teaches no world: " + taught, taught.isEmpty());
     }
 }

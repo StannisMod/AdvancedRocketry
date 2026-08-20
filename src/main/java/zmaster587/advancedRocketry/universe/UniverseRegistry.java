@@ -792,7 +792,7 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
      * <p>Idempotent by construction — a body that already carries this dimension is left exactly as it
      * is, so a second descent into the same cell reuses the world rather than minting another.</p>
      */
-    public boolean realizeBody(GalacticCoord bodyCell, int dimId) {
+    public boolean realizeBody(GalacticCoord bodyCell, int variant, int dimId) {
         Optional<GalacticCoord> anchorOpt = anchorForCell(bodyCell);
         if (!anchorOpt.isPresent()) {
             return false;
@@ -802,16 +802,23 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
             return false;
         }
         GalacticCoord cell = bodyCell.cellCentre();
+        int seen = -1;
         for (int i = 0; i < pinned.bodies.size(); i++) {
             SystemBody body = pinned.bodies.get(i);
-            if (!body.kind().canDescend() || !body.name().sameCell(cell)) {
+            if (!body.name().sameCell(cell) || !isRealizableKind(body)) {
+                continue;
+            }
+            // Counted the same way realizableBodiesAt counts, so a variant means one body and not a
+            // family: writing into "the first free one" is what let a moon inherit its planet.
+            seen++;
+            if (seen != variant) {
                 continue;
             }
             if (body.dimId() == dimId) {
                 return true;
             }
             if (body.dimId() != Constants.INVALID_PLANET) {
-                continue; // another body of this cell (a moon) already holds a world of its own
+                return false; // this body already holds a different world
             }
             pinned.bodies.set(i, body.withDimId(dimId));
             namesByDim.put(dimId, new RecordedName(cell, pinned.starId));
@@ -821,14 +828,76 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         return false;
     }
 
-    /** The realized dimension of the descend-target body at {@code bodyCell}, if it has one. */
-    public OptionalInt realizedDimAt(GalacticCoord bodyCell) {
+    /**
+     * The bodies of {@code bodyCell} that a descent could ever mint a world for, in the order the
+     * generator produced them.
+     *
+     * <p><b>A cell holds more than one world, and this is the list that says which.</b> A moon is
+     * built in its PARENT's cell so that a planet and its moons travel as one destination, so
+     * "the body at this cell" names a family rather than an object. A body's index in THIS list is
+     * its {@code variant} - the same number the derivation is keyed on - and it is the only identity
+     * a body has inside its cell.</p>
+     *
+     * <p>Stars, station slots and belts are not in it: nothing descends onto them, and counting them
+     * would shift every variant by one and silently materialize the wrong world.</p>
+     */
+    public List<SystemBody> realizableBodiesAt(GalacticCoord bodyCell) {
+        List<SystemBody> out = new ArrayList<>();
         for (SystemBody body : bodiesAt(bodyCell)) {
-            if (body.kind().canDescend() && body.dimId() != Constants.INVALID_PLANET) {
-                return OptionalInt.of(body.dimId());
+            if (isRealizableKind(body)) {
+                out.add(body);
+            }
+        }
+        return out;
+    }
+
+    /** Whether a descent could mint a world for a body of this kind. See {@link #realizableBodiesAt}. */
+    private static boolean isRealizableKind(SystemBody body) {
+        return body.kind() != SystemBodyKind.STAR
+                && body.kind() != SystemBodyKind.STATION_SLOT
+                && body.kind() != SystemBodyKind.ASTEROID_BELT;
+    }
+
+    /**
+     * Which body of its cell {@code body} is - its {@code variant} - or empty if the cell does not
+     * hold it.
+     *
+     * <p>Matched by ADDRESS, KIND and ORBIT rather than by object identity: a caller holds a body it
+     * got from a derived list, while the pinned snapshot holds another instance of the same body,
+     * and a realized one differs from both by carrying a dimension.</p>
+     */
+    public OptionalInt variantOf(SystemBody body) {
+        if (body == null) {
+            return OptionalInt.empty();
+        }
+        List<SystemBody> family = realizableBodiesAt(body.name());
+        for (int i = 0; i < family.size(); i++) {
+            SystemBody candidate = family.get(i);
+            if (candidate.kind() == body.kind()
+                    && candidate.orbitalDistance() == body.orbitalDistance()
+                    && candidate.name().sameCell(body.name())) {
+                return OptionalInt.of(i);
             }
         }
         return OptionalInt.empty();
+    }
+
+    /**
+     * The realized dimension of a PARTICULAR body of {@code bodyCell}, named by its variant.
+     *
+     * <p>It used to answer for the first realized body of the cell, whatever was asked - so once a
+     * planet had a world, every one of its moons answered with the planet's, and a descent aimed at a
+     * moon put the ship on the planet instead.</p>
+     */
+    public OptionalInt realizedDimAt(GalacticCoord bodyCell, int variant) {
+        List<SystemBody> family = realizableBodiesAt(bodyCell);
+        if (variant < 0 || variant >= family.size()) {
+            return OptionalInt.empty();
+        }
+        SystemBody body = family.get(variant);
+        return body.dimId() == Constants.INVALID_PLANET
+                ? OptionalInt.empty()
+                : OptionalInt.of(body.dimId());
     }
 
     /** The POIs at a system's cell (a copy), excluding the derived star/planet/moon bodies. */

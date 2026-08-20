@@ -1,5 +1,10 @@
 package zmaster587.advancedRocketry.tile.multiblock;
 
+import java.util.HashSet;
+import java.util.Set;
+import zmaster587.advancedRocketry.dimension.DimensionManager;
+import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.network.PacketDimInfo;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -25,6 +30,7 @@ import zmaster587.advancedRocketry.inventory.modules.ModuleItemSlotButton;
 import zmaster587.advancedRocketry.item.IDataItem;
 import zmaster587.advancedRocketry.item.ItemAsteroidChip;
 import zmaster587.advancedRocketry.item.ItemMemoryCrystal;
+import zmaster587.advancedRocketry.navigation.CrystalEntry;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
 import zmaster587.advancedRocketry.universe.RegionScan;
@@ -112,6 +118,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private static final byte ABORT_SCAN = 20;
     private static final byte PASSIVE_SWEEP = 21;
     private static final byte TOGGLE_WHOLE_SYSTEM = 22;
+    private static final byte UPLOAD_CRYSTAL = 23;
     /** Progress id of the region-scan bar; the machine's own bar keeps id 0. */
     private static final int PROGRESS_SCAN = 1;
     /**
@@ -743,6 +750,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                         zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
                         LibVulpes.proxy.getLocalizedString("msg.observetory.scan.abort.tooltip"), 40, 18));
             }
+            // Reading a crystal INTO this world, the reverse of the survey that fills one. It costs
+            // no power and no data: the knowledge already exists, it is being put down here.
+            modules.add(new ModuleButton(100, 142, 10,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.upload.button"), this,
+                    zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.upload.tooltip"), 64, 18));
             modules.add(new ModuleButton(166, 42, 8,
                     LibVulpes.proxy.getLocalizedString(passive
                             ? "msg.observetory.scan.mode.passive" : "msg.observetory.scan.mode.active"),
@@ -899,6 +912,35 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         lastScanObscured = 0;
         markDirty();
         return true;
+    }
+
+    /**
+     * Teach the world this observatory stands on what the survey just made out.
+     *
+     * <p>Server side only, and only what has a dimension. The set is a body's own, additive over the
+     * global known-set rather than a replacement for it, so a pack that authored its known planets
+     * keeps them and a world merely adds what it has learned since. Syncing goes through the same
+     * channel a beacon uses, because this is the same kind of fact.</p>
+     */
+    private void teachThisBody(Set<Integer> discovered) {
+        if (discovered.isEmpty() || world == null || world.isRemote) {
+            return;
+        }
+        DimensionProperties here = DimensionManager.getInstance()
+                .getDimensionPropertiesOrNull(world.provider.getDimension());
+        if (here == null) {
+            return; // a world the planet layer does not own - nothing here can learn
+        }
+        boolean learned = false;
+        for (int dimId : discovered) {
+            if (!here.isPlanetKnownHere(dimId)) {
+                here.discoverPlanet(dimId);
+                learned = true;
+            }
+        }
+        if (learned) {
+            PacketHandler.sendToAll(new PacketDimInfo(here.getId(), here));
+        }
     }
 
     /** The observation in flight, or {@code null}. */
@@ -1083,9 +1125,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         GalacticCoord origin = scanOrigin();
         UniverseRegistry registry = UniverseRegistry.get(world);
         lastScanObscured += countObscured(registry, origin, activeScan, activeScan.cellsDone(), cells);
+        // WHERE the instrument stands is what it teaches. A survey writes the crystal the operator
+        // will carry away, and it also teaches the body underneath: a launch pad here may afterwards
+        // be aimed at what this telescope made out, while a pad on the next world may not. Only a
+        // NAMED body can be taught - a bare address has no world to fly to.
+        Set<Integer> taughtHere = new HashSet<>();
         lastScanDiscoveries += TelescopeScan.resolveBatch(registry, activeScan,
                 activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames(), origin,
-                characteriseWholeSystem);
+                characteriseWholeSystem, taughtHere::add);
+        teachThisBody(taughtHere);
         activeScan = instant ? activeScan.completed(now) : activeScan.advanced(now, cells);
         if (activeScan.isComplete()) {
             activeScan = null;
@@ -1146,6 +1194,41 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (buttonId == 9) {
             PacketHandler.sendToServer(new PacketMachine(this, TOGGLE_WHOLE_SYSTEM));
         }
+        if (buttonId == 10) {
+            PacketHandler.sendToServer(new PacketMachine(this, UPLOAD_CRYSTAL));
+        }
+    }
+
+    /**
+     * Read the crystal in the machine into the KNOWLEDGE OF THIS BODY: what somebody carried here
+     * becomes what a launch pad standing here may be aimed at.
+     *
+     * <p>This is the one sanctioned crossing between the two discovery systems, and it goes one way.
+     * A crystal deposits into a body's set; a body's set never feeds a crystal, a console, or a jump
+     * target.</p>
+     *
+     * <p><b>An address without a world is skipped, and the count says so.</b> A procedural body
+     * carries no dimension until somebody descends to it, so a survey of unvisited space writes
+     * addresses that tier-1 has nothing to fly to yet - and an upload that silently did nothing
+     * would be indistinguishable from a broken button. Re-surveying such a system after somebody has
+     * landed there records the world it now has.</p>
+     *
+     * @return {@code {landed, total}}
+     */
+    public int[] uploadCrystalHere() {
+        ItemStack crystal = getStackInSlot(SLOT_CRYSTAL);
+        if (!ItemMemoryCrystal.isCrystal(crystal)) {
+            return new int[] {0, 0};
+        }
+        List<CrystalEntry> entries = ItemMemoryCrystal.memoryOf(crystal).list();
+        Set<Integer> landed = new HashSet<>();
+        for (CrystalEntry entry : entries) {
+            if (entry.namesBody()) {
+                landed.add(entry.dimId());
+            }
+        }
+        teachThisBody(landed);
+        return new int[] {landed.size(), entries.size()};
     }
 
 
@@ -1218,6 +1301,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 world.notifyBlockUpdate(pos, st, st, 2);
                 player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
                         getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            }
+            else if (id == UPLOAD_CRYSTAL) {
+                int[] result = uploadCrystalHere();
+                player.sendMessage(new net.minecraft.util.text.TextComponentTranslation(
+                        "msg.observetory.upload.result", result[0], result[1]));
             }
             else if (id == START_SCAN || id == ABORT_SCAN || id == PASSIVE_SWEEP) {
                 if (id == ABORT_SCAN) {

@@ -767,11 +767,64 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     //Adds a beacon location to the planet's surface
     public void addBeaconLocation(World world, HashedBlockPosition pos) {
         beaconLocations.add(pos);
-        DimensionManager.getInstance().knownPlanets.add(getId());
 
         //LAAZZY
-        if (!world.isRemote)
+        if (!world.isRemote) {
+            for (DimensionProperties taught : teachOwnSystem()) {
+                PacketHandler.sendToAll(new PacketDimInfo(taught.getId(), taught));
+            }
             PacketHandler.sendToAll(new PacketDimInfo(getId(), this));
+        }
+    }
+
+    /**
+     * Tell the bodies of this body's own system that this place exists, and return the ones that
+     * did not already know.
+     *
+     * <p><b>A beacon is a local announcement, not a galactic one.</b> It used to add this planet to
+     * the GLOBAL known-set, so planting one anywhere made the place selectable from every launch pad
+     * in the game. What is true is narrower and more interesting: the neighbours know, because they
+     * can see it. So the beacon writes into the known-set of every body of its own system, and
+     * nothing outside that system learns anything.</p>
+     *
+     * <p>It can never be the thing that first reveals a place - a beacon is planted by hand, so
+     * somebody already flew here, which means the destination was already reachable. That is why
+     * scoping it costs nothing: a beacon spreads knowledge inside reach and never creates reach.</p>
+     */
+    public List<DimensionProperties> teachOwnSystem() {
+        List<DimensionProperties> taught = new ArrayList<>();
+        discoverPlanet(getId()); // the body it stands on, always - the degenerate system of one
+        StellarBody star = getStar();
+        if (star == null) {
+            return taught; // a world with no star of its own: the beacon teaches only its own ground
+        }
+        for (IDimensionProperties sibling : star.getPlanets()) {
+            DimensionProperties props = DimensionManager.getInstance()
+                    .getDimensionPropertiesOrNull(sibling.getId());
+            if (props == null) {
+                continue;
+            }
+            teach(props, taught);
+            // A moon is a child of its planet rather than of the star, so the star's list alone
+            // would leave every moon of the system ignorant of a beacon in it.
+            for (int childId : props.getChildPlanets()) {
+                DimensionProperties child = DimensionManager.getInstance()
+                        .getDimensionPropertiesOrNull(childId);
+                if (child != null) {
+                    teach(child, taught);
+                }
+            }
+        }
+        return taught;
+    }
+
+    /** Teach {@code body} about this place, collecting it when that changed anything. */
+    private void teach(DimensionProperties body, List<DimensionProperties> taught) {
+        if (body.getId() == getId() || body.isPlanetKnownHere(getId())) {
+            return;
+        }
+        body.discoverPlanet(getId());
+        taught.add(body);
     }
 
     public HashSet<HashedBlockPosition> getBeacons() {
@@ -1692,7 +1745,10 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
                 int[] location = list.getIntArrayAt(i);
                 beaconLocations.add(new HashedBlockPosition(location[0], location[1], location[2]));
             }
-            DimensionManager.getInstance().knownPlanets.add(getId());
+            // No global add on load any more. What a beacon taught is held by the bodies it taught,
+            // in their own saved known-sets, so re-announcing this place to the whole game at every
+            // load would put back exactly the reach the scoping removed. A world whose beacons
+            // predate the local sets simply has nothing recorded - 3.0.0 carries no old saves.
         } else
             beaconLocations.clear();
 
@@ -1733,6 +1789,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public void readFromNBT(NBTTagCompound nbt) {
 
         NBTTagList list;
+
+        // Cleared first: this object is reused across loads, and a merge would make a body remember
+        // what a previous save taught it.
+        locallyKnownPlanets.clear();
+        for (int dimId : nbt.getIntArray("locallyKnownPlanets")) {
+            locallyKnownPlanets.add(dimId);
+        }
 
         if (nbt.hasKey("skyColor")) {
             list = nbt.getTagList("skyColor", NBT.TAG_FLOAT);
@@ -2197,8 +2260,49 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
 
     }
+    /**
+     * What is known ON this body: the planets a launch pad standing here may be aimed at, beyond the
+     * ones everybody knows.
+     *
+     * <p><b>Knowledge belongs to a place.</b> An observatory built here teaches THIS body; a beacon
+     * teaches the bodies of its own system; a memory crystal uploaded here deposits what somebody
+     * carried in. None of that reaches the global set, and none of it reaches a neighbouring world -
+     * a launch pad on a moon offers a different list than the pad on the planet below it.</p>
+     *
+     * <p>It is ADDITIVE over the global set rather than a replacement for it, so a pack that authors
+     * {@code <isKnown>} keeps authoring exactly as it did: the global set is the floor everyone
+     * stands on, this is what a particular world has learned since.</p>
+     *
+     * <p>Communal per world, not per player: two players on the same body see the same list.</p>
+     */
+    private final Set<Integer> locallyKnownPlanets = new HashSet<>();
+
+    /** Teach this body about {@code dimId}. Idempotent. */
+    public void discoverPlanet(int dimId) {
+        locallyKnownPlanets.add(dimId);
+    }
+
+    /** Whether THIS body knows {@code dimId} - the local half of the gate, with no global fallback. */
+    public boolean isPlanetKnownHere(int dimId) {
+        return locallyKnownPlanets.contains(dimId);
+    }
+
+    /** What this body knows, for readers that need the whole set (GUI, sync, tests). */
+    public Set<Integer> getLocallyKnownPlanets() {
+        return Collections.unmodifiableSet(locallyKnownPlanets);
+    }
+
     public void writeToNBT(NBTTagCompound nbt) {
         NBTTagList list;
+
+        if (!locallyKnownPlanets.isEmpty()) {
+            int[] known = new int[locallyKnownPlanets.size()];
+            int k = 0;
+            for (int dimId : locallyKnownPlanets) {
+                known[k++] = dimId;
+            }
+            nbt.setIntArray("locallyKnownPlanets", known);
+        }
 
         if (skyColor != null) {
             list = new NBTTagList();

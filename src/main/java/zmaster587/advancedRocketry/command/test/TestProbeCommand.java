@@ -2540,11 +2540,54 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemMemoryCrystal);
             // A deliberately BLANK crystal: the starter addresses would make every count a test
             // asserts depend on the world's planet list rather than on what the scan resolved.
-            zmaster587.advancedRocketry.item.ItemMemoryCrystal.writeMemory(stack,
-                    new zmaster587.advancedRocketry.navigation.CrystalMemory());
+            zmaster587.advancedRocketry.navigation.CrystalMemory seeded =
+                    new zmaster587.advancedRocketry.navigation.CrystalMemory();
+            // ...unless a caller names ONE world it must hold. A test that needs the deposit to be
+            // the only possible source of a piece of knowledge cannot use a crystal the survey
+            // filled, because the survey teaches this world as it goes.
+            if (args.length >= 6) {
+                int namedDim = parseIntOr(args[5], zmaster587.advancedRocketry.api.Constants.INVALID_PLANET);
+                if (namedDim != zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                    seeded.record(new zmaster587.advancedRocketry.navigation.CrystalEntry(
+                            zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                                    7000L, 0L, 0L, 0L, 0L, 0L),
+                            "probe-named-" + namedDim,
+                            zmaster587.advancedRocketry.universe.SystemBodyKind.PLANET,
+                            zmaster587.advancedRocketry.universe.InfoTier.TELESCOPE, 1L, namedDim));
+                }
+            }
+            zmaster587.advancedRocketry.item.ItemMemoryCrystal.writeMemory(stack, seeded);
             scope.setInventorySlotContents(
                     zmaster587.advancedRocketry.tile.multiblock.TileObservatory.SLOT_CRYSTAL, stack);
             send(sender, "{\"ok\":true,\"addresses\":" + crystalAddresses(scope) + "}");
+            return;
+        }
+
+        if ("deposit".equalsIgnoreCase(verb)) {
+            // The Deposit button's own path: read the crystal in the machine into what THIS world
+            // knows. Reported as landed/total because an address of a world nobody has landed on has
+            // nothing for tier-1 to fly to and is skipped.
+            java.util.List<Integer> before = new java.util.ArrayList<>();
+            for (zmaster587.advancedRocketry.navigation.CrystalEntry entry
+                    : zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(
+                            scope.getStackInSlot(
+                                    zmaster587.advancedRocketry.tile.multiblock.TileObservatory
+                                            .SLOT_CRYSTAL)).list()) {
+                if (entry.namesBody()) {
+                    before.add(entry.dimId());
+                }
+            }
+            int[] result = scope.uploadCrystalHere();
+            StringBuilder dims = new StringBuilder("[");
+            for (int i = 0; i < before.size(); i++) {
+                if (i > 0) dims.append(',');
+                dims.append(before.get(i));
+            }
+            dims.append(']');
+            // The dims are reported, not just the count: a test that could only read "3 landed" would
+            // have to guess WHICH worlds a pad here may now be aimed at.
+            send(sender, "{\"ok\":true,\"landed\":" + result[0] + ",\"total\":" + result[1]
+                    + ",\"dims\":" + dims + "}");
             return;
         }
 
@@ -2630,6 +2673,10 @@ public class TestProbeCommand extends CommandBase {
                 .append(",\"origin\":").append(origin == null ? "null" : "\"" + origin.cellKey() + "\"")
                 .append(",\"scanning\":").append(scan != null)
                 .append(",\"addresses\":").append(crystalAddresses(scope))
+                // WHICH worlds the crystal holds, read without touching anything. A test that had to
+                // call `deposit` to find out would have deposited them, and could no longer show
+                // that pressing the button is what teaches this world.
+                .append(",\"crystalDims\":").append(crystalDims(scope))
                 .append(",\"lastDiscoveries\":").append(scope.getLastScanDiscoveries())
                 // Where the OPERATOR has the instrument pointed — the tile's own pick, which is what
                 // a GUI click changes and what the next scan will use. Distinct from the region a
@@ -2692,6 +2739,29 @@ public class TestProbeCommand extends CommandBase {
             return -1;
         }
         return zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(stack).size();
+    }
+
+    /** The dimensions the crystal in that slot names, as a JSON array. Reads nothing into anything. */
+    private String crystalDims(zmaster587.advancedRocketry.tile.multiblock.TileObservatory scope) {
+        net.minecraft.item.ItemStack stack = scope.getStackInSlot(
+                zmaster587.advancedRocketry.tile.multiblock.TileObservatory.SLOT_CRYSTAL);
+        if (!zmaster587.advancedRocketry.item.ItemMemoryCrystal.isCrystal(stack)) {
+            return "[]";
+        }
+        StringBuilder out = new StringBuilder("[");
+        boolean first = true;
+        for (zmaster587.advancedRocketry.navigation.CrystalEntry entry
+                : zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(stack).list()) {
+            if (!entry.namesBody()) {
+                continue;
+            }
+            if (!first) {
+                out.append(',');
+            }
+            out.append(entry.dimId());
+            first = false;
+        }
+        return out.append(']').toString();
     }
 
     private zmaster587.advancedRocketry.tile.multiblock.TileObservatory observatoryAt(
@@ -5230,7 +5300,21 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
                             parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
                             0L, 0L, 0L);
-            int dimId = zmaster587.advancedRocketry.universe.PlanetRealizer.realize(server, cell);
+            // A cell names a family - a planet and the moons that share its address - so the probe
+            // states WHICH of them it means. Default 0, the planet, with an optional variant arg;
+            // a caller that wants the moon has to say so, exactly as a descent does.
+            int variant = args.length >= 5 ? parseIntOr(args[4], 0) : 0;
+            java.util.List<zmaster587.advancedRocketry.universe.SystemBody> family =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server) == null
+                            ? java.util.Collections.<zmaster587.advancedRocketry.universe.SystemBody>emptyList()
+                            : zmaster587.advancedRocketry.universe.UniverseRegistry.get(server)
+                                    .realizableBodiesAt(cell);
+            if (variant < 0 || variant >= family.size()) {
+                send(sender, "{\"ok\":false,\"reason\":\"no body with that variant in the cell\"}");
+                return;
+            }
+            int dimId = zmaster587.advancedRocketry.universe.PlanetRealizer.realize(server,
+                    family.get(variant));
             if (dimId == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
                 send(sender, "{\"ok\":false,\"reason\":\"nothing landable in that cell\"}");
                 return;
@@ -5993,6 +6077,36 @@ public class TestProbeCommand extends CommandBase {
     // Planet/weather probes ----------------------------------------------
 
     private void handlePlanet(ICommandSender sender, String[] args) {
+        // What a TIER-1 launch pad standing on one world may be aimed at, asked of the production
+        // gate rather than re-derived here: a real rocket in the standing world answers
+        // IPlanetDefiner.isPlanetKnown, and the two halves are reported beside it so a red test says
+        // WHICH of them moved - the pack's floor or what this body has learned.
+        if (args.length >= 3 && "knowledge".equalsIgnoreCase(args[0])) {
+            int standingDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int targetDim = parseIntOr(args[2], Integer.MIN_VALUE);
+            net.minecraft.world.World here = net.minecraftforge.common.DimensionManager
+                    .getWorld(standingDim);
+            DimensionProperties target = DimensionManager.getInstance()
+                    .getDimensionPropertiesOrNull(targetDim);
+            DimensionProperties standing = DimensionManager.getInstance()
+                    .getDimensionPropertiesOrNull(standingDim);
+            if (here == null || target == null) {
+                send(sender, "{\"error\":\"standing world not loaded or unknown target\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.entity.EntityRocket rocket =
+                    new zmaster587.advancedRocketry.entity.EntityRocket(here);
+            send(sender, "{\"standing\":" + standingDim + ",\"target\":" + targetDim
+                    + ",\"known\":" + rocket.isPlanetKnown(target)
+                    + ",\"global\":" + DimensionManager.getInstance().isPlanetKnown(targetDim)
+                    + ",\"local\":" + (standing != null && standing.isPlanetKnownHere(targetDim))
+                    + ",\"research\":"
+                    + zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig()
+                            .planetsMustBeDiscovered
+                    + "}");
+            return;
+        }
+
         if (args.length >= 2 && "info".equalsIgnoreCase(args[0])) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);

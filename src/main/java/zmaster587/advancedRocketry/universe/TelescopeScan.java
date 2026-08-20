@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 
 import net.minecraft.item.ItemStack;
@@ -231,6 +232,20 @@ public final class TelescopeScan {
     public static int characterise(UniverseRegistry registry, Detection hit, CrystalMemory memory,
                                    long observedTick, IntFunction<String> nameOf,
                                    boolean wholeSystem) {
+        return characterise(registry, hit, memory, observedTick, nameOf, wholeSystem, null);
+    }
+
+    /**
+     * The same, telling {@code named} the dimension of every body this look actually made out.
+     *
+     * <p>The callback is a fact about the OBSERVATION - "this look named that world" - and nothing
+     * more; what a caller does with it belongs to the caller. It fires only for a body that has a
+     * dimension: an unrealized body has no world to fly to, and an address that names no body
+     * (unresolvable, obscured, or positions-only) reports nothing at all.</p>
+     */
+    public static int characterise(UniverseRegistry registry, Detection hit, CrystalMemory memory,
+                                   long observedTick, IntFunction<String> nameOf,
+                                   boolean wholeSystem, IntConsumer named) {
         if (registry == null || hit == null || memory == null) {
             return 0;
         }
@@ -243,6 +258,9 @@ public final class TelescopeScan {
                 namedSomething = true;
                 if (memory.record(entryFor(body, observedTick, nameOf))) {
                     written++;
+                }
+                if (named != null && body.dimId() != Constants.INVALID_PLANET) {
+                    named.accept(body.dimId());
                 }
             }
         }
@@ -269,12 +287,20 @@ public final class TelescopeScan {
     public static int resolveBatch(UniverseRegistry registry, RegionScan scan, int from, int count,
                                    ItemStack crystal, long observedTick, IntFunction<String> nameOf,
                                    GalacticCoord observer, boolean wholeSystem) {
+        return resolveBatch(registry, scan, from, count, crystal, observedTick, nameOf, observer,
+                wholeSystem, null);
+    }
+
+    /** The same, reporting every body the batch named to {@code named}. */
+    public static int resolveBatch(UniverseRegistry registry, RegionScan scan, int from, int count,
+                                   ItemStack crystal, long observedTick, IntFunction<String> nameOf,
+                                   GalacticCoord observer, boolean wholeSystem, IntConsumer named) {
         if (!ItemMemoryCrystal.isCrystal(crystal)) {
             return 0;
         }
         CrystalMemory memory = ItemMemoryCrystal.memoryOf(crystal);
         int written = resolveBatch(registry, scan, from, count, memory, observedTick, nameOf,
-                observer, wholeSystem);
+                observer, wholeSystem, named);
         if (written > 0) {
             ItemMemoryCrystal.writeMemory(crystal, memory);
         }
@@ -294,6 +320,14 @@ public final class TelescopeScan {
     public static int resolveBatch(UniverseRegistry registry, RegionScan scan, int from, int count,
                                    CrystalMemory memory, long observedTick, IntFunction<String> nameOf,
                                    GalacticCoord observer, boolean wholeSystem) {
+        return resolveBatch(registry, scan, from, count, memory, observedTick, nameOf, observer,
+                wholeSystem, null);
+    }
+
+    /** The same, reporting every body the batch named to {@code named}. */
+    public static int resolveBatch(UniverseRegistry registry, RegionScan scan, int from, int count,
+                                   CrystalMemory memory, long observedTick, IntFunction<String> nameOf,
+                                   GalacticCoord observer, boolean wholeSystem, IntConsumer named) {
         if (registry == null || scan == null || memory == null) {
             return 0;
         }
@@ -301,7 +335,7 @@ public final class TelescopeScan {
         int written = 0;
         for (int index = from; index < from + count && index < scan.totalCells(); index++) {
             written += resolveLook(registry, scan.cellAt(index), memory, observedTick, nameOf,
-                    observer, limit, wholeSystem);
+                    observer, limit, wholeSystem, named);
         }
         return written;
     }
@@ -320,9 +354,18 @@ public final class TelescopeScan {
                                   long observedTick, IntFunction<String> nameOf,
                                   GalacticCoord observer, double limitMagnitude,
                                   boolean wholeSystem) {
+        return resolveLook(registry, look, memory, observedTick, nameOf, observer, limitMagnitude,
+                wholeSystem, null);
+    }
+
+    /** The same, reporting every body this look named to {@code named}. */
+    public static int resolveLook(UniverseRegistry registry, GalacticCoord look, CrystalMemory memory,
+                                  long observedTick, IntFunction<String> nameOf,
+                                  GalacticCoord observer, double limitMagnitude,
+                                  boolean wholeSystem, IntConsumer named) {
         int written = 0;
         for (Detection hit : detect(registry, look, observer, limitMagnitude)) {
-            written += characterise(registry, hit, memory, observedTick, nameOf, wholeSystem);
+            written += characterise(registry, hit, memory, observedTick, nameOf, wholeSystem, named);
         }
         return written;
     }
