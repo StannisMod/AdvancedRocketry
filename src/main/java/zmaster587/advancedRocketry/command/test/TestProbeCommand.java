@@ -2548,6 +2548,34 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
 
+        if ("deposit".equalsIgnoreCase(verb)) {
+            // The Deposit button's own path: read the crystal in the machine into what THIS world
+            // knows. Reported as landed/total because an address of a world nobody has landed on has
+            // nothing for tier-1 to fly to and is skipped.
+            java.util.List<Integer> before = new java.util.ArrayList<>();
+            for (zmaster587.advancedRocketry.navigation.CrystalEntry entry
+                    : zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(
+                            scope.getStackInSlot(
+                                    zmaster587.advancedRocketry.tile.multiblock.TileObservatory
+                                            .SLOT_CRYSTAL)).list()) {
+                if (entry.namesBody()) {
+                    before.add(entry.dimId());
+                }
+            }
+            int[] result = scope.uploadCrystalHere();
+            StringBuilder dims = new StringBuilder("[");
+            for (int i = 0; i < before.size(); i++) {
+                if (i > 0) dims.append(',');
+                dims.append(before.get(i));
+            }
+            dims.append(']');
+            // The dims are reported, not just the count: a test that could only read "3 landed" would
+            // have to guess WHICH worlds a pad here may now be aimed at.
+            send(sender, "{\"ok\":true,\"landed\":" + result[0] + ",\"total\":" + result[1]
+                    + ",\"dims\":" + dims + "}");
+            return;
+        }
+
         if ("abort".equalsIgnoreCase(verb)) {
             boolean stopped = scope.abortRegionScan();
             send(sender, "{\"ok\":" + stopped + telescopeScanFields(scope, scope.getActiveScan(), world) + "}");
@@ -6007,6 +6035,36 @@ public class TestProbeCommand extends CommandBase {
     // Planet/weather probes ----------------------------------------------
 
     private void handlePlanet(ICommandSender sender, String[] args) {
+        // What a TIER-1 launch pad standing on one world may be aimed at, asked of the production
+        // gate rather than re-derived here: a real rocket in the standing world answers
+        // IPlanetDefiner.isPlanetKnown, and the two halves are reported beside it so a red test says
+        // WHICH of them moved - the pack's floor or what this body has learned.
+        if (args.length >= 3 && "knowledge".equalsIgnoreCase(args[0])) {
+            int standingDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int targetDim = parseIntOr(args[2], Integer.MIN_VALUE);
+            net.minecraft.world.World here = net.minecraftforge.common.DimensionManager
+                    .getWorld(standingDim);
+            DimensionProperties target = DimensionManager.getInstance()
+                    .getDimensionPropertiesOrNull(targetDim);
+            DimensionProperties standing = DimensionManager.getInstance()
+                    .getDimensionPropertiesOrNull(standingDim);
+            if (here == null || target == null) {
+                send(sender, "{\"error\":\"standing world not loaded or unknown target\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.entity.EntityRocket rocket =
+                    new zmaster587.advancedRocketry.entity.EntityRocket(here);
+            send(sender, "{\"standing\":" + standingDim + ",\"target\":" + targetDim
+                    + ",\"known\":" + rocket.isPlanetKnown(target)
+                    + ",\"global\":" + DimensionManager.getInstance().isPlanetKnown(targetDim)
+                    + ",\"local\":" + (standing != null && standing.isPlanetKnownHere(targetDim))
+                    + ",\"research\":"
+                    + zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig()
+                            .planetsMustBeDiscovered
+                    + "}");
+            return;
+        }
+
         if (args.length >= 2 && "info".equalsIgnoreCase(args[0])) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);

@@ -1215,7 +1215,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
      *
      * @return {@code {landed, total}}
      */
-    private int[] uploadCrystalHere() {
+    public int[] uploadCrystalHere() {
         ItemStack crystal = getStackInSlot(SLOT_CRYSTAL);
         if (!ItemMemoryCrystal.isCrystal(crystal)) {
             return new int[] {0, 0};
