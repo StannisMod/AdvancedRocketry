@@ -3852,7 +3852,20 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     @Override
     public boolean isPlanetKnown(IDimensionProperties properties) {
-        return !ARConfiguration.getCurrentConfig().planetsMustBeDiscovered || DimensionManager.getInstance().isPlanetKnown(properties.getId());
+        if (!ARConfiguration.getCurrentConfig().planetsMustBeDiscovered) {
+            return true;
+        }
+        int target = properties.getId();
+        // The global set is the FLOOR - what a pack authored as known, plus dim 0. Everything past it
+        // is learned by a particular world, so the second question is asked of the body this rocket
+        // is standing on and not of the game.
+        if (DimensionManager.getInstance().isPlanetKnown(target)) {
+            return true;
+        }
+        DimensionProperties here = world == null
+                ? null
+                : DimensionManager.getInstance().getDimensionPropertiesOrNull(world.provider.getDimension());
+        return here != null && here.isPlanetKnownHere(target);
     }
 
     @Override

@@ -1734,6 +1734,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         NBTTagList list;
 
+        // Cleared first: this object is reused across loads, and a merge would make a body remember
+        // what a previous save taught it.
+        locallyKnownPlanets.clear();
+        for (int dimId : nbt.getIntArray("locallyKnownPlanets")) {
+            locallyKnownPlanets.add(dimId);
+        }
+
         if (nbt.hasKey("skyColor")) {
             list = nbt.getTagList("skyColor", NBT.TAG_FLOAT);
             skyColor = new float[list.tagCount()];
@@ -2197,8 +2204,49 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
 
     }
+    /**
+     * What is known ON this body: the planets a launch pad standing here may be aimed at, beyond the
+     * ones everybody knows.
+     *
+     * <p><b>Knowledge belongs to a place.</b> An observatory built here teaches THIS body; a beacon
+     * teaches the bodies of its own system; a memory crystal uploaded here deposits what somebody
+     * carried in. None of that reaches the global set, and none of it reaches a neighbouring world -
+     * a launch pad on a moon offers a different list than the pad on the planet below it.</p>
+     *
+     * <p>It is ADDITIVE over the global set rather than a replacement for it, so a pack that authors
+     * {@code <isKnown>} keeps authoring exactly as it did: the global set is the floor everyone
+     * stands on, this is what a particular world has learned since.</p>
+     *
+     * <p>Communal per world, not per player: two players on the same body see the same list.</p>
+     */
+    private final Set<Integer> locallyKnownPlanets = new HashSet<>();
+
+    /** Teach this body about {@code dimId}. Idempotent. */
+    public void discoverPlanet(int dimId) {
+        locallyKnownPlanets.add(dimId);
+    }
+
+    /** Whether THIS body knows {@code dimId} - the local half of the gate, with no global fallback. */
+    public boolean isPlanetKnownHere(int dimId) {
+        return locallyKnownPlanets.contains(dimId);
+    }
+
+    /** What this body knows, for readers that need the whole set (GUI, sync, tests). */
+    public Set<Integer> getLocallyKnownPlanets() {
+        return Collections.unmodifiableSet(locallyKnownPlanets);
+    }
+
     public void writeToNBT(NBTTagCompound nbt) {
         NBTTagList list;
+
+        if (!locallyKnownPlanets.isEmpty()) {
+            int[] known = new int[locallyKnownPlanets.size()];
+            int k = 0;
+            for (int dimId : locallyKnownPlanets) {
+                known[k++] = dimId;
+            }
+            nbt.setIntArray("locallyKnownPlanets", known);
+        }
 
         if (skyColor != null) {
             list = new NBTTagList();
