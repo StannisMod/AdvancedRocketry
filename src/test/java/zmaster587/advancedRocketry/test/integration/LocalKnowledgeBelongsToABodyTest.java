@@ -1,8 +1,12 @@
 package zmaster587.advancedRocketry.test.integration;
 
+import java.util.List;
+
 import net.minecraft.nbt.NBTTagCompound;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
+import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
 
@@ -32,6 +36,47 @@ public class LocalKnowledgeBelongsToABodyTest {
     @BeforeClass
     public static void bootstrap() {
         MinecraftBootstrap.ensure();
+    }
+
+    @Test
+    public void aBeaconTeachesItsOwnSystemAndNothingBeyondIt() {
+        // A beacon used to add its planet to the GLOBAL known-set, so planting one made the place
+        // selectable from every launch pad in the game. What is actually true is narrower: the
+        // neighbours know, because they are the ones who can see it.
+        StellarBody star = new StellarBody();
+        star.setId(910);
+        star.setName("Beacon-Test");
+        star.setTemperature(100);
+        DimensionManager.getInstance().addStar(star);
+
+        DimensionProperties beaconed = registerBody(9101, star);
+        DimensionProperties sibling = registerBody(9102, star);
+        DimensionProperties elsewhere = registerBody(9201, null);
+
+        List<DimensionProperties> taught = beaconed.teachOwnSystem();
+
+        assertTrue("the body the beacon stands on must know itself",
+                beaconed.isPlanetKnownHere(9101));
+        assertTrue("a body of the same system must learn it", sibling.isPlanetKnownHere(9101));
+        assertFalse("a body outside the system must learn nothing",
+                elsewhere.isPlanetKnownHere(9101));
+        assertTrue("and the sibling must be reported as changed, so it can be synced",
+                taught.contains(sibling));
+
+        List<DimensionProperties> again = beaconed.teachOwnSystem();
+        assertTrue("a second beacon in the same system teaches nobody twice", again.isEmpty());
+    }
+
+    /** A body registered with the planet layer, optionally orbiting {@code star}. */
+    private static DimensionProperties registerBody(int dimId, StellarBody star) {
+        DimensionProperties props = new DimensionProperties(dimId);
+        props.setName("Body-" + dimId);
+        if (star != null) {
+            props.setStar(star);
+            star.addPlanet(props);
+        }
+        DimensionManager.getInstance().registerDimNoUpdate(props, false);
+        return props;
     }
 
     @Test
