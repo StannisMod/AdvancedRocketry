@@ -1,5 +1,10 @@
 package zmaster587.advancedRocketry.tile.multiblock;
 
+import java.util.HashSet;
+import java.util.Set;
+import zmaster587.advancedRocketry.dimension.DimensionManager;
+import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.network.PacketDimInfo;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -901,6 +906,35 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         return true;
     }
 
+    /**
+     * Teach the world this observatory stands on what the survey just made out.
+     *
+     * <p>Server side only, and only what has a dimension. The set is a body's own, additive over the
+     * global known-set rather than a replacement for it, so a pack that authored its known planets
+     * keeps them and a world merely adds what it has learned since. Syncing goes through the same
+     * channel a beacon uses, because this is the same kind of fact.</p>
+     */
+    private void teachThisBody(Set<Integer> discovered) {
+        if (discovered.isEmpty() || world == null || world.isRemote) {
+            return;
+        }
+        DimensionProperties here = DimensionManager.getInstance()
+                .getDimensionPropertiesOrNull(world.provider.getDimension());
+        if (here == null) {
+            return; // a world the planet layer does not own - nothing here can learn
+        }
+        boolean learned = false;
+        for (int dimId : discovered) {
+            if (!here.isPlanetKnownHere(dimId)) {
+                here.discoverPlanet(dimId);
+                learned = true;
+            }
+        }
+        if (learned) {
+            PacketHandler.sendToAll(new PacketDimInfo(here.getId(), here));
+        }
+    }
+
     /** The observation in flight, or {@code null}. */
     @Nullable
     public RegionScan getActiveScan() {
@@ -1083,9 +1117,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         GalacticCoord origin = scanOrigin();
         UniverseRegistry registry = UniverseRegistry.get(world);
         lastScanObscured += countObscured(registry, origin, activeScan, activeScan.cellsDone(), cells);
+        // WHERE the instrument stands is what it teaches. A survey writes the crystal the operator
+        // will carry away, and it also teaches the body underneath: a launch pad here may afterwards
+        // be aimed at what this telescope made out, while a pad on the next world may not. Only a
+        // NAMED body can be taught - a bare address has no world to fly to.
+        Set<Integer> taughtHere = new HashSet<>();
         lastScanDiscoveries += TelescopeScan.resolveBatch(registry, activeScan,
                 activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames(), origin,
-                characteriseWholeSystem);
+                characteriseWholeSystem, taughtHere::add);
+        teachThisBody(taughtHere);
         activeScan = instant ? activeScan.completed(now) : activeScan.advanced(now, cells);
         if (activeScan.isComplete()) {
             activeScan = null;
