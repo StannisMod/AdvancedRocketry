@@ -594,8 +594,10 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                             // descend. The scan above must never allocate a dimension.
                             int targetDim = body.dimId();
                             if (targetDim == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                                // The BODY, not its cell: a moon shares its planet's address, so a
+                                // cell names a family and only the body says which of them was flown to.
                                 targetDim = zmaster587.advancedRocketry.universe.PlanetRealizer
-                                        .realize(server, body.name());
+                                        .realize(server, body);
                                 if (targetDim
                                         == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
                                     continue; // nothing landable here after all

@@ -66,20 +66,27 @@ public final class PlanetRealizer {
      * only entry point, so that "one body, one world" cannot be true in one caller and false in
      * another.</p>
      */
-    public static int realize(MinecraftServer server, GalacticCoord bodyCell) {
-        if (server == null || bodyCell == null) {
+    public static int realize(MinecraftServer server, SystemBody approached) {
+        if (server == null || approached == null) {
             return Constants.INVALID_PLANET;
         }
         UniverseRegistry registry = UniverseRegistry.get(server);
         if (registry == null) {
             return Constants.INVALID_PLANET;
         }
+        GalacticCoord bodyCell = approached.name();
 
         // Pin FIRST. A touch is what freezes a procedural system into the save, and by the time this
         // body has a dimension its surroundings must already be unable to drift away from under it.
         registry.pinSystem(bodyCell);
 
-        OptionalInt existing = registry.realizedDimAt(bodyCell);
+        OptionalInt variantOpt = registry.variantOf(approached);
+        if (!variantOpt.isPresent()) {
+            return Constants.INVALID_PLANET; // not a body of that cell, or nothing landable
+        }
+        int variant = variantOpt.getAsInt();
+
+        OptionalInt existing = registry.realizedDimAt(bodyCell, variant);
         if (existing.isPresent()) {
             return existing.getAsInt();
         }
@@ -90,33 +97,26 @@ public final class PlanetRealizer {
         }
         GalacticCoord anchor = anchorOpt.get();
 
-        List<SystemBody> here = registry.bodiesAt(bodyCell);
-        SystemBody target = null;
-        SystemBody parentBody = null;
-        int variant = 0;
-        int seen = 0;
-        for (SystemBody body : here) {
-            if (body.kind() == SystemBodyKind.STAR || body.kind() == SystemBodyKind.STATION_SLOT
-                    || body.kind() == SystemBodyKind.ASTEROID_BELT) {
-                continue;
-            }
-            // A moon shares its parent's cell, and the scan below can only reach one once the parent
-            // already HAS a dimension (an unrealized parent would be picked as the target first), so
-            // the parent found here is always realizable into a link.
-            if (parentBody == null && body.kind() != SystemBodyKind.MOON) {
-                parentBody = body;
-            }
-            // The variant is a body's rank among the worlds SHARING this cell, and it must be counted
-            // exactly the way the generator assigned it — a planet is 0 and its moons follow — or a
-            // realized moon would materialize a different world than the one that was scanned.
-            if (target == null && body.kind().canDescend()
-                    && body.dimId() == Constants.INVALID_PLANET) {
-                target = body;
-                variant = seen;
-            }
-            seen++;
+        List<SystemBody> here = registry.realizableBodiesAt(bodyCell);
+        if (variant >= here.size()) {
+            return Constants.INVALID_PLANET;
         }
-        if (target == null) {
+        SystemBody target = here.get(variant);
+        if (!target.kind().canDescend() || target.dimId() != Constants.INVALID_PLANET) {
+            return Constants.INVALID_PLANET;
+        }
+        // The parent a moon hangs off: the first NON-moon of the same cell. A moon shares its
+        // parent's cell by construction, so the family is right here.
+        SystemBody parentBody = null;
+        for (SystemBody body : here) {
+            if (body.kind() != SystemBodyKind.MOON) {
+                parentBody = body;
+                break;
+            }
+        }
+        // A moon whose parent is not in its own cell cannot be built: the family is what gives it its
+        // star, its orbit and its sky, and by construction the parent is always here.
+        if (parentBody == null && target.kind() == SystemBodyKind.MOON) {
             return Constants.INVALID_PLANET;
         }
 
@@ -153,7 +153,7 @@ public final class PlanetRealizer {
             return Constants.INVALID_PLANET;
         }
         star.addPlanet(props);
-        if (!registry.realizeBody(bodyCell, dimId)) {
+        if (!registry.realizeBody(bodyCell, variant, dimId)) {
             LOGGER.error("[UNIVERSE] realized dimension {} for {} but the body could not be rewritten - "
                     + "the world exists and nothing points at it", dimId, bodyCell.cellKey());
             return Constants.INVALID_PLANET;

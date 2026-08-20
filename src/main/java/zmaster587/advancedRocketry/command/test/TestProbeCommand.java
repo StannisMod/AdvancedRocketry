@@ -5230,7 +5230,21 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
                             parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
                             0L, 0L, 0L);
-            int dimId = zmaster587.advancedRocketry.universe.PlanetRealizer.realize(server, cell);
+            // A cell names a family - a planet and the moons that share its address - so the probe
+            // states WHICH of them it means. Default 0, the planet, with an optional variant arg;
+            // a caller that wants the moon has to say so, exactly as a descent does.
+            int variant = args.length >= 5 ? parseIntOr(args[4], 0) : 0;
+            java.util.List<zmaster587.advancedRocketry.universe.SystemBody> family =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server) == null
+                            ? java.util.Collections.<zmaster587.advancedRocketry.universe.SystemBody>emptyList()
+                            : zmaster587.advancedRocketry.universe.UniverseRegistry.get(server)
+                                    .realizableBodiesAt(cell);
+            if (variant < 0 || variant >= family.size()) {
+                send(sender, "{\"ok\":false,\"reason\":\"no body with that variant in the cell\"}");
+                return;
+            }
+            int dimId = zmaster587.advancedRocketry.universe.PlanetRealizer.realize(server,
+                    family.get(variant));
             if (dimId == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
                 send(sender, "{\"ok\":false,\"reason\":\"nothing landable in that cell\"}");
                 return;
