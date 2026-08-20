@@ -166,7 +166,7 @@ public final class SpaceSubsystem {
      * Put {@code replacement} in place and hand back the way BACK. Closing the handle restores
      * whatever was live at install time — the production subsystem, a previous install, or nothing.
      *
-     * <p>This is the whole test seam, and the shape it replaces is ledger #235: a setter that took
+     * <p>This is the whole test seam, and the shape it replaces was a filed defect: a setter that took
      * five services, kept no copy of them, and offered a "clear" that assigned five nulls. The
      * production subsystem was then gone for the rest of the boot, because the hook that builds it
      * runs once per server start.</p>

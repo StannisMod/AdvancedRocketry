@@ -1356,7 +1356,7 @@ private String chat() throws Exception {
      * JUMP-4, the posture half: what the arrival returns is the posture the crew member is IN, not the
      * one he had when the jump fired.
      *
-     * <p>The defect (ledger #212): the crew is captured ONCE, at the departure cut, and both re-seats
+     * <p>The defect: the crew is captured ONCE, at the departure cut, and both re-seats
      * replay that frozen record. Hyperspace is livable by JUMP-2 — stand up, walk, use the ship — so a
      * crew member who stood up in the corridor was force-mounted back into the seat on arrival, undoing
      * an entire flight's worth of what the interval invited him to do.

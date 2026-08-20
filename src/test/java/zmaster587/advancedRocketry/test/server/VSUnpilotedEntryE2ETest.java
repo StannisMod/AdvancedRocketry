@@ -43,7 +43,7 @@ import static org.junit.Assert.assertTrue;
  * <p>Narrowing the probe stack's slot set to its own slots (the binder used to see the whole pool) did
  * NOT fix it, which rules that hypothesis out by control. A server JVM is started per CLASS here
  * ({@code @BeforeClass}/{@code @AfterClass}), so a class of its own gives this leg a boot in which it is
- * the FIRST consumer — the home the bug ledger asked for rather than a red shipped or an order pinned
+ * the FIRST consumer — the home this leg needs rather than a red shipped or an order pinned
  * to hide which scenario lands third.</p>
  *
  * <p>Gated on the server's real VS presence (run with {@code -PwithVS}); skips cleanly otherwise.</p>

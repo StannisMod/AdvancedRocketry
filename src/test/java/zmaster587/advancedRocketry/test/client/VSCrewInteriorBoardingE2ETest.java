@@ -526,7 +526,7 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest
                 assemble.contains("\"rocketCount\":0"));
 
         // NOT a latency budget: raising this from 200 to 600 ticks was measured and changed
-        // nothing (2/4 red either way, ledger #60) - VS logs the queued spawn by name and the ship
+        // nothing (2/4 red either way) - VS logs the queued spawn by name and the ship
         // still never enters the queryable registry. Left at the original budget so a failing run
         // fails fast.
         int all = shipsBefore;

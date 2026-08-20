@@ -647,7 +647,7 @@ public final class ShipTransitManager {
                 freeLane(t);
                 it.remove(); // done: the ship now occupies the target cell (its refcount stays held)
                 // Record the arrival in the durable ledger (no longer amnesiac) and mark the arrived cell
-                // diverged so an eviction FLUSHES it rather than discarding the ship (closes ledger #79).
+                // diverged so an eviction FLUSHES it rather than discarding the ship.
                 // The ledger takes the PLACED coordinate, not the aimed one: the descent trigger reads
                 // the ledger (not the pose), so a ring applied to the pose alone would leave the
                 // trigger measuring from the cell centre and firing anyway.

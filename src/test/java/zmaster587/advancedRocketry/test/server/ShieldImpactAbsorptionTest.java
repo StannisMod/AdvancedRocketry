@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
  * Absorption is all-or-nothing, so
  * if the coil could only release a per-tick sliver it would refuse the bolt outright (and burn the
  * sliver). This pins that a well-charged coil actually stops the bolt at the shell and pays its full
- * cost — guarding the fix that unthrottles coil extraction (ledger #99).
+ * cost — guarding the fix that unthrottles coil extraction.
  *
  * <p>The emitter absorbs in its {@code update()} (via {@code containUnauthorizedEntities}); the test
  * drives one deterministic emitter tick with {@code /artest tile force-tick} after spawning the bolt
@@ -62,7 +62,7 @@ public class ShieldImpactAbsorptionTest extends AbstractSharedServerTest {
 
         String boltInfo = exec("artest entity info " + DIM + " " + boltId);
         assertTrue("the powered coil did not absorb the energy projectile (it survived): a full coil "
-                        + "cannot block a hit larger than its per-tick intake — ledger #99:\n" + boltInfo,
+                        + "cannot block a hit larger than its per-tick intake:\n" + boltInfo,
                 boltInfo.contains("\"isAlive\":false") || boltInfo.contains("\"isDead\":true"));
 
         long storedAfter = readStored(read(ex, gz));

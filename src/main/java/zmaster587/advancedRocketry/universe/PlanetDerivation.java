@@ -317,7 +317,7 @@ public final class PlanetDerivation {
         //
         // While this was a single neutral-albedo reading, the derivation and the dimension model
         // answered one question with two numbers: a `greenhouse` world (albedo 0.75) was reported
-        // 22.7 % warmer than it turned out to be and an `ice` world 13 % (ledger #289).
+        // 22.7 % warmer than it turned out to be and an `ice` world 13 %.
         final int orbit = Math.max(1, orbitalDistance);
         DoubleToIntFunction temperatureForAlbedo =
                 albedo -> AstronomicalBodyHelper.getAverageTemperature(star, orbit, pressure, albedo);

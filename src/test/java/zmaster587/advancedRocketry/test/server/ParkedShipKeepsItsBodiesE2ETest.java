@@ -10,7 +10,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Ledger #143's own repro, at the server tier, against the real universe registry: <b>a body does not
+ * The filed defect's own repro, at the server tier, against the real universe registry: <b>a body does not
  * leave its cell because time passed.</b>
  *
  * <p>The measured defect was a pilot sitting still in a cell that held six bodies and watching all six
@@ -120,7 +120,7 @@ public class ParkedShipKeepsItsBodiesE2ETest extends AbstractSharedServerTest {
                 Math.abs(movedX) > zmaster587.advancedRocketry.space.GalacticCoord.CELL);
 
         // THE CLAUSE. Same cell key, same occupants, same count.
-        assertEquals("a body's own cell may not change because time passed (ledger #143): " + after,
+        assertEquals("a body's own cell may not change because time passed: " + after,
                 cellKey, dimCell(after));
         assertEquals("...and the cell must still report the same number of bodies standing in it: "
                 + before + " -> " + after, bodiesBefore, jsonInt(after, "bodiesAt"));

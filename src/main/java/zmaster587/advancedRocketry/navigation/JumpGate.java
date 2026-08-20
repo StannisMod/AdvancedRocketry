@@ -303,7 +303,7 @@ public final class JumpGate {
                 // in hyperspace and came back to where it started, and anything that did not travel
                 // WITH it (its crew) was simply left behind. Measured in the 2026-07-28 playtest,
                 // where the destinations shared a cell because the layout had collapsed them
-                // (INV-UNI-01, ledger #118) - which is precisely when a pilot picks "another planet"
+                // (INV-UNI-01) - which is precisely when a pilot picks "another planet"
                 // and gets his own address.
                 GalacticCoord here = ship.currentCell();
                 GalacticCoord there = ship.target();

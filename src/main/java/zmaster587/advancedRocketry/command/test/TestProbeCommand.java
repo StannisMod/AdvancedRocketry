@@ -1963,7 +1963,7 @@ public class TestProbeCommand extends CommandBase {
         // floor into the ship's empty subspace.
         // spawn-diag [reset] — READ-ONLY snapshot (or reset) of the VS spawn diagnostics
         // (VSIntegration.spawn* statics, written by the ship manager itself). Localises where a
-        // queued+named tier-2 ship dies (ledger #60): spawnNewShipsRuns=0 -> never processed;
+        // queued+named tier-2 ship dies: spawnNewShipsRuns=0 -> never processed;
         // runs>0 & maxShips=0 -> processed but addShip skipped/threw; maxShips>=1 -> registered then destroyed.
         if (args.length >= 1 && "spawn-diag".equalsIgnoreCase(args[0])) {
             if (args.length >= 2 && "reset".equalsIgnoreCase(args[1])) {

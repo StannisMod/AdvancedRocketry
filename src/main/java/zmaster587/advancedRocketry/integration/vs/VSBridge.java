@@ -1238,7 +1238,7 @@ final class VSBridge {
     // ---- Anchored (by-ship-id) frame access -------------------------------------------------
     // A capture EPISODE must keep talking to the ship it was captured on. Resolving the ship by
     // world-AABB containment every call re-picks it, and with several loaded ships whose grown
-    // boxes overlap, first-match can flip mid-episode (ledger #36/#45). These variants take the
+    // boxes overlap, first-match can flip mid-episode. These variants take the
     // ship's UUID string (its ShipData identity) and answer for THAT ship or not at all.
 
     /** The loaded ship whose {@code ShipData} UUID string equals {@code shipId}, or null. */
@@ -1416,7 +1416,7 @@ final class VSBridge {
      *  external-move guard's carry-widening AND the held-carry velocity subtraction — was therefore
      *  blind client-side, and the client capture thrashed on any fast-moving ship (drop+re-capture
      *  every tick once the per-tick step crossed the bare 0.2 epsilon; reproduced in-harness on a
-     *  level fast climb, ledger #47). The client instead derives the velocity the only honest way
+     *  level fast climb). The client instead derives the velocity the only honest way
      *  it can: MEASURING the observed transform's per-tick delta. */
     static double[] shipVelocityAtPointFor(World world, String shipId, double x, double y, double z) {
         try {

@@ -18,7 +18,7 @@ import static org.junit.Assert.assertSame;
  * runs once per server start and can never run again, the first test scenario in a boot to use that
  * uninstall left the whole subsystem answering {@code null} for the rest of the server's life — and
  * every production reader (the flight computer's tick, the login restore, the jump trigger) then did
- * nothing at all, through its own null check, without a line in any log. Ledger #235.</p>
+ * nothing at all, through its own null check, without a line in any log.</p>
  *
  * <p><b>Why these assertions can fail.</b> Each names a state the old shape actually produced: the
  * restore leg was {@code null} rather than the previous subsystem, and the nested leg unwound to

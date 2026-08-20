@@ -52,7 +52,7 @@ public class SystemBodiesFeedFollowsTheCellE2ETest extends AbstractSharedServerT
      * {@code UniverseRegistry.storedAnchorNear}, whose reach is HALF THE SUPER-CELL — about 2 501 180
      * cells at the shipped spacing — so {@code sy = 5000} is 0.2 % of the way out and both cells were
      * squarely inside the shipped solar system's own neighbourhood. The feed was answering correctly:
-     * it offered the sun, the overworld and a moon at 1.6·10¹¹ blocks (ledger #291).</p>
+     * it offered the sun, the overworld and a moon at 1.6·10¹¹ blocks.</p>
      *
      * <p>Stated as a multiple of the reach rather than as a literal, so the fixture cannot silently
      * move back inside the neighbourhood the day the spacing is retuned.</p>

@@ -9,7 +9,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Ledger #164's contract, at the server tier: <b>a jump's aim moves with the SPACE clock and with
+ * The filed defect's contract, at the server tier: <b>a jump's aim moves with the SPACE clock and with
  * nothing else.</b>
  *
  * <p>The measured defect was a jump that arrived about 8&nbsp;000 blocks from the moon it was aimed
@@ -112,7 +112,7 @@ public class AimAndArrivalShareOneClockE2ETest extends AbstractSharedServerTest 
             long[] aimAfterLag = targetLocal(afterLag);
 
             double drift = distance(aimAfterSpaceMove, aimAfterLag);
-            assertTrue("THE CONTRACT (ledger #164): an aim is evaluated on the SPACE clock, so a clock"
+            assertTrue("THE CONTRACT: an aim is evaluated on the SPACE clock, so a clock"
                             + " that is not the space clock may not move it. A proxy answering "
                             + SPLIT_TICKS + " ticks behind moved the aim " + drift + " blocks"
                             + " (allowed " + ALLOWED_DRIFT_BLOCKS + "). The control above proves the"

@@ -547,7 +547,7 @@ public class UniverseRegistryTest {
         assertTrue("the player POI must appear in bodiesAt", sawStation);
     }
 
-    // ── A recorded name has a LIFECYCLE (ledger #154, #155) ─────────────────────────────────────
+    // ── A recorded name has a LIFECYCLE ─────────────────────────────────────
 
     /** A catalogued star's authored planet, wired through the lookup seam. */
     private static DimensionProperties bodyOfStar(StellarBody host, int dimId, int dist, double theta) {
@@ -560,7 +560,7 @@ public class UniverseRegistryTest {
     }
 
     /**
-     * Ledger #155. A dimension id goes straight back into circulation when a planet is deleted, so a
+     * A dimension id goes straight back into circulation when a planet is deleted, so a
      * name kept on the id alone is inherited by whatever is generated next. The two bodies then
      * belong to DIFFERENT systems, so nothing downstream ever compares them: the collision audit is
      * per-system, and attribution answers happily with the wrong anchor. The name has to know which
@@ -615,7 +615,7 @@ public class UniverseRegistryTest {
     }
 
     /**
-     * Ledger #154. Containment is what makes member&rarr;anchor attribution work, so a recorded name
+     * Containment is what makes member&rarr;anchor attribution work, so a recorded name
      * that no longer lies inside its own system's box names a cell that attributes to nothing: the
      * body stays listed and jumpable and can never be arrived at. Moving a star's anchor does exactly
      * that to every name recorded under the old layout, and nothing said so.

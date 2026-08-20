@@ -371,7 +371,7 @@ public final class SystemContent {
      * was {@code [2, 509]}, i.e. the POSITIVE OCTANT ONLY. Every body with a negative offset was
      * clamped flat onto the faces {@code x=2}/{@code y=2}, so half of every orbit collapsed into a
      * handful of cells and several real bodies ended up sharing one address, though at most one real
-     * body may ever hold a cell name (ledger #118). Measured 2026-07-28: dim 0's own cell derived as
+     * body may ever hold a cell name. Measured 2026-07-28: dim 0's own cell derived as
      * {@code (-3,0,25)} and clamped to {@code (2,2,25)} — which is exactly the cell a ship entering
      * space from Earth then settled in.
      * Centring the box on the anchor is also what this class's javadoc and

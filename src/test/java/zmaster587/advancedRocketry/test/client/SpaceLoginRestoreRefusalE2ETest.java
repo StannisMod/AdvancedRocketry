@@ -77,7 +77,7 @@ public class SpaceLoginRestoreRefusalE2ETest extends AbstractSpaceLoginRestoreCl
         // Placement is read from the SERVER, not from the client's rendered dimension. That is not a
         // convenience: measured here, the two DISAGREE on this path — the server has him in the
         // overworld at his spawn point while the client is still rendering the slot world it was in
-        // (ledger #170). That split is a pre-existing property of the orphan path, it is filed, and it
+        //. That split is a pre-existing property of the orphan path, it is filed, and it
         // is not what this test is about; what this test must not do is read the disagreeing instrument
         // and call the placement broken. `playerDimField` is quoted alongside `playerDim` because they
         // are maintained separately and a placement that moved one but not the other is a real failure

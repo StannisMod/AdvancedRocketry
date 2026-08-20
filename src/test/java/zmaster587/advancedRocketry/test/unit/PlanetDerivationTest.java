@@ -85,7 +85,7 @@ public class PlanetDerivationTest {
      * derivation used to end on the neutral-albedo overload, so the two disagreed by
      * {@code ((1 − a)/0.7)^¼} for every world whose type states an albedo of its own. Measured on the
      * shipped table: a {@code greenhouse} world (a = 0.75) landed 22.7 % colder than it scanned and an
-     * {@code ice} world 13 % (ledger #289).</p>
+     * {@code ice} world 13 %.</p>
      *
      * <p>What this pins is not the second pass but the AGREEMENT: whatever law either side uses, the
      * number a profile carries has to be the number the dimension model produces from that profile's

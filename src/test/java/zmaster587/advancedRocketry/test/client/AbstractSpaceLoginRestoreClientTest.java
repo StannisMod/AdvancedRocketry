@@ -204,7 +204,7 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
 
     /**
      * And the ceiling of that band. The reported symptom is a ship that is ALMOST STATIONARY -
-     * settling - which is also the regime ledger #108's mechanism lives in (~0.15 blocks/tick).
+     * settling - which is also the regime the capture-mode flip lives in (~0.15 blocks/tick).
      * Holding the throttle through the window instead let the ship reach its cruise cap, two blocks
      * per tick, and there the client's record simply went silent: a different regime with its own
      * suspected defect, tracked separately. Expressed as a RATE, in blocks per tick: nothing damps a
@@ -811,7 +811,7 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
      * tried here first; measured twice on a settled ship in a CELL, at 4 and at 12 blocks/second, the
      * deck travelled 0.870 and 0.862 blocks in the same window. Tripling the command changed the
      * result by one percent, so the cruise is not being realized here at all and those numbers are
-     * drift. That is a finding about ships in cells, recorded in the ledger, and it is not this
+     * drift. That is a finding about ships in cells, filed separately, and it is not this
      * family's subject.
      *
      * <p>So the deck is driven through the computer's own PROBE command channel: per-tile, addressed
@@ -1679,7 +1679,7 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
     /**
      * WHO moved the body, as numbers rather than inference. A nonzero incoming ship-relative motion
      * names a VELOCITY writer; a carry that does not match what the deck is doing names the held
-     * carry; ticks on the hull path name the capture-mode flip that ledger #108 was; input ticks say
+     * carry; ticks on the hull path name the capture-mode flip itself; input ticks say
      * the body was not actually idle and the whole window is void.
      */
     protected String writerSummary(String history, long fromTick) {

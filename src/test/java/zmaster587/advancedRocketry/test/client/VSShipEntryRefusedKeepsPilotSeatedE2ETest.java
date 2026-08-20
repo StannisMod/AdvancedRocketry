@@ -58,7 +58,7 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
-    /** Ledger #264 discriminator: the seat's own delivery counters, sampled across the climb. */
+    /** The refused-entry discriminator: the seat's own delivery counters, sampled across the climb. */
     private static final Pattern RECEIVED = Pattern.compile("\"received\":(\\d+)");
     private static final Pattern DELIVERED = Pattern.compile("\"delivered\":(\\d+)");
     private static final Pattern LEDGER = Pattern.compile("\"ledger\":(-?\\d+)");
@@ -237,7 +237,7 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
                     // force-loads the ship's subspace yard nor touches a chunk, so the climb it is
                     // watching gets exactly the resources it would have got unwatched.
                     String s = exec("artest vs ship-info 0 id " + shipUuid);
-                    // THE DISCRIMINATOR for ledger #264, sampled ACROSS the dying climb rather than
+                    // THE DISCRIMINATOR for the refused-entry defect, sampled ACROSS the dying climb rather than
                     // after it. Three candidate causes, and the climb trace alone cannot separate
                     // them: the tile instance is being replaced under the ship (afcIdentity changes),
                     // the computer is not ticking at all (controllerTicks flat), or the packet

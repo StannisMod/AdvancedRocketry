@@ -179,7 +179,7 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractSharedVsClientE2ETest 
             // render cull: a lone "DRAWN" is a natural first-try render (fix idle), while a
             // "not drawn ...subject-culled..." line FOLLOWED by a later "DRAWN" is the re-stage
             // recovering a would-be-red run - the direct evidence the cull is per-spot, not run-global
-            // (ledger #101). Without it a pass is silent about the fix and could be the muffler, not the cure.
+            //. Without it a pass is silent about the fix and could be the muffler, not the cure.
             System.out.println(String.format(java.util.Locale.ROOT,
                     "[modelgate] legA draw attempt %d at [%.1f,%.1f,%.1f] -> %s",
                     drawAttempts, spot[0], spot[1], spot[2], s.drawn ? "DRAWN" : "not drawn " + s.diagnostic));
@@ -216,7 +216,7 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractSharedVsClientE2ETest 
                 rotated == 0);
     }
 
-    /** Re-stage the subject at most this many times when the client does not draw it (ledger #101). At
+    /** Re-stage the subject at most this many times when the client does not draw it. At
      *  the measured ~2/3 per-spot draw rate under load, three fresh spots drive a spurious "never drawn"
      *  below ~4 %, while a run-GLOBAL cull still exhausts the budget and self-reports it. */
     private static final int MAX_STAGINGS = 3;
@@ -280,7 +280,7 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractSharedVsClientE2ETest 
      *  opened before that reads zero samples on a client that draws models perfectly well.
      *
      *  <p>Returns {@link Sampling#drawn}=false rather than asserting, so the caller can RE-STAGE at a
-     *  fresh spot (ledger #101: a world body inside a ship box is intermittently not drawn under load).
+     *  fresh spot (a world body inside a ship box is intermittently not drawn under load).
      *  When it returns false the diagnostic classifies the miss over the polled window from the two
      *  render-stage controls — {@code cameraHookCalls} (frames) and {@code modelRotationCalls} (every
      *  living model, player included) — so a red run names its own failure stage:

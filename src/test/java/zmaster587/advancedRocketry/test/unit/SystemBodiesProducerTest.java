@@ -384,7 +384,7 @@ public class SystemBodiesProducerTest {
     }
 
     /**
-     * Ledger #151's half that lives on the server. A star has no dimension of its own and carried
+     * The half of that defect which lives on the server. A star has no dimension of its own and carried
      * {@code INVALID_PLANET}, which the client's lenient lookup answers with the OVERWORLD — so the
      * star was drawn wearing Earth's texture and would be captioned with Earth's name. An AUTHORED
      * star has a proxy dimension; a procedural one (negative star id) does not, and inventing an id

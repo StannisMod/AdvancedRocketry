@@ -1600,7 +1600,7 @@ public class XMLPlanetLoader {
         // Set temperature. From the LOCAL star object, not through properties.getStar(): the star is
         // not in the catalogue yet (see the line above), so the lookup would come back null here and
         // the world would be born at the temperature of deep space. The albedo is the world's own, so
-        // an authored planet and a derived one are warmed by the same law (ledger #289).
+        // an authored planet and a derived one are warmed by the same law.
         properties.setAverageTemp(AstronomicalBodyHelper.getAverageTemperature(star,
                 properties.getSolarOrbitalDistance(), properties.getAtmosphereDensity(),
                 properties.getAlbedo()));

@@ -361,7 +361,7 @@ public class ShipTransitManagerTest {
         assertNotNull(e);
         assertEquals("arrival settles the ledger (no longer amnesiac)", ShipLedger.State.SETTLED, e.state);
         assertEquals("settled at the target cell", cell(2), e.coord);
-        assertTrue("the arrived cell is marked dirty so an eviction flushes it (closes ledger #79)",
+        assertTrue("the arrived cell is marked dirty so an eviction flushes it",
                 space.isDirty(cell(2)));
     }
 
