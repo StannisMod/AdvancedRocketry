@@ -116,6 +116,38 @@ public class Tier1AimsAtWhatThisWorldKnowsE2ETest extends AbstractSharedServerTe
     }
 
     @Test
+    public void withResearchOffThePlaceBoundSetGatesNothing() throws Exception {
+        // The other half of the same knob, and the one a pack that does not want research at all
+        // relies on: with the master switch off there must be NO new gate anywhere. Measured against
+        // the hardest case - a world minted a moment ago, which by construction is in neither the
+        // pack's authored set nor this world's own, and which must still be selectable.
+        exec("artest config set planetsMustBeDiscovered false");
+        try {
+            String installed = exec("artest space gen-install 0.9 2000000 987654321");
+            assertTrue("the procedural generator must install: " + installed,
+                    installed.contains("\"ok\":true"));
+            String found = exec("artest space find-procedural 4");
+            assertTrue("a dense procedural galaxy must offer a landable body: " + found,
+                    found.contains("\"ok\":true"));
+            String realized = exec("artest space realize " + intField(found, "sx") + " "
+                    + intField(found, "sy") + " " + intField(found, "sz"));
+            assertTrue("realization must mint a world to ask about: " + realized,
+                    realized.contains("\"ok\":true"));
+            int fresh = intField(realized, "dim");
+
+            String reply = halves(0, fresh);
+            assertTrue("arrangement: nobody may have taught this world globally: " + reply,
+                    reply.contains("\"global\":false"));
+            assertTrue("arrangement: nor locally: " + reply, reply.contains("\"local\":false"));
+            assertTrue("with research off a pad must still be offered it - the place-bound set is"
+                    + " additive over a gate that is not there: " + reply, known(0, fresh));
+        } finally {
+            exec("artest space gen-reset");
+            exec("artest config set planetsMustBeDiscovered true");
+        }
+    }
+
+    @Test
     public void anAddressDepositedHereBecomesSomethingAPadHereCanBeAimedAt() throws Exception {
         // The sweep runs with research OFF, where what the instrument reaches is resolved outright -
         // the pacing is a different mechanic with its own test, and waiting for it here would only

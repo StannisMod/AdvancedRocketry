@@ -2540,8 +2540,23 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemMemoryCrystal);
             // A deliberately BLANK crystal: the starter addresses would make every count a test
             // asserts depend on the world's planet list rather than on what the scan resolved.
-            zmaster587.advancedRocketry.item.ItemMemoryCrystal.writeMemory(stack,
-                    new zmaster587.advancedRocketry.navigation.CrystalMemory());
+            zmaster587.advancedRocketry.navigation.CrystalMemory seeded =
+                    new zmaster587.advancedRocketry.navigation.CrystalMemory();
+            // ...unless a caller names ONE world it must hold. A test that needs the deposit to be
+            // the only possible source of a piece of knowledge cannot use a crystal the survey
+            // filled, because the survey teaches this world as it goes.
+            if (args.length >= 6) {
+                int namedDim = parseIntOr(args[5], zmaster587.advancedRocketry.api.Constants.INVALID_PLANET);
+                if (namedDim != zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                    seeded.record(new zmaster587.advancedRocketry.navigation.CrystalEntry(
+                            zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                                    7000L, 0L, 0L, 0L, 0L, 0L),
+                            "probe-named-" + namedDim,
+                            zmaster587.advancedRocketry.universe.SystemBodyKind.PLANET,
+                            zmaster587.advancedRocketry.universe.InfoTier.TELESCOPE, 1L, namedDim));
+                }
+            }
+            zmaster587.advancedRocketry.item.ItemMemoryCrystal.writeMemory(stack, seeded);
             scope.setInventorySlotContents(
                     zmaster587.advancedRocketry.tile.multiblock.TileObservatory.SLOT_CRYSTAL, stack);
             send(sender, "{\"ok\":true,\"addresses\":" + crystalAddresses(scope) + "}");
@@ -2658,6 +2673,10 @@ public class TestProbeCommand extends CommandBase {
                 .append(",\"origin\":").append(origin == null ? "null" : "\"" + origin.cellKey() + "\"")
                 .append(",\"scanning\":").append(scan != null)
                 .append(",\"addresses\":").append(crystalAddresses(scope))
+                // WHICH worlds the crystal holds, read without touching anything. A test that had to
+                // call `deposit` to find out would have deposited them, and could no longer show
+                // that pressing the button is what teaches this world.
+                .append(",\"crystalDims\":").append(crystalDims(scope))
                 .append(",\"lastDiscoveries\":").append(scope.getLastScanDiscoveries())
                 // Where the OPERATOR has the instrument pointed — the tile's own pick, which is what
                 // a GUI click changes and what the next scan will use. Distinct from the region a
@@ -2720,6 +2739,29 @@ public class TestProbeCommand extends CommandBase {
             return -1;
         }
         return zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(stack).size();
+    }
+
+    /** The dimensions the crystal in that slot names, as a JSON array. Reads nothing into anything. */
+    private String crystalDims(zmaster587.advancedRocketry.tile.multiblock.TileObservatory scope) {
+        net.minecraft.item.ItemStack stack = scope.getStackInSlot(
+                zmaster587.advancedRocketry.tile.multiblock.TileObservatory.SLOT_CRYSTAL);
+        if (!zmaster587.advancedRocketry.item.ItemMemoryCrystal.isCrystal(stack)) {
+            return "[]";
+        }
+        StringBuilder out = new StringBuilder("[");
+        boolean first = true;
+        for (zmaster587.advancedRocketry.navigation.CrystalEntry entry
+                : zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(stack).list()) {
+            if (!entry.namesBody()) {
+                continue;
+            }
+            if (!first) {
+                out.append(',');
+            }
+            out.append(entry.dimId());
+            first = false;
+        }
+        return out.append(']').toString();
     }
 
     private zmaster587.advancedRocketry.tile.multiblock.TileObservatory observatoryAt(
