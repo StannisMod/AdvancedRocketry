@@ -88,7 +88,14 @@ public class VSJumpCarriesLooseBodiesE2ETest extends AbstractSharedServerTest {
         assertTrue("the jump never completed; last tick=" + lastTick, targetDim >= 0);
 
         // The placement is retry-based like the crew's, so drive the same retries the crew leg drives.
+        // Deliberately NOT pre-loading the arrival's chunks. A jump arrives where nobody is standing -
+        // that is the ordinary case, not an edge one - and placing the bodies there is the arrival's
+        // own job. Warming them from the test would hide exactly the defect this test exists to catch:
+        // vanilla refuses an entity whose chunk is not loaded, silently, and the carry used to count
+        // that refusal as a success and drop the body for good.
+
         String arrived = "";
+        String looseReport = "";
         boolean carried = false;
         for (int i = 0; i < 60 && !carried; i++) {
             exec("artest space transit-tick");
@@ -97,14 +104,21 @@ public class VSJumpCarriesLooseBodiesE2ETest extends AbstractSharedServerTest {
                 double px = extractDouble(arrived, "posX");
                 double py = extractDouble(arrived, "posY");
                 double pz = extractDouble(arrived, "posZ");
-                carried = extractInt(exec("artest space loose-body-count " + targetDim + " " + px + " "
-                        + py + " " + pz + " " + ABOARD_RADIUS), "count") >= 1;
+                looseReport = exec("artest space loose-body-count " + targetDim + " " + px + " "
+                        + py + " " + pz + " " + ABOARD_RADIUS);
+                carried = extractInt(looseReport, "count") >= 1;
             }
             Thread.sleep(250);
         }
 
+        // The count alone answers zero for three different failures — never carried, carried and
+        // drifted off, and carried onto a ship that is not where this measurement is taken from — so
+        // the nearest body's own position and distance are carried into the message. A red that says
+        // "the nearest one is 137 blocks below" is a different bug report from one that says there is
+        // no body in this world at all, and the two used to be the same sentence.
         assertTrue("a body lying on the deck must arrive WITH the ship — the crew is not the only "
-                + "thing aboard a jump. Ship report at the destination: " + arrived, carried);
+                + "thing aboard a jump. Ship report at the destination: " + arrived
+                + " / bodies: " + looseReport, carried);
 
         // ...and it is not still lying in the cell it left, which is the failure this replaces: a body
         // left behind is also "somewhere", and only asking both ends tells the two apart.

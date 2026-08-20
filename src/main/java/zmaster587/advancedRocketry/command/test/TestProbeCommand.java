@@ -2350,6 +2350,17 @@ public class TestProbeCommand extends CommandBase {
         return m;
     }
 
+    /** Live item entities in {@code world} — the denominator for "the nearest one is N blocks away". */
+    private static int countLooseItems(net.minecraft.world.WorldServer world) {
+        int n = 0;
+        for (net.minecraft.entity.Entity e : world.loadedEntityList) {
+            if (e instanceof net.minecraft.entity.item.EntityItem && !e.isDead) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     private static net.minecraft.world.WorldServer vsWorld(ICommandSender sender, int dim) {
         if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
             net.minecraftforge.common.DimensionManager.initDimension(dim);
@@ -4099,10 +4110,54 @@ public class TestProbeCommand extends CommandBase {
             }
             double bx = parseDoubleOr(args[2], 0), by = parseDoubleOr(args[3], 0),
                     bz = parseDoubleOr(args[4], 0), r = parseDoubleOr(args[5], 8);
+            // Bring the region in before counting what is in it. A cell with no player in it lets its
+            // chunks go dormant, and an entity in a dormant chunk is saved rather than lost - but it
+            // is not in `loadedEntityList`, so a count taken over a sleeping region reports zero and
+            // reads as "it is not there". That is a measurement of chunk residency wearing the
+            // clothes of a measurement about the world's contents, and it cost a day of hunting a
+            // carriage bug that did not exist.
+            for (int cx = net.minecraft.util.math.MathHelper.floor((bx - r) / 16.0);
+                    cx <= net.minecraft.util.math.MathHelper.floor((bx + r) / 16.0); cx++) {
+                for (int cz = net.minecraft.util.math.MathHelper.floor((bz - r) / 16.0);
+                        cz <= net.minecraft.util.math.MathHelper.floor((bz + r) / 16.0); cz++) {
+                    w.getChunkProvider().provideChunk(cx, cz);
+                }
+            }
             java.util.List<net.minecraft.entity.item.EntityItem> found = w.getEntitiesWithinAABB(
                     net.minecraft.entity.item.EntityItem.class,
                     new net.minecraft.util.math.AxisAlignedBB(bx, by, bz, bx, by, bz).grow(r));
-            send(sender, "{\"ok\":true,\"count\":" + found.size() + "}");
+            // The count alone cannot say WHICH way it failed. Zero is the answer when a body was
+            // never carried here, when it was carried and has drifted off, and when it is here and
+            // the point being measured from is wrong — three different defects with one reading. So
+            // the NEAREST body in the whole world is reported beside the count, with its position and
+            // its distance, and absence is a value rather than a missing field: nothing here at all
+            // answers found:false with a distance of -1, which no real body can produce.
+            net.minecraft.entity.item.EntityItem nearest = null;
+            double best = Double.MAX_VALUE;
+            for (net.minecraft.entity.Entity e : w.loadedEntityList) {
+                if (!(e instanceof net.minecraft.entity.item.EntityItem) || e.isDead) {
+                    continue;
+                }
+                double dx = e.posX - bx, dy = e.posY - by, dz = e.posZ - bz;
+                double d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 < best) {
+                    best = d2;
+                    nearest = (net.minecraft.entity.item.EntityItem) e;
+                }
+            }
+            Map<String, Object> loose = new LinkedHashMap<>();
+            loose.put("ok", true);
+            loose.put("count", found.size());
+            loose.put("nearestFound", nearest != null);
+            loose.put("nearestDist", nearest == null ? -1.0 : Math.sqrt(best));
+            loose.put("nearestX", nearest == null ? 0.0 : nearest.posX);
+            loose.put("nearestY", nearest == null ? 0.0 : nearest.posY);
+            loose.put("nearestZ", nearest == null ? 0.0 : nearest.posZ);
+            // What it is DOING, not only where it is: a body at rest on a deck and a body falling
+            // past it can occupy the same point one tick apart, and only the motion tells them apart.
+            loose.put("nearestMotionY", nearest == null ? 0.0 : nearest.motionY);
+            loose.put("itemsInWorld", countLooseItems(w));
+            send(sender, jsonMap(loose));
             return;
         }
         // transit-refresh: run the periodic re-cut of every parked ship's block snapshot, on demand.
