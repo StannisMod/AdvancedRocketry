@@ -6,7 +6,6 @@ import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraftforge.client.IRenderHandler;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
-import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBiomes;
 import zmaster587.advancedRocketry.client.render.planet.RenderAsteroidSky;
@@ -52,7 +51,6 @@ public class WorldProviderAsteroid extends WorldProviderPlanet {
     @Override
     protected void init() {
         this.hasSkyLight = true;
-        world.getWorldInfo().setTerrainType(AdvancedRocketry.planetWorldType);
 
         this.biomeProvider = new BiomeProviderSingle(AdvancedRocketryBiomes.spaceBiome);//new ChunkManagerPlanet(worldObj, worldObj.getWorldInfo().getGeneratorOptions(), DimensionManager.getInstance().getDimensionProperties(worldObj.provider.getDimension()).getBiomes());
 

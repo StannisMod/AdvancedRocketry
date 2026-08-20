@@ -41,7 +41,14 @@ public class TileGravityDampener extends TileShipComponent {
         return energy.getEnergyStored() >= POWERED_THRESHOLD;
     }
 
-    /** The exit speed this dampener fully absorbs for everyone it covers. */
+    /**
+     * The exit speed this dampener fully absorbs for everyone it covers.
+     *
+     * <p>A fraction of a BASELINE arrival rather than an absolute number of blocks per tick: what the
+     * balance actually promises is "a couple of these cover the ship a novice flies", and the speed law
+     * multiplies every arrival by the drive's generation — so an absolute figure would have detached
+     * from that promise the first time a tier moved.</p>
+     */
     public long absorbedSpeed() {
         return DriveTuning.DAMPENER_ABSORBED_SPEED;
     }

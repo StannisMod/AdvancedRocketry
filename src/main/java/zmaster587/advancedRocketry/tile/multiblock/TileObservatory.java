@@ -60,6 +60,9 @@ import java.util.Map;
 
 public class TileObservatory extends TileMultiPowerConsumer implements IModularInventory, IDataInventory, IGuiCallback {
 
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("AdvancedRocketry|Observatory");
+
     private final java.util.Map<Long, NBTTagCompound> savedDataBusNbt = new java.util.HashMap<>();
     final static int openTime = 100;
     final static int observationTime = 1000;
@@ -108,6 +111,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private static final byte START_SCAN = 19;
     private static final byte ABORT_SCAN = 20;
     private static final byte PASSIVE_SWEEP = 21;
+    private static final byte TOGGLE_WHOLE_SYSTEM = 22;
     /** Progress id of the region-scan bar; the machine's own bar keeps id 0. */
     private static final int PROGRESS_SCAN = 1;
     /**
@@ -139,14 +143,36 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private RegionScan activeScan;
     /** How many addresses the last finished scan wrote — what the operator gets told he learned. */
     private int lastScanDiscoveries;
+    /**
+     * How many of the last scan's looks a cloud stood in the way of. The crystal still gained their
+     * coordinates; what it did NOT gain is what is at them, and the operator is told which.
+     */
+    private int lastScanObscured;
     /** Which way the operator has the instrument pointed, as an index into {@link #SCAN_DIRECTIONS}. */
     private int scanDirection;
-    /** How far out, in sectors, he has it aimed. Clamped to the configured reach when it is used. */
+    /** How far out, in STEPS, he has it aimed. Clamped to the configured reach when it is used. */
     private int scanDistance = 1;
+    /**
+     * What one step of aim is worth in light years — how the operator's pick is turned into a length
+     * he can recognise. Derived from the SERVER's galaxy generator and synced, never computed on the
+     * client: a client attached to a pack whose star spacing it does not hold would quote its own.
+     */
+    private double stepLightYears;
     /** Client-side only: which way the distance button just pressed wants to move the aim. */
     private int pendingDistanceDelta;
     /** Watching the neighbourhood rather than a distant patch. The two modes are exclusive. */
     private boolean passive;
+    /**
+     * Whether a detection is followed all the way to the system's BODIES, or only its address is
+     * written down.
+     *
+     * <p>An operational choice with a cost, so it lives on the instrument rather than in the
+     * configuration: characterising every find fills a crystal many times faster and is what an
+     * operator wants over known sky, while a deep pointing into sky nobody has been to is a list of
+     * places worth flying to. Default on, because that is what the survey did before it could tell
+     * the two questions apart.</p>
+     */
+    private boolean characteriseWholeSystem = true;
 
     public TileObservatory() {
         openProgress = 0;
@@ -299,6 +325,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         }
 
         if (!world.isRemote) {
+            // Once per load: the stride is the installed generator's, and that is fixed for a world.
+            if (stepLightYears <= 0d) {
+                stepLightYears = zmaster587.advancedRocketry.universe.UniverseScale
+                        .lightYearsForCells(RegionScan.Tuning.fromConfig().strideCells());
+                markDirty();
+            }
             completeRegionScanIfDue();
         }
 
@@ -390,9 +422,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             nbt.setTag("regionScan", scan);
         }
         nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
+        nbt.setInteger("lastScanObscured", lastScanObscured);
         nbt.setInteger("scanDirection", scanDirection);
         nbt.setInteger("scanDistance", scanDistance);
+        nbt.setDouble("scanStepLy", stepLightYears);
         nbt.setBoolean("scanPassive", passive);
+        nbt.setBoolean("scanWholeSystem", characteriseWholeSystem);
     }
 
     @Override
@@ -412,9 +447,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (arr != null) for (int v : arr) printedButtonsThisSeed.add(v);
         activeScan = nbt.hasKey("regionScan") ? RegionScan.readFromNBT(nbt.getCompoundTag("regionScan")) : null;
         lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
+        lastScanObscured = nbt.getInteger("lastScanObscured");
         scanDirection = nbt.getInteger("scanDirection");
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
+        stepLightYears = nbt.getDouble("scanStepLy");
         passive = nbt.getBoolean("scanPassive");
+        characteriseWholeSystem = !nbt.hasKey("scanWholeSystem") || nbt.getBoolean("scanWholeSystem");
 
         if (world != null && world.isRemote && prevSeed != lastSeed) {
             zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();
@@ -438,9 +476,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             nbt.setTag("regionScan", scan);
         }
         nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
+        nbt.setInteger("lastScanObscured", lastScanObscured);
         nbt.setInteger("scanDirection", scanDirection);
         nbt.setInteger("scanDistance", scanDistance);
         nbt.setBoolean("scanPassive", passive);
+        nbt.setBoolean("scanWholeSystem", characteriseWholeSystem);
         return nbt;
     }
 
@@ -456,9 +496,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
         activeScan = nbt.hasKey("regionScan") ? RegionScan.readFromNBT(nbt.getCompoundTag("regionScan")) : null;
         lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
+        lastScanObscured = nbt.getInteger("lastScanObscured");
         scanDirection = nbt.getInteger("scanDirection");
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
         passive = nbt.getBoolean("scanPassive");
+        characteriseWholeSystem = !nbt.hasKey("scanWholeSystem") || nbt.getBoolean("scanWholeSystem");
     }
 
 
@@ -678,7 +720,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
             modules.add(new ModuleText(8, 70,
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.distance")
-                            + " " + scanDistance, 0x2d2d2d, false));
+                            + " " + scanDistance + aimInLightYears(), 0x2d2d2d, false));
             modules.add(new ModuleButton(100, 66, 4, "-", this,
                     zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.distance.tooltip"), 18, 18));
@@ -706,6 +748,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                             ? "msg.observetory.scan.mode.passive" : "msg.observetory.scan.mode.active"),
                     this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.mode.tooltip"), 40, 18));
+
+            // What a detection is followed up with. An operational choice with a cost, so it is a
+            // control on the instrument and not a setting in a file: over known sky an operator wants
+            // every body named, and into sky nobody has visited he wants a list of places to fly to.
+            modules.add(new ModuleButton(166, 66, 9,
+                    LibVulpes.proxy.getLocalizedString(characteriseWholeSystem
+                            ? "msg.observetory.scan.detail.full" : "msg.observetory.scan.detail.coords"),
+                    this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.detail.tooltip"), 40, 18));
 
             modules.add(new ModuleText(8, 116, scanStatusText(), 0x2d2d2d, false));
             modules.add(new ModuleText(8, 128,
@@ -762,13 +813,14 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     /**
      * Aim the instrument at a region and start looking. Server side; one observation at a time.
      *
-     * <p>The distance is in galactic sectors and is clamped to the configured reach rather than
-     * refused — asking to see farther than the instrument can gets you the instrument's reach.</p>
+     * <p>The distance is in STEPS — one step is one star's territory — and is clamped to the
+     * configured reach rather than refused: asking to see farther than the instrument can gets you
+     * the instrument's reach.</p>
      *
      * @return {@code false} when the machine is already looking somewhere, or when it does not know
      *         where it is standing and so has nothing to aim FROM
      */
-    public boolean beginRegionScan(int dirX, int dirY, int dirZ, int distanceSectors) {
+    public boolean beginRegionScan(int dirX, int dirY, int dirZ, int distanceSteps) {
         if (world == null || world.isRemote) {
             return false;
         }
@@ -778,12 +830,36 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         }
         // Re-aiming mid-sweep is allowed and costs only the cell in flight: every cell already
         // resolved is already written to the crystal, so there is nothing else to lose.
-        activeScan = RegionScan.directed(origin, dirX, dirY, dirZ, distanceSectors,
-                world.getTotalWorldTime(), RegionScan.Tuning.fromConfig());
+        RegionScan aimed = buildScan(() -> RegionScan.directed(origin, dirX, dirY, dirZ, distanceSteps,
+                world.getTotalWorldTime(), RegionScan.Tuning.fromConfig()));
+        if (aimed == null) {
+            return false;
+        }
+        activeScan = aimed;
         passive = false;
         lastScanDiscoveries = 0;
+        lastScanObscured = 0;
         markDirty();
         return true;
+    }
+
+    /**
+     * Build a survey, or refuse to start one — a configuration that describes a region no survey can
+     * walk is reported and declined, never started half-way.
+     *
+     * <p>{@code RegionScan} refuses such a region rather than clamping its look count, because a
+     * clamped count reports the sweep complete with most of the region never visited. Here that
+     * refusal has to become an operator-visible "the machine did not start" plus a line in the log
+     * naming the setting, since the alternative is a tile that throws out of a GUI action.</p>
+     */
+    private RegionScan buildScan(java.util.function.Supplier<RegionScan> build) {
+        try {
+            return build.get();
+        } catch (IllegalArgumentException refused) {
+            LOGGER.error("the observatory at " + pos + " cannot start a survey: "
+                    + refused.getMessage() + " Check the telescopeScan* settings.");
+            return null;
+        }
     }
 
     /** Stop looking. Free — an aim the operator regrets must not have to be waited out. */
@@ -811,15 +887,16 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (origin == null) {
             return false;
         }
-        int radius = Math.max(0, ARConfiguration.getCurrentConfig().telescopePassiveRadiusSectors);
-        GalacticCoord lo = GalacticCoord.ofSectorLocal(origin.sectorX() - radius,
-                origin.sectorY() - radius, origin.sectorZ() - radius, 0L, 0L, 0L);
-        GalacticCoord hi = GalacticCoord.ofSectorLocal(origin.sectorX() + radius,
-                origin.sectorY() + radius, origin.sectorZ() + radius, 0L, 0L, 0L);
-        activeScan = RegionScan.box(lo, hi, radius, world.getTotalWorldTime(),
-                RegionScan.Tuning.fromConfig());
+        int radius = Math.max(0, ARConfiguration.getCurrentConfig().telescopePassiveRadiusSteps);
+        RegionScan sweep = buildScan(() -> RegionScan.local(origin, radius,
+                world.getTotalWorldTime(), RegionScan.Tuning.fromConfig()));
+        if (sweep == null) {
+            return false;
+        }
+        activeScan = sweep;
         passive = true;
         lastScanDiscoveries = 0;
+        lastScanObscured = 0;
         markDirty();
         return true;
     }
@@ -835,9 +912,33 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         return Math.floorMod(scanDirection, SCAN_DIRECTIONS.length);
     }
 
-    /** How far out the operator has the instrument aimed, in sectors. */
+    /** How far out the operator has the instrument aimed, in steps of one star's territory. */
     public int getScanDistance() {
         return scanDistance;
+    }
+
+    /** Whether a detection is followed all the way to the system's bodies, or only its address. */
+    public boolean isCharacterisingWholeSystem() {
+        return characteriseWholeSystem;
+    }
+
+    /** How far the current aim reaches, in light years, or zero before the server has said. */
+    public double getAimLightYears() {
+        return scanDistance * stepLightYears;
+    }
+
+    /**
+     * The aim as a length, in brackets — because a bare "3" says nothing about the sky. Empty until
+     * the server has told this tile what a step is worth, so the client never invents the number.
+     */
+    private String aimInLightYears() {
+        double ly = getAimLightYears();
+        if (ly <= 0d) {
+            return "";
+        }
+        // The unit travels with the translation: a bracket reading "ly" is English, and this GUI
+        // already speaks two languages.
+        return String.format(LibVulpes.proxy.getLocalizedString("msg.observetory.scan.lightyears"), ly);
     }
 
     /** Whether the instrument is watching its own neighbourhood rather than a distant patch. */
@@ -845,11 +946,47 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         return passive;
     }
 
+    /**
+     * How many of the looks in this batch a cloud stands in the way of.
+     *
+     * <p>Counted beside the resolve rather than inside it, because what the OPERATOR is owed and what
+     * the CRYSTAL is written with are different things: the crystal gains an address either way, and
+     * the operator needs to know the difference between "there is nothing out that way" and "I cannot
+     * see through that".</p>
+     */
+    private static int countObscured(UniverseRegistry registry, GalacticCoord origin, RegionScan scan,
+                                     int from, int count) {
+        if (registry == null || origin == null || scan == null) {
+            return 0;
+        }
+        int obscured = 0;
+        double limit = TelescopeScan.limitMagnitude();
+        for (int index = from; index < from + count && index < scan.totalCells(); index++) {
+            // The DETECTIONS and not the cells: empty sky is not a hidden sky, and neither is a star
+            // the instrument never registered. What the operator is being told about is the band in
+            // between - bright enough to see, too dim through the dust to make anything out.
+            for (TelescopeScan.Detection hit
+                    : TelescopeScan.detect(registry, scan.cellAt(index), origin, limit)) {
+                if (TelescopeScan.isObscuredAt(hit.extinctionMagnitudes())) {
+                    obscured++;
+                }
+            }
+        }
+        return obscured;
+    }
+
     /** What the tab tells the operator the instrument is doing right now. */
     private String scanStatusText() {
         if (activeScan != null) {
             return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.looking")
                     + " " + activeScan.cellsDone() + "/" + activeScan.totalCells();
+        }
+        // The dust is reported BEFORE the count of what was found: a survey that came back with
+        // coordinates and no bodies has a reason, and an operator who is not told it reads the
+        // instrument as broken.
+        if (lastScanObscured > 0) {
+            return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.obscured")
+                    + " " + lastScanObscured;
         }
         if (lastScanDiscoveries > 0) {
             return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.found")
@@ -939,8 +1076,16 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             extractData(cost, DataType.DISTANCE, EnumFacing.UP, true);
         }
 
-        lastScanDiscoveries += TelescopeScan.resolveBatch(UniverseRegistry.get(world), activeScan,
-                activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames());
+        // The look is resolved FROM here, so a cloud standing between this instrument and what it is
+        // aimed at can cost the look its detail. Counted while we are at it: an operator whose
+        // survey came back with coordinates and no bodies must be told it was the dust, or the
+        // feature is indistinguishable from an instrument that found nothing.
+        GalacticCoord origin = scanOrigin();
+        UniverseRegistry registry = UniverseRegistry.get(world);
+        lastScanObscured += countObscured(registry, origin, activeScan, activeScan.cellsDone(), cells);
+        lastScanDiscoveries += TelescopeScan.resolveBatch(registry, activeScan,
+                activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames(), origin,
+                characteriseWholeSystem);
         activeScan = instant ? activeScan.completed(now) : activeScan.advanced(now, cells);
         if (activeScan.isComplete()) {
             activeScan = null;
@@ -998,6 +1143,9 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (buttonId == 8) {
             PacketHandler.sendToServer(new PacketMachine(this, PASSIVE_SWEEP));
         }
+        if (buttonId == 9) {
+            PacketHandler.sendToServer(new PacketMachine(this, TOGGLE_WHOLE_SYSTEM));
+        }
     }
 
 
@@ -1054,9 +1202,17 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 if (id == PICK_DIRECTION) {
                     scanDirection = (scanDirectionIndex() + 1) % SCAN_DIRECTIONS.length;
                 } else {
-                    int reach = Math.max(1, ARConfiguration.getCurrentConfig().telescopeScanRangeSectors);
+                    int reach = RegionScan.Tuning.fromConfig().maxRangeSteps();
                     scanDistance = Math.max(1, Math.min(reach, scanDistance + nbt.getInteger("d")));
                 }
+                markDirty();
+                IBlockState st = world.getBlockState(pos);
+                world.notifyBlockUpdate(pos, st, st, 2);
+                player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
+                        getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            }
+            else if (id == TOGGLE_WHOLE_SYSTEM) {
+                characteriseWholeSystem = !characteriseWholeSystem;
                 markDirty();
                 IBlockState st = world.getBlockState(pos);
                 world.notifyBlockUpdate(pos, st, st, 2);

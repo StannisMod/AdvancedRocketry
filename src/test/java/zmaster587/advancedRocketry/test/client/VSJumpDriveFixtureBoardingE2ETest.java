@@ -250,13 +250,17 @@ public class VSJumpDriveFixtureBoardingE2ETest {
         String cooled = exec("artest drive info 0 " + afcSub[0] + " " + afcSub[1] + " " + afcSub[2]);
         long cooldown = readLong(cooled, "cooldownTicks");
         long burst = readLong(cooled, "burstCost");
+        // The cooldown is now burst / the bank's ACCEPT rate — a best case at full inflow — and heat
+        // sinks are what raise that ceiling. So the shape under test is unchanged: read the implied
+        // throughput back out and compare it against what a bare controller alone would allow.
         long observedRate = cooldown > 0L ? burst / cooldown : Long.MAX_VALUE;
-        assertTrue("the HEAT SINKS must be cooling this ship's bank. A drained bank refilling at "
-                        + observedRate + "/tick (burst " + burst + " over " + cooldown + " ticks) is "
-                        + "what an uncooled controller alone does — the sinks rode into subspace but "
-                        + "the bank is not walking to them. emptied=" + emptied + " info=" + cooled,
+        assertTrue("the HEAT SINKS must be raising this ship's bank throughput. A drained bank quoted "
+                        + "at " + observedRate + "/tick (burst " + burst + " over " + cooldown
+                        + " ticks) is what an uncooled controller alone allows — the sinks rode into "
+                        + "subspace but the bank is not walking to them. emptied=" + emptied
+                        + " info=" + cooled,
                 cooldown >= 0L && burst > 0L
-                        && observedRate > DriveTuning.CAPACITOR_BASE_CHARGE_RATE * 2L);
+                        && observedRate > DriveTuning.CAPACITOR_BASE_ACCEPT_RATE * 2L);
 
         String gate = exec("artest nav gate 0 " + afcSub[0] + " " + afcSub[1] + " " + afcSub[2]);
         assertTrue("the ship must find its own NAVIGATION COMPUTER from the flight computer. That "

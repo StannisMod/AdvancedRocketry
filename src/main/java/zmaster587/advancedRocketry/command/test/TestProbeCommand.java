@@ -2269,24 +2269,58 @@ public class TestProbeCommand extends CommandBase {
                     + "}");
             return;
         }
-        // seat-mount <dim> — spawn the pilot seat's dummy mount and return its entity id, so a
-        // test bot can `player mount-entity <id>` and become the ship's pilot. Mirrors
-        // BlockPilotSeat.onBlockActivated server-side (the bot cannot right-click a ship block).
+        // seat-mount <dim> [near <x> <y> <z> [maxDist]] — spawn the pilot seat's dummy mount and
+        // return its entity id, so a test bot can `player mount-entity <id>` and become the ship's
+        // pilot. Mirrors BlockPilotSeat.onBlockActivated server-side (the bot cannot right-click a
+        // ship block). Without "near" the FIRST loaded seat answers, which is only defensible on a
+        // world holding one ship — the reply carries "seatsLoaded" so a caller can see when it is not.
         if (args.length >= 2 && "seat-mount".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
-            zmaster587.advancedRocketry.tile.TilePilotSeat seat = null;
+            // WHICH seat. The bare form takes the first loaded one, and on a world holding several
+            // ships that is a coin toss reported as a fact: it once mounted a pilot onto a ship
+            // 16,000,000 blocks away from the one under test, and the reply was indistinguishable
+            // from success. So the seat COUNT now travels in every reply, and a caller that means
+            // one particular ship names it with "near <x> <y> <z> [maxDist]" — resolved through that
+            // ship's chunk CLAIM, an identity, rather than through whichever seat is nearest.
+            java.util.List<zmaster587.advancedRocketry.tile.TilePilotSeat> seats =
+                    new java.util.ArrayList<>();
             for (TileEntity te : world.loadedTileEntityList) {
                 if (te instanceof zmaster587.advancedRocketry.tile.TilePilotSeat) {
-                    seat = (zmaster587.advancedRocketry.tile.TilePilotSeat) te;
+                    seats.add((zmaster587.advancedRocketry.tile.TilePilotSeat) te);
+                }
+            }
+            String wantShipId = null;
+            if (args.length >= 6 && "near".equalsIgnoreCase(args[2])) {
+                double maxDist = args.length >= 7
+                        ? parseDoubleOr(args[6], Double.POSITIVE_INFINITY) : Double.POSITIVE_INFINITY;
+                wantShipId = zmaster587.advancedRocketry.integration.vs.VSIntegration.nearestShipId(
+                        world, parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                        parseDoubleOr(args[5], 0), maxDist);
+                if (wantShipId == null) {
+                    send(sender, "{\"seatFound\":false,\"reason\":\"no loaded ship near that point\""
+                            + ",\"seatsLoaded\":" + seats.size() + "}");
+                    return;
+                }
+            }
+            zmaster587.advancedRocketry.tile.TilePilotSeat seat = null;
+            for (zmaster587.advancedRocketry.tile.TilePilotSeat candidate : seats) {
+                if (wantShipId == null) {
+                    seat = candidate;
+                    break;
+                }
+                if (wantShipId.equals(zmaster587.advancedRocketry.integration.vs.VSIntegration
+                        .shipIdOwningBlock(world, candidate.getPos()))) {
+                    seat = candidate;
                     break;
                 }
             }
             if (seat == null) {
-                send(sender, "{\"seatFound\":false}");
+                send(sender, "{\"seatFound\":false,\"seatsLoaded\":" + seats.size()
+                        + (wantShipId == null ? "" : ",\"wantedShip\":\"" + wantShipId + "\"") + "}");
                 return;
             }
             BlockPos sp = seat.getPos();
@@ -2303,6 +2337,7 @@ public class TestProbeCommand extends CommandBase {
             }
             send(sender, "{\"seatFound\":true,\"dummyId\":" + dummy.getEntityId()
                     + ",\"reused\":" + reused
+                    + ",\"seatsLoaded\":" + seats.size()
                     + ",\"seatX\":" + sp.getX() + ",\"seatY\":" + sp.getY() + ",\"seatZ\":" + sp.getZ() + "}");
             return;
         }
@@ -3479,15 +3514,21 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * The scan half of a telescope reply. The sector COUNT ships with the corners it was computed
+     * The scan half of a telescope reply. The cell COUNT ships with the corners it was computed
      * from, and the deadline with the clock it is measured against, so a stuck number says which
      * component is stuck. {@code side} is stated because every field here is the server's answer.
+     *
+     * <p>The instrument's HORIZON ships in both of its forms — the configured length and the number
+     * of steps it buys at this world's star spacing — because a reach that means nothing is a defect
+     * that reads as an empty sky, and no count alone can be checked against a telescope.</p>
      */
     private String telescopeScanFields(zmaster587.advancedRocketry.tile.multiblock.TileObservatory scope,
                                        zmaster587.advancedRocketry.universe.RegionScan scan,
                                        net.minecraft.world.WorldServer world) {
         long now = world.getTotalWorldTime();
         zmaster587.advancedRocketry.space.GalacticCoord origin = scope.scanOrigin();
+        zmaster587.advancedRocketry.universe.RegionScan.Tuning tuning =
+                zmaster587.advancedRocketry.universe.RegionScan.Tuning.fromConfig();
         StringBuilder out = new StringBuilder();
         out.append(",\"side\":\"server\",\"now\":").append(now)
                 .append(",\"origin\":").append(origin == null ? "null" : "\"" + origin.cellKey() + "\"")
@@ -3499,7 +3540,18 @@ public class TestProbeCommand extends CommandBase {
                 // running scan is already looking at, below.
                 .append(",\"aim\":").append(scope.scanDirectionIndex())
                 .append(",\"aimDistance\":").append(scope.getScanDistance())
-                .append(",\"passive\":").append(scope.isPassive());
+                .append(",\"aimLy\":").append(scope.getAimLightYears())
+                .append(",\"reachLy\":").append(tuning.maxRangeLightYears())
+                .append(",\"reachSteps\":").append(tuning.maxRangeSteps())
+                // What ONE step of that aim is worth in cells — the instrument's own stride, readable
+                // while it is idle, so a fixture can be placed where the next look will actually land.
+                .append(",\"stepCells\":").append(tuning.strideCells())
+                .append(",\"passive\":").append(scope.isPassive())
+                // The aperture and the opening: what the instrument can SEE, which is what its reach
+                // above is derived from, and how wide a patch one pointing covers.
+                .append(",\"limitMagnitude\":").append(tuning.limitMagnitude())
+                .append(",\"halfAngleDeg\":").append(Math.toDegrees(tuning.halfAngleRadians()))
+                .append(",\"wholeSystem\":").append(scope.isCharacterisingWholeSystem());
         if (scan != null) {
             // The cell counts ship beside the region they are counted over, and the next deadline
             // beside the clock it is measured against: a sweep that will not advance must be able to
@@ -3509,13 +3561,29 @@ public class TestProbeCommand extends CommandBase {
                     .append("\",\"cells\":").append(scan.totalCells())
                     .append(",\"cellsDone\":").append(scan.cellsDone())
                     .append(",\"cellsPerStep\":").append(scan.cellsPerStep())
-                    .append(",\"distance\":").append(scan.distanceSectors())
+                    // The reach in BOTH forms, and the stride that relates them: a survey that
+                    // resolves nothing must be able to say whether it is looking at the wrong scale.
+                    .append(",\"distance\":").append(scan.distanceCells())
+                    .append(",\"distanceLy\":").append(scan.distanceLightYears())
+                    .append(",\"stride\":").append(scan.strideCells())
                     .append(",\"start\":").append(scan.startTick())
                     .append(",\"stepDeadline\":").append(scan.stepDeadline())
                     .append(",\"ticksPerStep\":").append(scan.ticksPerStep())
                     .append(",\"estimatedTicks\":").append(scan.estimatedTicks())
                     .append(",\"progress\":").append(scan.progress())
-                    .append(",\"stepDue\":").append(scan.stepDue(now));
+                    .append(",\"stepDue\":").append(scan.stepDue(now))
+                    // Which SHAPE the survey is: a pointing has an apex and an opening, a local radar
+                    // has neither, and a test that cannot tell them apart cannot tell why a sweep
+                    // covered what it covered.
+                    .append(",\"pointing\":").append(scan.isPointing())
+                    .append(",\"shells\":").append(scan.cone() == null ? 0 : scan.cone().shells())
+                    // WHERE it is aimed, which the corners no longer say: a cone's bounding box is
+                    // the apex plus its reach on every axis, so re-aiming the same instrument leaves
+                    // min/max untouched. The direction is the aim.
+                    .append(",\"dir\":\"").append(scan.cone() == null ? ""
+                            : String.format(java.util.Locale.ROOT, "%.4f_%.4f_%.4f",
+                                    scan.cone().dirX(), scan.cone().dirY(), scan.cone().dirZ()))
+                    .append("\"");
         }
         return out.toString();
     }
@@ -3542,7 +3610,7 @@ public class TestProbeCommand extends CommandBase {
 
     private void handleDrive(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length < 5) {
-            send(sender, "{\"error\":\"usage: drive build|info|charge|arm|press|hull <dim> <afcX> <afcY> <afcZ> ...\"}");
+            send(sender, "{\"error\":\"usage: drive build|info|charge|push|arm|press|hull <dim> <afcX> <afcY> <afcZ> ...\"}");
             return;
         }
         String verb = args[0];
@@ -3591,12 +3659,35 @@ public class TestProbeCommand extends CommandBase {
             for (zmaster587.advancedRocketry.tile.hyperdrive.TileJumpCapacitor capacitor
                     : drive.capacitors()) {
                 if (full) {
-                    capacitor.fill(now);
+                    capacitor.fill();
                 } else {
-                    capacitor.discharge(capacitor.chargeAt(now), now);
+                    capacitor.discharge(capacitor.charge());
                 }
             }
-            send(sender, "{\"ok\":true,\"charge\":" + drive.capacitorCharge(now) + "}");
+            send(sender, "{\"ok\":true,\"charge\":" + drive.capacitorCharge() + "}");
+            return;
+        }
+        if ("push".equalsIgnoreCase(verb)) {
+            // Energy pushed in THROUGH THE FORGE ENERGY CAPABILITY, which is what an adjacent reactor,
+            // solar array or cable does. Deliberately not `fill()`: that seam sets the level directly
+            // and would leave a test unable to tell a wired bank from one that manufactures its own
+            // charge — which is the exact defect this verb exists to be able to observe.
+            long amount = args.length > 5 ? parseLongOr(args[5], 0L) : 0L;
+            long accepted = 0L;
+            int ports = 0;
+            for (zmaster587.advancedRocketry.tile.hyperdrive.TileJumpCapacitor capacitor
+                    : drive.capacitors()) {
+                net.minecraftforge.energy.IEnergyStorage port = capacitor.getCapability(
+                        net.minecraftforge.energy.CapabilityEnergy.ENERGY, null);
+                if (port == null) {
+                    continue;
+                }
+                ports++;
+                accepted += port.receiveEnergy(
+                        (int) Math.min(Integer.MAX_VALUE, Math.max(0L, amount)), false);
+            }
+            send(sender, "{\"ok\":true,\"ports\":" + ports + ",\"accepted\":" + accepted
+                    + ",\"charge\":" + drive.capacitorCharge() + "}");
             return;
         }
         if ("arm".equalsIgnoreCase(verb)) {
@@ -3640,8 +3731,8 @@ public class TestProbeCommand extends CommandBase {
             info.put("burstCost", stats.burstCost());
             info.put("capacitors", drive.capacitors().size());
             info.put("capacity", drive.capacitorCapacity());
-            info.put("charge", drive.capacitorCharge(now));
-            info.put("cooldownTicks", drive.cooldownTicks(now));
+            info.put("charge", drive.capacitorCharge());
+            info.put("cooldownTicks", drive.cooldownTicks());
             info.put("emitters", drive.emitters().size());
             info.put("dampeners", drive.dampeners().size());
             info.put("poweredDampeners", drive.poweredDampenerPositions().size());
@@ -4051,7 +4142,170 @@ public class TestProbeCommand extends CommandBase {
         }
     }
 
+    /**
+     * {@code space nebulae <sx> <sy> <sz>} — the CLOUD half of a cell's sky, as the server would send
+     * it: how many are seated in reach, how many survive the render filter, and each one's bearing,
+     * apparent size, appearance and thickness.
+     *
+     * <p>{@code seated} beside {@code drawn} is the point of the reply. The feed drops clouds too small
+     * to be a landmark and caps what is left, so "the sky shows two" and "there are two out there" are
+     * different facts and a test that could not tell them apart would read a working LOD filter as a
+     * missing cloud.</p>
+     */
+    private void handleSpaceNebulae(MinecraftServer server, ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        if (reg == null) {
+            send(sender, "{\"error\":\"registry unavailable\"}");
+            return;
+        }
+        zmaster587.advancedRocketry.space.GalacticCoord cell =
+                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                        parseLongOr(args[1], 0L), parseLongOr(args[2], 0L), parseLongOr(args[3], 0L),
+                        0L, 0L, 0L);
+        zmaster587.advancedRocketry.universe.IGalaxyGenerator gen =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator();
+        long seed = reg.worldSeed();
+        java.util.List<zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula> drawn =
+                zmaster587.advancedRocketry.space.SkyNebulaeProducer.around(gen, seed, cell);
+        int seated = zmaster587.advancedRocketry.space.SkyNebulaeProducer.countAround(gen, seed, cell);
+        StringBuilder out = new StringBuilder("{\"ok\":true,\"cell\":\"");
+        out.append(cell.cellKey()).append("\",\"seed\":").append(seed)
+                .append(",\"seated\":").append(seated)
+                .append(",\"drawn\":").append(drawn.size()).append(",\"nebulae\":[");
+        int n = 0;
+        for (zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula cloud : drawn) {
+            if (n++ > 0) {
+                out.append(',');
+            }
+            out.append("{\"dirX\":").append(cloud.dirX).append(",\"dirY\":").append(cloud.dirY)
+                    .append(",\"dirZ\":").append(cloud.dirZ)
+                    .append(",\"angularRadius\":").append(cloud.angularRadius)
+                    .append(",\"appearance\":").append(cloud.appearanceOrdinal)
+                    .append(",\"opacity\":").append(cloud.opacity).append('}');
+        }
+        out.append("]}");
+        send(sender, out.toString());
+    }
+
+    /**
+     * {@code space nebula-find <steps> <stride>} — walk out along +X from the origin looking for a cell
+     * whose sky holds a cloud, and report the first one.
+     *
+     * <p>An arrangement helper, and it exists because a cloud's position is a fact about the SEED. A
+     * test that hard-coded a cell would be pinned to one world's generation and would fail as an
+     * accusation against the renderer the first time the seed changed; this asks the generator where
+     * to stand instead. Bounded by {@code steps}, and reports {@code found:false} rather than
+     * searching forever.</p>
+     */
+    private void handleSpaceNebulaFind(MinecraftServer server, ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        if (reg == null) {
+            send(sender, "{\"error\":\"registry unavailable\"}");
+            return;
+        }
+        int steps = Math.max(1, Math.min(4096, parseIntOr(args[1], 64)));
+        long stride = Math.max(1L, parseLongOr(args[2], 1L));
+        zmaster587.advancedRocketry.universe.IGalaxyGenerator gen =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator();
+        long seed = reg.worldSeed();
+        for (int i = 0; i < steps; i++) {
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            (long) i * stride, 0L, 0L, 0L, 0L, 0L);
+            java.util.List<zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula> drawn =
+                    zmaster587.advancedRocketry.space.SkyNebulaeProducer.around(gen, seed, cell);
+            if (drawn.isEmpty()) {
+                continue;
+            }
+            // WHERE the cloud is, not just that one is visible. A caller measuring a sight line
+            // THROUGH a cloud needs its centre and its size, and computing them from the render
+            // record is impossible by design — that record carries a direction and an angle and
+            // deliberately no position. Taken from the generator's own objects instead.
+            zmaster587.advancedRocketry.universe.Nebula biggest = null;
+            for (zmaster587.advancedRocketry.universe.Nebula n : gen.nebulaeAround(seed, cell,
+                    zmaster587.advancedRocketry.space.SkyNebulaeProducer.SKY_REACH_LY)) {
+                if (biggest == null || n.radiusLy() > biggest.radiusLy()) {
+                    biggest = n;
+                }
+            }
+            StringBuilder out = new StringBuilder("{\"ok\":true,\"found\":true,\"cell\":\"");
+            out.append(cell.cellKey()).append("\",\"sectorX\":").append(cell.sectorX())
+                    .append(",\"drawn\":").append(drawn.size())
+                    .append(",\"largest\":").append(drawn.get(0).angularRadius)
+                    .append(",\"steps\":").append(i);
+            if (biggest != null) {
+                out.append(",\"centreX\":")
+                        .append(zmaster587.advancedRocketry.universe.UniverseScale
+                                .cellsAt(biggest.centreXLy()))
+                        .append(",\"centreY\":")
+                        .append(zmaster587.advancedRocketry.universe.UniverseScale
+                                .cellsAt(biggest.centreYLy()))
+                        .append(",\"centreZ\":")
+                        .append(zmaster587.advancedRocketry.universe.UniverseScale
+                                .cellsAt(biggest.centreZLy()))
+                        .append(",\"radiusCells\":")
+                        .append(zmaster587.advancedRocketry.universe.UniverseScale
+                                .cellsForLightYears(biggest.radiusLy()))
+                        .append(",\"radiusLy\":").append(biggest.radiusLy())
+                        .append(",\"peakDensity\":").append(biggest.peakDensity());
+            }
+            out.append('}');
+            send(sender, out.toString());
+            return;
+        }
+        send(sender, "{\"ok\":true,\"found\":false,\"searched\":" + steps + ",\"stride\":" + stride + "}");
+    }
+
+    /**
+     * {@code space extinction <sx> <sy> <sz> <sx2> <sy2> <sz2>} — how much the dust between two cells
+     * dims what is behind it, in magnitudes, plus the raw column it was converted from.
+     *
+     * <p>Both numbers, because they answer different questions: the COLUMN says how much matter the
+     * line crossed (a fact about the generator) and the MAGNITUDES say what an observer loses (a fact
+     * about the calibration). A test that saw only one could not tell a generator that seats no
+     * clouds from a calibration that reads them as transparent.</p>
+     */
+    private void handleSpaceExtinction(MinecraftServer server, ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        if (reg == null) {
+            send(sender, "{\"error\":\"registry unavailable\"}");
+            return;
+        }
+        zmaster587.advancedRocketry.space.GalacticCoord from =
+                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                        parseLongOr(args[1], 0L), parseLongOr(args[2], 0L), parseLongOr(args[3], 0L),
+                        0L, 0L, 0L);
+        zmaster587.advancedRocketry.space.GalacticCoord to =
+                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                        parseLongOr(args[4], 0L), parseLongOr(args[5], 0L), parseLongOr(args[6], 0L),
+                        0L, 0L, 0L);
+        double column = zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator()
+                .columnDensityBetween(reg.worldSeed(), from, to);
+        double magnitudes = reg.extinctionBetween(from, to);
+        send(sender, "{\"ok\":true,\"from\":\"" + from.cellKey() + "\",\"to\":\"" + to.cellKey()
+                + "\",\"column\":" + column + ",\"magnitudes\":" + magnitudes
+                + ",\"obscured\":" + zmaster587.advancedRocketry.universe.TelescopeScan
+                        .isObscured(reg, from, to)
+                + ",\"threshold\":" + zmaster587.advancedRocketry.api.ARConfiguration
+                        .getCurrentConfig().telescopeObscuredAtMagnitudes + "}");
+    }
+
     private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 7 && "extinction".equalsIgnoreCase(args[0])) {
+            handleSpaceExtinction(server, sender, args);
+            return;
+        }
+        if (args.length >= 4 && "nebulae".equalsIgnoreCase(args[0])) {
+            handleSpaceNebulae(server, sender, args);
+            return;
+        }
+        if (args.length >= 3 && "nebula-find".equalsIgnoreCase(args[0])) {
+            handleSpaceNebulaFind(server, sender, args);
+            return;
+        }
         // --- PRODUCTION-wiring probes. Unlike every other verb here these deliberately touch the real
         //     SpaceSubsystem rather than a probe-local stack, so a restart test can prove the shipped
         //     server-start / world-save path actually persists and restores. They are only useful when
@@ -4122,10 +4376,22 @@ public class TestProbeCommand extends CommandBase {
                                 // "bearing", not "dir": the feed below already emits a "dir" per
                                 // body, measured from the CELL's observer for the sky, and a reader
                                 // matching on the substring could not tell the two apart.
+                                // Taken as a sector delta plus an offset delta, never as the
+                                // difference of two whole-block absolutes: those cannot express the
+                                // coordinates the sector grid can name.
                                 .append(",\"bearing\":[")
-                                .append(bodyAt.absoluteX() - e.coord.absoluteX()).append(',')
-                                .append(bodyAt.absoluteY() - e.coord.absoluteY()).append(',')
-                                .append(bodyAt.absoluteZ() - e.coord.absoluteZ()).append(']')
+                                .append(zmaster587.advancedRocketry.space.AbsolutePos
+                                        .ofCellName(bodyAt).minus(
+                                                zmaster587.advancedRocketry.space.AbsolutePos
+                                                        .ofCellName(e.coord)).dx()).append(',')
+                                .append(zmaster587.advancedRocketry.space.AbsolutePos
+                                        .ofCellName(bodyAt).minus(
+                                                zmaster587.advancedRocketry.space.AbsolutePos
+                                                        .ofCellName(e.coord)).dy()).append(',')
+                                .append(zmaster587.advancedRocketry.space.AbsolutePos
+                                        .ofCellName(bodyAt).minus(
+                                                zmaster587.advancedRocketry.space.AbsolutePos
+                                                        .ofCellName(e.coord)).dz()).append(']')
                                 .append(",\"distance\":")
                                 .append((long) Math.sqrt(e.coord.staticFrameDistanceSqTo(bodyAt)))
                                 // "distance" is to the body's CENTRE — what the descent trigger
@@ -4710,6 +4976,14 @@ public class TestProbeCommand extends CommandBase {
             // the ship is the one caller that never has to guess.
             java.util.UUID pilotedShip =
                     zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(w, anchor);
+            // SETTLE the ship in this stack's own ledger, the way the entry on-ramp would have. Without
+            // it the fixture is a ship that is nowhere: production never has a craft sitting in a cell
+            // with no ledger row, and anything that asks the ledger where this ship IS - a short jump,
+            // a seam carry, a descent - correctly refuses to act on a ship it cannot place. Written on
+            // THIS stack's ledger, not the attached subsystem's: the two are different objects here.
+            if (transitDurableId != null) {
+                transitStack.ledger.settle(transitDurableId, transitOrigin);
+            }
             // Assembly is ASYNC (queued on the physics thread), so the seat + ship world pos are NOT queryable
             // yet. The caller polls `vs ship-count-all`/`load-ships`/`ship-count` for the ship, then reads the
             // post-assembly pilot-seat subspace pos + ship world pos via `vs find-seat <dim> id <shipId>`.
@@ -4719,12 +4993,19 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"durableId\":\"" + (transitDurableId == null ? "" : transitDurableId) + "\"}");
             return;
         }
-        // transit-begin <originDim> <ax> <ay> <az> [speedBlocksPerTick]: start the jump (arrival
-        // retries until the async hyperspace ship is crossable, so a large speed is fine). The
-        // optional speed lets a test SIZE the park: the setup cells sit one sector (4M blocks)
-        // apart, so the default 5M crosses in a single tick, while e.g. 100k parks the ship for
-        // ~40 probe-driven ticks — enough for a mid-transit stimulus (a relog) to land inside it.
-        if (args.length >= 5 && "transit-begin".equalsIgnoreCase(args[0])) {
+        // transit-begin <originDim> <ax> <ay> <az> <speedBlocksPerTick>: start the jump.
+        //
+        // The speed is REQUIRED, and it used to default to 5M. That default was harmless while there
+        // was one mechanism and it only sized the park; it stopped being harmless the moment the
+        // computed duration began choosing between hyperspace and a direct cell-to-cell crossing.
+        // At the setup's one-sector spacing (4M blocks) 5M crosses in a single tick, so the default
+        // silently picked the direct path for every caller that did not think about it — including
+        // every test written to exercise hyperspace. A caller now says which flight it wants.
+        //
+        // The arithmetic a caller needs: ticks = ceil(4M / speed), and a jump of at most
+        // ShipTransitManager.DIRECT_CROSSING_MAX_TICKS ticks is performed as one crossing. So
+        // speed >= 25_000 is a direct hop and speed <= 20_000 is a real flight with a park in it.
+        if (args.length >= 6 && "transit-begin".equalsIgnoreCase(args[0])) {
             if (transitTm == null) {
                 send(sender, "{\"error\":\"transit not set up\"}");
                 return;
@@ -4732,8 +5013,27 @@ public class TestProbeCommand extends CommandBase {
             int originDim = parseIntOr(args[1], Integer.MIN_VALUE);
             net.minecraft.util.math.BlockPos anchor = new net.minecraft.util.math.BlockPos(
                     parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
-            long speed = args.length >= 6
-                    ? Math.max(1L, Long.parseLong(args[5])) : 5_000_000L;
+            // The caller names the BUILD pad, which is where the ship was assembled FROM — after
+            // assembly its blocks live in a subspace shipyard and the pad is empty air. Production's
+            // caller (JumpTrigger) never has this problem: it is the flight computer, so it passes its
+            // own live position. Resolve the same thing here, by IDENTITY rather than by proximity, so
+            // a departure that reads the ship's pose off this anchor reads a real block.
+            net.minecraft.world.WorldServer originWorld =
+                    net.minecraftforge.common.DimensionManager.getWorld(originDim);
+            boolean anchorRelocated = false;
+            if (transitDurableId != null && originWorld != null) {
+                for (net.minecraft.tileentity.TileEntity te
+                        : new java.util.ArrayList<>(originWorld.loadedTileEntityList)) {
+                    if (te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                            && transitDurableId.equals(((zmaster587.advancedRocketry.tile
+                                    .TileAdvancedFlightComputer) te).shipIdOrNull())) {
+                        anchor = te.getPos();
+                        anchorRelocated = true;
+                        break;
+                    }
+                }
+            }
+            long speed = Math.max(1L, Long.parseLong(args[5]));
             // Depart under the fixture's own DURABLE id, so the crossing resolves the ship it was told
             // about instead of whatever craft is nearest an anchor every scenario here reuses. The
             // synthetic "t" remains for fixtures that assembled nothing to name.
@@ -4750,6 +5050,9 @@ public class TestProbeCommand extends CommandBase {
             // about a client in the wrong dimension.
             send(sender, "{\"ok\":true,\"began\":" + began + ",\"shipId\":\"" + departingShip
                     + "\",\"crew\":" + transitTm.crewCountOf(departingShip)
+                    + ",\"anchorRelocated\":" + anchorRelocated
+                    + ",\"anchorX\":" + anchor.getX() + ",\"anchorY\":" + anchor.getY()
+                    + ",\"anchorZ\":" + anchor.getZ()
                     + ",\"inTransit\":" + transitTm.inTransitCount() + "}");
             return;
         }
@@ -4760,7 +5063,26 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"transit not set up\"}");
                 return;
             }
-            transitTm.tick();
+            // transit-tick [count] — advance the jump `count` server ticks in ONE round trip.
+            //
+            // The count is not a convenience: a flight is only a flight if it is longer than
+            // ShipTransitManager.DIRECT_CROSSING_MAX_TICKS, so every test of the hyperspace path now
+            // has to drive at least that many ticks, and one probe call per tick makes a 200-tick
+            // flight 200 round trips. It repeats the SAME tick — it does not change what a tick does.
+            int ticksToRun = args.length >= 2 ? Math.max(1, Math.min(2000, parseIntOr(args[1], 1))) : 1;
+            for (int t = 0; t < ticksToRun; t++) {
+                transitTm.tick();
+                if (transitStack != null) {
+                    transitStack.cellCrossings.tick();
+                }
+            }
+            // Both mechanisms are advanced above. A jump short enough is performed as a single
+            // cell-to-cell crossing rather than flown, and its settle is driven by the crossing
+            // controller, not by the transit map. Ticking only one of them would make "advance the
+            // jump" mean different things depending on which mechanism the speed selected — and the
+            // arrival acceptance is meant to be SHARED between them, not written twice.
+            int crossing = transitStack != null && transitDurableId != null
+                    && transitStack.cellCrossings.isCarrying(transitDurableId) ? 1 : 0;
             int inTransit = transitTm.inTransitCount();
             int targetDim = -1;
             if (inTransit == 0 && transitMgr.isLoaded(transitTarget)) {
@@ -4803,6 +5125,11 @@ public class TestProbeCommand extends CommandBase {
             // the shared parking world. A crew-side test compares the CLIENT's dimension against these
             // rather than hardcoding an id that is minted per boot.
             send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim
+                    // Which mechanism is actually running, emitted in every state so "neither" is a
+                    // pair of zeros rather than a missing field: `inTransit` is the hyperspace flight,
+                    // `crossing` is the direct cell-to-cell settle. A test that wants to know WHICH
+                    // one its speed selected reads these instead of inferring it from timing.
+                    + ",\"crossing\":" + crossing
                     + ",\"poseX\":" + (long) pose[0] + ",\"poseY\":" + (long) pose[1]
                     + ",\"poseZ\":" + (long) pose[2]
                     + ",\"shipY\":" + shipY + ",\"poseDist\":" + poseDist
@@ -5200,6 +5527,70 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"started\":" + started + ",\"pending\":" + d.descendingCount() + "}");
             return;
         }
+        // seam-carry <slotDim>: drive the PRODUCTION cell-seam carry for the settled ship in that slot
+        // world — the counterpart of descent-begin, and for the same reason. The trigger lives in the
+        // flight computer's own tick, which a headless slot world does not run (no player, no ticking
+        // chunks there), so an e2e that waited for it would be measuring chunk-ticking rather than the
+        // crossing. WHEN a carry fires is pinned deterministically by CellSeamTest; this verb exists so
+        // the crossing itself — materialize, cut, paste, settle, ledger handoff — can be exercised on a
+        // real ship. The ship's LIVE pose is used, never the ledger's: past the face the ledger's copy
+        // is saturated, so a lookup from it would miss the ship by the whole overshoot.
+        if (args.length >= 2 && "seam-carry".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.CellCrossingController seamCtl =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.cellCrossings();
+            zmaster587.advancedRocketry.space.ShipLedger seamLedger =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (seamCtl == null || seamLedger == null) {
+                send(sender, "{\"error\":\"space subsystem not registered\"}");
+                return;
+            }
+            int slotDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer slotWorld =
+                    net.minecraftforge.common.DimensionManager.getWorld(slotDim);
+            if (slotWorld == null) {
+                send(sender, "{\"error\":\"slot world not loaded\",\"slotDim\":" + slotDim + "}");
+                return;
+            }
+            for (java.util.Map.Entry<java.util.UUID, zmaster587.advancedRocketry.space.ShipLedger.Entry> e
+                    : seamLedger.snapshot().entrySet()) {
+                zmaster587.advancedRocketry.space.ShipLedger.Entry entry = e.getValue();
+                if (entry.state != zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED
+                        || slotDimOfCell(entry.coord) != slotDim) {
+                    continue;
+                }
+                double[] ledgerPose =
+                        zmaster587.advancedRocketry.space.CellWorldMapper.poseWorldOf(entry.coord);
+                double[] live = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                        .nearestShipState(slotWorld, ledgerPose[0], ledgerPose[1], ledgerPose[2],
+                                zmaster587.advancedRocketry.space.GalacticCoord.CELL);
+                if (live == null) {
+                    send(sender, "{\"ok\":true,\"started\":false,\"reason\":\"no loaded ship near the "
+                            + "ledger pose\",\"shipId\":\"" + e.getKey() + "\"}");
+                    return;
+                }
+                net.minecraft.util.math.BlockPos afc = zmaster587.advancedRocketry.integration.vs
+                        .VSIntegration.flightComputerAt(slotWorld, live[0], live[1], live[2]);
+                if (afc == null) {
+                    send(sender, "{\"ok\":true,\"started\":false,\"reason\":\"ship carries no flight "
+                            + "computer\",\"shipId\":\"" + e.getKey() + "\"}");
+                    return;
+                }
+                boolean wouldCarry = zmaster587.advancedRocketry.space.CellSeam
+                        .shouldCarry(live[0], live[1], live[2]);
+                boolean started = seamCtl.requestCarry(slotDim, afc, e.getKey(), entry.coord,
+                        new double[]{live[0], live[1], live[2]});
+                send(sender, "{\"ok\":true,\"started\":" + started
+                        + ",\"wouldCarry\":" + wouldCarry
+                        + ",\"shipId\":\"" + e.getKey() + "\""
+                        + ",\"fromCell\":\"" + entry.coord.cellKey() + "\""
+                        + ",\"pose\":[" + live[0] + "," + live[1] + "," + live[2] + "]"
+                        + ",\"afc\":[" + afc.getX() + "," + afc.getY() + "," + afc.getZ() + "]}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"started\":false,\"reason\":\"no settled ship in this slot\""
+                    + ",\"slotDim\":" + slotDim + "}");
+            return;
+        }
         // descent-status: the in-flight descent count (settle progress).
         if (args.length >= 1 && "descent-status".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.DescentController d =
@@ -5382,11 +5773,18 @@ public class TestProbeCommand extends CommandBase {
             int starId = parseIntOr(args[9], 0);
             zmaster587.advancedRocketry.space.GalacticCoord coord =
                     zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(sx, sy, sz, lx, ly, lz);
+            // A POI planted by hand does not move — say so, rather than letting a constructor decide.
+            // The 11th argument is the body's RADIUS in Earth radii; without it the body has none,
+            // which is a real state (a belt is not a sphere) and is what the sky draws as a marker.
+            // A test that wants a body drawn at a size has to say what size, because the renderer
+            // stopped guessing one from distance.
+            double poiRadiusEarths = args.length >= 11 ? parseDoubleOr(args[10], 0d) : 0d;
             zmaster587.advancedRocketry.universe.SystemBody body =
-                    new zmaster587.advancedRocketry.universe.SystemBody(coord, kind, dimId, starId);
+                    zmaster587.advancedRocketry.universe.SystemBody.fixedAt(coord, kind, dimId, starId)
+                            .withRadius(poiRadiusEarths);
             reg.addPoi(body);
             send(sender, "{\"ok\":true,\"cellKey\":\"" + coord.cellKey() + "\",\"descendTarget\":"
-                    + body.isDescendTarget() + "}");
+                    + body.isDescendTarget() + ",\"radiusEarths\":" + body.radiusEarths() + "}");
             return;
         }
         // cell-info <sx> <sy> <sz> [dimId]: what the universe registry says is AT one cell, and by which
@@ -5411,8 +5809,9 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.space.AbsolutePos origin =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.cellFrameOriginAt(name, clock);
             send(sender, "{\"ok\":true,\"cellKey\":\"" + name.cellKey() + "\",\"clock\":" + clock
-                    + ",\"originX\":" + origin.x() + ",\"originY\":" + origin.y()
-                    + ",\"originZ\":" + origin.z() + "}");
+                    + ",\"originSector\":[" + origin.sectorX() + "," + origin.sectorY() + ","
+                    + origin.sectorZ() + "],\"originOffset\":[" + origin.localX() + ","
+                    + origin.localY() + "," + origin.localZ() + "]}");
             return;
         }
         // forget-name <dimId>: drop the RECORDED cell name of a dimension, so the next query has to
@@ -5593,6 +5992,179 @@ public class TestProbeCommand extends CommandBase {
             }
             out.append('}');
             send(sender, out.toString());
+            return;
+        }
+        // gen-install <density> <minSpacing> [seed]: install a procedural galaxy generator and bind a
+        // seed. A world with no <galaxyGen> in its planetDefs runs the authored-anchors-only default, so
+        // without this there are no procedural systems to realize at all and every test about them would
+        // be a test about an empty universe. `gen-reset` puts the default back; a shared-server class
+        // MUST call it, because the generator is a JVM global.
+        //
+        // The GALAXY lattice keeps its shipped parameters. A caller near the origin is inside the home
+        // galaxy's core, where the profile is at its densest, so <density> alone says how full the sky
+        // is — which is the one thing a test about procedural systems is actually asking for.
+        if (args.length >= 3 && "gen-install".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            double density = parseDoubleOr(args[1], 0.9d);
+            int minSpacing = parseIntOr(args[2], 8);
+            long seed = args.length >= 4 ? parseLongOr(args[3], 0L) : reg.worldSeed();
+            zmaster587.advancedRocketry.universe.GalaxyGenConfig genDefaults =
+                    zmaster587.advancedRocketry.universe.GalaxyGenConfig.defaults();
+            zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(
+                    new zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator(
+                            new zmaster587.advancedRocketry.universe.GalaxyGenConfig(minSpacing, density,
+                                    genDefaults.galaxySpacing, genDefaults.galaxyDensity, null, null)));
+            reg.bindWorldSeed(seed);
+            send(sender, "{\"ok\":true,\"seed\":" + seed + ",\"minSpacing\":" + minSpacing + "}");
+            return;
+        }
+        if (args.length >= 1 && "gen-reset".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(null);
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        // find-procedural <radiusInSuperCells>: the first body a ship could land on that has NO dimension
+        // yet — the precondition of every realization test, and the thing that is impossible to write
+        // down as a literal because it depends on the seed.
+        //
+        // THE SWEEP IS BY SUPER-CELL, NEVER BY CELL. It used to walk raw cells around the origin, which
+        // worked only while a system's extent was a fraction of the star spacing. A body now stands
+        // where its own orbit puts it — one AU is about 150 cells — so a body is hundreds to thousands
+        // of cells from its star, and a box of a few cells around the origin contains nothing whatever
+        // the galaxy holds. Each probe asks the registry for the WHOLE system its super-cell belongs to.
+        if (args.length >= 2 && "find-procedural".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            long r = parseIntOr(args[1], 8);
+            long s = Math.max(1L, zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator()
+                    .minSpacingCells());
+            for (long x = -r; x <= r; x++) {
+                for (long y = -r; y <= r; y++) {
+                    for (long z = -r; z <= r; z++) {
+                        zmaster587.advancedRocketry.space.GalacticCoord probe =
+                                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                                        x * s, y * s, z * s, 0L, 0L, 0L);
+                        for (zmaster587.advancedRocketry.universe.SystemBody b
+                                : reg.systemBodiesAt(probe)) {
+                            if (b.kind().canDescend()
+                                    && b.dimId() == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                                // The BODY's own cell, not the probe's: that is the address every
+                                // follow-up verb (cell-info, derived, realize) is aimed at.
+                                zmaster587.advancedRocketry.space.GalacticCoord cell = b.name();
+                                send(sender, "{\"ok\":true,\"sx\":" + cell.sectorX() + ",\"sy\":"
+                                        + cell.sectorY() + ",\"sz\":" + cell.sectorZ()
+                                        + ",\"cellKey\":\"" + cell.cellKey() + "\",\"kind\":\"" + b.kind()
+                                        + "\",\"orbitalDist\":" + b.orbitalDistance()
+                                        + ",\"starId\":" + b.starId() + "}");
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            send(sender, "{\"ok\":false,\"reason\":\"no unrealized landable body in range\"}");
+            return;
+        }
+        // derived <sx> <sy> <sz>: what the DERIVATION says about the body in that cell, without
+        // realizing anything. This is the answer a telescope gives from across the system, and the whole
+        // point of it is that a landing has to agree with it — so a test compares this against the
+        // realized dimension's own properties rather than against a literal it wrote itself.
+        if (args.length >= 4 && "derived".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            java.util.Optional<zmaster587.advancedRocketry.space.GalacticCoord> anchor =
+                    reg.anchorForCell(cell);
+            java.util.Optional<zmaster587.advancedRocketry.api.dimension.solar.StellarBody> star =
+                    reg.starAt(cell);
+            zmaster587.advancedRocketry.universe.SystemBody target = null;
+            int variant = 0;
+            int seen = 0;
+            for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(cell)) {
+                if (b.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.STAR
+                        || b.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.STATION_SLOT
+                        || b.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.ASTEROID_BELT) {
+                    continue;
+                }
+                if (target == null && b.kind().canDescend()) {
+                    target = b;
+                    variant = seen;
+                }
+                seen++;
+            }
+            if (target == null || !anchor.isPresent() || !star.isPresent()) {
+                send(sender, "{\"ok\":false,\"reason\":\"no landable body derivable at that cell\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.universe.BodyProfile p =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator()
+                            .derivation().derive(reg.worldSeed(),
+                            anchor.get(), target.name(), variant, star.get(),
+                            target.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.MOON,
+                            target.orbitalDistance());
+            send(sender, "{\"ok\":true,\"type\":\"" + p.typeName() + "\",\"orbitalDist\":"
+                    + p.orbitalDistance() + ",\"mass\":" + p.massEarths() + ",\"radius\":"
+                    + p.radiusEarths() + ",\"gravity\":" + p.gravityPercent() + ",\"pressure\":"
+                    + p.pressure() + ",\"temperature\":" + p.temperatureKelvin() + ",\"oxygen\":"
+                    + p.hasOxygen() + ",\"locked\":" + p.tidallyLocked() + ",\"metallicity\":"
+                    + p.metallicity() + ",\"terrainSource\":\"" + p.terrain().source() + "\"}");
+            return;
+        }
+        // realize <sx> <sy> <sz>: mint the dimension for the landable body in that cell and report what
+        // the world it produced actually carries. The realization path a descent drives, called
+        // directly, so the properties can be compared with `derived` without flying anything.
+        if (args.length >= 4 && "realize".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            int dimId = zmaster587.advancedRocketry.universe.PlanetRealizer.realize(server, cell);
+            if (dimId == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                send(sender, "{\"ok\":false,\"reason\":\"nothing landable in that cell\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionPropertiesOrNull(dimId);
+            if (props == null) {
+                send(sender, "{\"ok\":false,\"dim\":" + dimId + ",\"reason\":\"no properties registered\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            boolean descendTarget = false;
+            if (reg != null) {
+                for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(cell)) {
+                    if (b.dimId() == dimId && b.isDescendTarget()) {
+                        descendTarget = true;
+                    }
+                }
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dimId + ",\"name\":\"" + props.getName()
+                    + "\",\"orbitalDist\":" + props.getOrbitalDist() + ",\"mass\":" + props.getMass()
+                    + ",\"radius\":" + props.getRadius() + ",\"gravity\":"
+                    + Math.round(props.getGravitationalMultiplier() * 100f) + ",\"pressure\":"
+                    + props.getAtmosphereDensity() + ",\"temperature\":" + props.getAverageTemp()
+                    + ",\"oxygen\":" + props.hasOxygen + ",\"locked\":" + props.isTidallyLocked()
+                    + ",\"metallicity\":" + props.getMetallicity() + ",\"gasGiant\":"
+                    + props.isGasGiant() + ",\"terrainSource\":\"" + props.getTerrainSource()
+                    + "\",\"descendTarget\":" + descendTarget + ",\"starId\":" + props.getStarId() + "}");
             return;
         }
         // find-afc <dim> [shipId]: report a subspace block position + durable ship id of the settled ship
@@ -6144,6 +6716,19 @@ public class TestProbeCommand extends CommandBase {
             info.put("chunkGeneratorClass", chunkGeneratorClassOf(world));
             info.put("saveDir", (world != null && world.provider.getSaveFolder() != null)
                     ? world.provider.getSaveFolder() : "null");
+            // The world-generation identity this dimension PUBLISHES through the vanilla WorldInfo
+            // API — the channel a foreign WorldType reads when it configures itself. It is reported
+            // next to the overworld's own value because the failure mode is not "wrong name" but
+            // "somebody else's name": a secondary world's WorldInfo delegates both of these, so a
+            // planet can silently answer with the save's world type and an empty options string.
+            info.put("worldType", (world != null && world.getWorldInfo().getTerrainType() != null)
+                    ? world.getWorldInfo().getTerrainType().getName() : "null");
+            info.put("generatorOptions", world != null ? world.getWorldInfo().getGeneratorOptions() : "null");
+            net.minecraft.world.WorldServer overworld = net.minecraftforge.common.DimensionManager.getWorld(0);
+            info.put("overworldWorldType", (overworld != null && overworld.getWorldInfo().getTerrainType() != null)
+                    ? overworld.getWorldInfo().getTerrainType().getName() : "null");
+            info.put("overworldGeneratorOptions",
+                    overworld != null ? overworld.getWorldInfo().getGeneratorOptions() : "null");
             info.put("isARPlanet", DimensionManager.getInstance().isDimensionCreated(dim));
             // World spawn exactly as the SERVER holds it — the same expression
             // vanilla packs into SPacketSpawnPosition at PlayerList:1044. A
@@ -6335,7 +6920,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("thunderStartLength", props.getThunderStartLength());
             info.put("rainMarker", props.getRainMarker());
             info.put("thunderMarker", props.getThunderMarker());
-            info.put("averageTemperature", props.averageTemperature);
+            info.put("averageTemperature", props.getAverageTemp());
             info.put("genType", props.getGenType());
             IBlockState ocean = props.getOceanBlock();
             // null is meaningful — vanilla water fallback — so emit explicitly.
@@ -6359,57 +6944,15 @@ public class TestProbeCommand extends CommandBase {
                         + ",\"kelvin\":" + kelvin + "}");
                 return;
             }
-            props.averageTemperature = kelvin;
+            props.setAverageTemp(kelvin);
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
             out.put("dim", dim);
-            out.put("averageTemperature", props.averageTemperature);
+            out.put("averageTemperature", props.getAverageTemp());
             out.put("hasOxygen", props.hasOxygen);
             out.put("atmosphereDensity", props.getAtmosphereDensity());
             out.put("atmosphere", props.getAtmosphere().getUnlocalizedName());
             send(sender, jsonMap(out));
-            return;
-        }
-        if (args.length >= 2 && "moon-generate-catch".equalsIgnoreCase(args[0])) {
-            // /artest planet moon-generate-catch <planetDim>
-            //
-            // Repro for C072: run the REAL PlanetGenerateCommand moon path against
-            // a planet whose star id resolves to no star, and report what it
-            // throws. Temporarily orphans the planet's star (setStar to an id with
-            // no StellarBody), invokes execute(...), and restores the original star
-            // in a finally. Pre-fix the command NPEs (getStar dereferenced inside
-            // generateRandom); post-fix a star-existence guard on the moon branch
-            // throws a clean CommandException before any generation. No dimension
-            // is registered in either case (the throw precedes registerDim), so the
-            // registered-dim count must be unchanged both pre and post.
-            int planetDim = parseIntOr(args[1], Integer.MIN_VALUE);
-            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(planetDim);
-            if (props == null) {
-                send(sender, "{\"error\":\"unknown planet\",\"dim\":" + planetDim + "}");
-                return;
-            }
-            // Find a star id genuinely absent from the star table.
-            int bogusStar = 0x40000000;
-            while (DimensionManager.getInstance().getStar(bogusStar) != null) bogusStar++;
-            int origStar = props.getStarId();
-            int dimsBefore = DimensionManager.getInstance().getRegisteredDimensions().length;
-            String thrown = "null";
-            try {
-                props.setStar(bogusStar);
-                new zmaster587.advancedRocketry.command.sub.planet.PlanetGenerateCommand().execute(
-                        sender.getServer(), sender,
-                        new String[]{String.valueOf(planetDim), "moon", "C072Moon", "10", "10", "10"});
-            } catch (Throwable t) {
-                thrown = t.getClass().getSimpleName();
-            } finally {
-                props.setStar(origStar);
-            }
-            int dimsAfter = DimensionManager.getInstance().getRegisteredDimensions().length;
-            send(sender, "{\"ok\":true,\"planetDim\":" + planetDim
-                    + ",\"bogusStar\":" + bogusStar
-                    + ",\"thrown\":\"" + thrown + "\""
-                    + ",\"dimsBefore\":" + dimsBefore
-                    + ",\"dimsAfter\":" + dimsAfter + "}");
             return;
         }
         send(sender, "{\"error\":\"unknown planet subcommand\"}");
@@ -11662,14 +12205,16 @@ public class TestProbeCommand extends CommandBase {
                     // The telescope's reach and what a look costs in time, all read at scan START,
                     // so flipping them at runtime is enough to exercise a short scan in a test
                     // without waiting out a production-length observation.
-                    "telescopeScanRangeSectors",
-                    "telescopeScanHalfWidthSectors",
-                    "telescopeScanMaxSectors",
+                    "telescopeLimitingMagnitude",
+                    "telescopeConeHalfAngleDegrees",
+                    "telescopeScanMaxCells",
                     "telescopeScanBaseTicks",
-                    "telescopeScanTicksPerSector",
                     "telescopeScanCellsPerStep",
-                    "telescopePassiveRadiusSectors",
+                    "telescopePassiveRadiusSteps",
                     "telescopeSurveyDataPerStep",
+                    // How much dust a survey sees through, in magnitudes. Flippable at runtime so a
+                    // test can drive BOTH sides of concealment against one generated cloud.
+                    "telescopeObscuredAtMagnitudes",
                     // The research master switch. A survey is instant without it and paced by the
                     // time curve with it, so both halves of boundary B need it flippable at runtime.
                     "planetsMustBeDiscovered",
@@ -12038,7 +12583,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 4 && "create-terrain-dim".equalsIgnoreCase(args[0])) {
-            // worldgen create-terrain-dim <newDimId> <templateDimId> <terrainSource> [param]
+            // worldgen create-terrain-dim <newDimId> <templateDimId> <terrainSource> [param] [generatorOptions]
             // Register a new PLANET dimension by cloning an existing AR planet's
             // DimensionProperties (inheriting star / atmosphere / gravity linkage so
             // headless worldprovider-init doesn't NPE), re-id'ing it, and setting a
@@ -12050,6 +12595,7 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.dimension.TerrainSource terrain =
                     zmaster587.advancedRocketry.dimension.TerrainSource.byName(args[3]);
             String param = args.length >= 5 ? args[4] : "";
+            String generatorOptions = args.length >= 6 ? args[5] : "";
             zmaster587.advancedRocketry.dimension.DimensionManager dm =
                     zmaster587.advancedRocketry.dimension.DimensionManager.getInstance();
             if (dm.isDimensionCreated(newId)) {
@@ -12074,6 +12620,7 @@ public class TestProbeCommand extends CommandBase {
                     props.setTerrainWorldType(param);
                 else if (terrain == zmaster587.advancedRocketry.dimension.TerrainSource.TEMPLATE)
                     props.setTerrainTemplate(param);
+                props.setTerrainGeneratorOptions(generatorOptions);
                 boolean registered = dm.registerDim(props, true);
                 // Belt-and-braces: ensure Forge knows the dim under the planet provider
                 // even if registerDim's internal guard skipped it.
@@ -18498,6 +19045,62 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"posZ\":" + player.posZ + "}");
             return;
         }
+        if ("far-tp".equals(sub) && args.length >= 4) {
+            // /artest player far-tp <x> <y> <z>
+            //
+            // Delivers a CONNECTED player to an arbitrary coordinate, including one
+            // millions of blocks out, without the anti-cheat having any say in it.
+            // NetHandlerPlayServer's speed check ("moved too quickly!") measures the
+            // client's next movement packet against the position captured at the top of
+            // the tick, and it is skipped entirely while invulnerableDimensionChange is
+            // armed — the flag vanilla itself sets on every dimension change and clears
+            // when the client acknowledges the teleport, adopting the destination as the
+            // last good position. Arming the same flag and then calling the same
+            // setPlayerLocation a dimension transfer calls makes this the production
+            // delivery minus the change of dimension.
+            //
+            // What a caller DOES have to avoid: Valkyrien Skies vetoes any teleport into
+            // its reserved shipyard region, silently — the command reports success and
+            // the player does not move. That region is the half-open quadrant
+            // chunkX >= CHUNK_X_START - MAX_CHUNK_RADIUS && chunkZ >= -MAX_CHUNK_RADIUS
+            // (see ShipChunkAllocator), so with the shipped constants any destination
+            // with X >= 5,094,416 and Z >= -25,584 is refused. Compare the reported posX
+            // with what you asked for rather than trusting "ok":true.
+            //
+            // Deliberately does NOT generate terrain: the caller arranges the
+            // destination (forceload + fill) so that an arrival into thin air is a
+            // finding, not a silently patched one.
+            if (player.connection == null) {
+                send(sender, "{\"error\":\"far-tp needs a connected player (no connection on \""
+                        + escapeJson(player.getName()) + "\")\"}");
+                return;
+            }
+            double tx;
+            double ty;
+            double tz;
+            try {
+                tx = Double.parseDouble(args[1]);
+                ty = Double.parseDouble(args[2]);
+                tz = Double.parseDouble(args[3]);
+            } catch (NumberFormatException e) {
+                send(sender, "{\"error\":\"usage: /artest player far-tp <x> <y> <z>\"}");
+                return;
+            }
+            double fromX = player.posX;
+            player.motionX = 0;
+            player.motionY = 0;
+            player.motionZ = 0;
+            player.fallDistance = 0;
+            player.invulnerableDimensionChange = true;
+            player.connection.setPlayerLocation(tx, ty, tz, player.rotationYaw, player.rotationPitch);
+            server.getPlayerList().serverUpdateMovingPlayer(player);
+            send(sender, "{\"ok\":true,\"player\":\"" + escapeJson(player.getName()) + "\""
+                    + ",\"fromX\":" + fromX
+                    + ",\"posX\":" + player.posX
+                    + ",\"posY\":" + player.posY
+                    + ",\"posZ\":" + player.posZ + "}");
+            return;
+        }
         if ("held-air".equals(sub)) {
             // Probe the air-buffer NBT on the player's chest-armor slot
             // (the canonical AR space-suit slot — ItemSpaceChest wraps
@@ -21058,16 +21661,35 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown chunk subcommand\"}");
     }
 
-    // Server tick-wait probe -------------------------------------------
+    // Server clock probes ----------------------------------------------
     //
-    // companion to the chunk-anchor probe. Once the
-    // rocket's chunk is force-loaded, we need to let the server's
-    // natural tick loop run N times so EntityRocket.onUpdate is invoked
-    // in its production context (rather than driving it synthetically
-    // via /artest rocket tick). This probe polls
-    // world.getTotalWorldTime() until the configured number of ticks
-    // has elapsed, sleeping 50ms between polls.
+    // Companion to the chunk-anchor probe. Once the rocket's chunk is force-loaded, a test needs the
+    // server's natural tick loop to run N times so EntityRocket.onUpdate is invoked in its production
+    // context (rather than driving it synthetically via /artest rocket tick).
+    //
+    // A command handler CANNOT provide that wait, and the reason is structural rather than incidental:
+    // console commands are drained on the server thread, which is the one thread that advances
+    // world time, so any handler that blocks waiting for the clock is blocking the clock. `tick-count`
+    // is therefore the instant read, and the waiting belongs to the TEST thread, which is free while
+    // the server ticks. Both verbs report `onServerThread` so the claim is measured on every call
+    // rather than asserted in a comment — an earlier comment here asserted the opposite and was
+    // believed for months.
     private void handleServer(MinecraftServer server, ICommandSender sender, String[] args) {
+        // /artest server tick-count <dim> — one instant read of the world's own clock. This is the
+        // observable a test-side wait is built from: read, sleep in the TEST jvm, read again.
+        if (args.length >= 2 && "tick-count".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim
+                    + ",\"tick\":" + world.getTotalWorldTime()
+                    + ",\"worldTime\":" + world.getWorldInfo().getWorldTime()
+                    + ",\"onServerThread\":" + server.isCallingFromMinecraftThread() + "}");
+            return;
+        }
         if (args.length >= 3 && "wait".equalsIgnoreCase(args[0])) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int ticksToWait = parseIntOr(args[2], 0);
@@ -21094,22 +21716,37 @@ public class TestProbeCommand extends CommandBase {
                 catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
             }
             long end = world.getTotalWorldTime();
+            // SAY whether the clock actually moved. Measured 2026-08-17: it does not — this handler
+            // runs ON the server thread, the one thread that advances world time, so the poll above
+            // can only ever watch a stopped clock and then give up on its wall budget. Every caller
+            // that read this as "N ticks have now happened" was reading a sleep. The verb keeps
+            // working (it does burn wall time, which some callers only ever wanted) but it may not
+            // report that silently: `advanced` is the field a test must look at, and the hint says
+            // what to do instead.
+            boolean advanced = end > start;
             send(sender, "{\"ok\":true,\"dim\":" + dim
                     + ",\"startTick\":" + start
                     + ",\"endTick\":" + end
                     + ",\"elapsedTicks\":" + (end - start)
                     + ",\"requested\":" + ticksToWait
+                    + ",\"advanced\":" + advanced
+                    + ",\"onServerThread\":" + server.isCallingFromMinecraftThread()
+                    + (advanced ? "" : ",\"hint\":\"the clock did not move: this handler runs on the "
+                            + "server thread and cannot let it tick - use 'server tick-count <dim>' "
+                            + "and wait from the test side instead\"")
                     + ",\"wallMs\":" + (System.currentTimeMillis() - wallStart) + "}");
             return;
         }
         // Block the server's TICK LOOP for a while, the way a real overloaded server does.
         //
-        // Probe handlers do not run on the server thread (the wait verb above polls the world clock
-        // from a command thread and would deadlock otherwise), so the block has to be scheduled ONTO
-        // that thread. Vanilla then logs its own "Can't keep up! ... skipping N tick(s)" and resumes,
-        // which is the whole point: a per-tick threshold anywhere in the codebase means something
-        // different across a tick that really took three seconds, and until now nothing in the harness
-        // could produce one. Bounded to 10 s so it can never approach the harness's command timeout.
+        // The block is scheduled onto the server thread rather than run inline. That is belt and
+        // braces, not necessity: handlers ALREADY run on the server thread (measured 2026-08-17 — the
+        // wait verb above cannot see the overworld clock move), and `addScheduledTask` invoked from
+        // that thread runs its runnable immediately, so this path stalls the loop either way.
+        // Vanilla then logs its own "Can't keep up! ... skipping N tick(s)" and resumes, which is the
+        // whole point: a per-tick threshold anywhere in the codebase means something different across
+        // a tick that really took three seconds, and until now nothing in the harness could produce
+        // one. Bounded to 10 s so it can never approach the harness's command timeout.
         if (args.length >= 2 && "stall".equalsIgnoreCase(args[0])) {
             long ms = parseIntOr(args[1], 0);
             if (ms <= 0L || ms > 10_000L) {
@@ -21167,8 +21804,8 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
-        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks> | save-dimensions\"}");
-        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks> | /artest server stall <ms>\"}");
+        send(sender, "{\"error\":\"usage: /artest server tick-count <dim> | wait <dim> <ticks> "
+                + "| stall <ms> | save-dimensions\"}");
     }
 
     /** True if the {@code <slashed>.class} resource is reachable via the

@@ -32,14 +32,28 @@ import java.util.Map;
  * {@code writeInt(slotDimId)}, {@code writeInt(bodyCount)} and, per body,
  * {@code writeInt(kindOrdinal)}, {@code writeLong(localX)}, {@code writeLong(localY)},
  * {@code writeLong(localZ)}, {@code writeInt(dimId)}, {@code writeBoolean(descendTarget)},
- * {@code writeLong(boundaryRadius)}.
- * {@code executeClient} stashes the decoded payload into a client-side static map (idempotent overwrite)
- * that {@link #bodiesForDim(int)} reads; {@code read} and {@code executeServer} are never used.</p>
+ * {@code writeLong(boundaryRadius)}, {@code writeLong(radiusBlocks)}, {@code writeInt(parentIndex)};
+ * then the NEBULA half, {@code writeInt(dimCount)} and, per dim,
+ * {@code writeInt(slotDimId)}, {@code writeInt(nebulaCount)} and, per cloud,
+ * {@code writeFloat(dirX/dirY/dirZ)}, {@code writeFloat(angularRadius)},
+ * {@code writeInt(appearanceOrdinal)}, {@code writeFloat(opacity)}.
+ * {@code executeClient} stashes the decoded payload into client-side static maps (idempotent overwrite)
+ * that {@link #bodiesForDim(int)} and {@link #nebulaeForDim(int)} read; {@code read} and
+ * {@code executeServer} are never used.</p>
+ *
+ * <p>The nebula half rides this packet rather than one of its own because it answers the same question
+ * — what does the sky of this cell show — keyed by the same cell&rarr;slot binding and cleared by the
+ * same empty payload. Bodies carry a POSITION (they are destinations); a cloud carries a DIRECTION and
+ * an apparent size, and nothing else, because it is not one.</p>
  */
 public final class PacketSystemBodiesSync extends BasePacket {
 
     /** One render body for a slot dim: what to draw and where, plus the descend-target highlight flag. */
     public static final class RenderBody {
+
+        /** {@link #parentIndex} of a body that belongs to nothing — a star, a planet, a lone POI. */
+        public static final int NO_PARENT = -1;
+
         public final int kindOrdinal;
         public final long localX;
         public final long localY;
@@ -58,8 +72,39 @@ public final class PacketSystemBodiesSync extends BasePacket {
          */
         public final long boundaryRadius;
 
+        /**
+         * How big the body itself is, in blocks — its own radius on the chart metric, not the shell
+         * around it.
+         *
+         * <p>Sent because the client cannot derive it: the universe registry is server-side, and a
+         * procedural world has no dimension to read a radius out of until somebody lands on it.
+         * Without this the sky sized a body by DISTANCE alone, so a moon and a gas giant side by
+         * side drew exactly the same disc. Zero for anything that is not a sphere — a belt, a
+         * station slot — which a renderer must treat as "no size of its own" rather than as
+         * "infinitely small".</p>
+         */
+        public final long radiusBlocks;
+
+        /**
+         * Index, WITHIN THIS DIM'S BODY LIST, of the body this one belongs to — or {@code -1} for a
+         * body that belongs to nothing.
+         *
+         * <p>Structure, which is the half of the feed that was missing: a moon carried a direction
+         * and a size but no way to say whose moon it was, so the sky could draw a giant and its
+         * retinue and not tell a pilot they were one destination. An INDEX rather than an id because
+         * the list is sent as a unit and a procedural body has no id of any kind — it has no
+         * dimension until somebody lands on it.</p>
+         *
+         * <p>Resolved server-side from the invariant the universe layer already holds: a moon shares
+         * its parent's CELL, and a cell holds at most one real body with moons excepted. So the
+         * parent of a moon is the non-moon body of the same cell, and there is never a second
+         * candidate.</p>
+         */
+        public final int parentIndex;
+
         public RenderBody(int kindOrdinal, long localX, long localY, long localZ, int dimId,
-                          boolean descendTarget, long boundaryRadius) {
+                          boolean descendTarget, long boundaryRadius, long radiusBlocks,
+                          int parentIndex) {
             this.kindOrdinal = kindOrdinal;
             this.localX = localX;
             this.localY = localY;
@@ -67,26 +112,88 @@ public final class PacketSystemBodiesSync extends BasePacket {
             this.dimId = dimId;
             this.descendTarget = descendTarget;
             this.boundaryRadius = boundaryRadius;
+            this.radiusBlocks = radiusBlocks;
+            this.parentIndex = parentIndex;
         }
 
         @Override
         public String toString() {
             return "RenderBody{kind=" + kindOrdinal + ",dir=" + localX + "," + localY + "," + localZ
-                    + ",dim=" + dimId + ",descend=" + descendTarget + ",shell=" + boundaryRadius + "}";
+                    + ",dim=" + dimId + ",descend=" + descendTarget + ",shell=" + boundaryRadius
+                    + ",r=" + radiusBlocks + ",parent=" + parentIndex + "}";
+        }
+    }
+
+    /**
+     * One nebula for a slot dim: a DIRECTION and an apparent SIZE, never a position.
+     *
+     * <p>A cloud is light years across and hundreds of light years away, so it has no parallax across
+     * a cell and nothing can be flown to it — it is deliberately not a destination and carries no
+     * address. What the sky needs is where to look, how much of the sky it covers, what it looks
+     * like, and how thick it is; those four are all of it.</p>
+     */
+    public static final class RenderNebula {
+        /** Unit vector from the observer towards the cloud's centre, in the static frame. */
+        public final float dirX;
+        public final float dirY;
+        public final float dirZ;
+        /**
+         * Half-angle the cloud subtends, in radians. A viewer INSIDE one gets a right angle: the
+         * cloud is all around him, which is the honest limit rather than an overflow.
+         */
+        public final float angularRadius;
+        /** {@code Nebula.Appearance} ordinal — dark, emission or reflection. Decides the tint. */
+        public final int appearanceOrdinal;
+        /** How thick it is at its densest, {@code 0}..{@code 1}. Decides how strongly it draws. */
+        public final float opacity;
+
+        public RenderNebula(float dirX, float dirY, float dirZ, float angularRadius,
+                            int appearanceOrdinal, float opacity) {
+            this.dirX = dirX;
+            this.dirY = dirY;
+            this.dirZ = dirZ;
+            this.angularRadius = angularRadius;
+            this.appearanceOrdinal = appearanceOrdinal;
+            this.opacity = opacity;
+        }
+
+        @Override
+        public String toString() {
+            return "RenderNebula{dir=" + dirX + "," + dirY + "," + dirZ + ",theta=" + angularRadius
+                    + ",look=" + appearanceOrdinal + ",opacity=" + opacity + "}";
         }
     }
 
     /** Client-side render store: slot dim id -> bodies to draw. Read by the sky renderer via {@link #bodiesForDim}. */
     private static final Map<Integer, List<RenderBody>> CLIENT_BODIES = new LinkedHashMap<>();
 
+    /** Client-side render store: slot dim id -> nebulae to draw. Read via {@link #nebulaeForDim}. */
+    private static final Map<Integer, List<RenderNebula>> CLIENT_NEBULAE = new LinkedHashMap<>();
+
     /** The decoded payload carried by this instance (server: what to send; client: what was received). */
     private Map<Integer, List<RenderBody>> byDim = new LinkedHashMap<>();
+
+    /** The nebula half of the same payload, keyed the same way. */
+    private Map<Integer, List<RenderNebula>> nebulaeByDim = new LinkedHashMap<>();
 
     public PacketSystemBodiesSync() {
     }
 
     /** Server factory: snapshot the per-slot-dim render bodies to broadcast to a client. */
     public static PacketSystemBodiesSync forDims(Map<Integer, List<RenderBody>> byDim) {
+        return forDims(byDim, null);
+    }
+
+    /**
+     * Server factory carrying BOTH halves of a cell's sky.
+     *
+     * <p>One channel and not two, because both are answers to the same question — what does the sky of
+     * this cell show — keyed by the same cell&rarr;slot binding, cleared by the same empty payload and
+     * broadcast on the same tick. A second channel would be a second lifecycle to keep in step, and the
+     * two skies could then disagree about which cell the viewer is in.</p>
+     */
+    public static PacketSystemBodiesSync forDims(Map<Integer, List<RenderBody>> byDim,
+                                                 Map<Integer, List<RenderNebula>> nebulaeByDim) {
         PacketSystemBodiesSync p = new PacketSystemBodiesSync();
         if (byDim != null) {
             for (Map.Entry<Integer, List<RenderBody>> e : byDim.entrySet()) {
@@ -94,6 +201,14 @@ public final class PacketSystemBodiesSync extends BasePacket {
                         ? new ArrayList<RenderBody>()
                         : new ArrayList<>(e.getValue());
                 p.byDim.put(e.getKey(), bodies);
+            }
+        }
+        if (nebulaeByDim != null) {
+            for (Map.Entry<Integer, List<RenderNebula>> e : nebulaeByDim.entrySet()) {
+                List<RenderNebula> clouds = e.getValue() == null
+                        ? new ArrayList<RenderNebula>()
+                        : new ArrayList<>(e.getValue());
+                p.nebulaeByDim.put(e.getKey(), clouds);
             }
         }
         return p;
@@ -107,6 +222,11 @@ public final class PacketSystemBodiesSync extends BasePacket {
     /** The decoded payload of THIS instance &mdash; the test reads it back without touching client statics. */
     public Map<Integer, List<RenderBody>> payload() {
         return byDim;
+    }
+
+    /** The nebula half of the decoded payload of THIS instance. */
+    public Map<Integer, List<RenderNebula>> nebulaPayload() {
+        return nebulaeByDim;
     }
 
     @Override
@@ -125,6 +245,22 @@ public final class PacketSystemBodiesSync extends BasePacket {
                 buffer.writeInt(b.dimId);
                 buffer.writeBoolean(b.descendTarget);
                 buffer.writeLong(b.boundaryRadius);
+                buffer.writeLong(b.radiusBlocks);
+                buffer.writeInt(b.parentIndex);
+            }
+        }
+        buffer.writeInt(nebulaeByDim.size());
+        for (Map.Entry<Integer, List<RenderNebula>> e : nebulaeByDim.entrySet()) {
+            List<RenderNebula> clouds = e.getValue();
+            buffer.writeInt(e.getKey());
+            buffer.writeInt(clouds.size());
+            for (RenderNebula n : clouds) {
+                buffer.writeFloat(n.dirX);
+                buffer.writeFloat(n.dirY);
+                buffer.writeFloat(n.dirZ);
+                buffer.writeFloat(n.angularRadius);
+                buffer.writeInt(n.appearanceOrdinal);
+                buffer.writeFloat(n.opacity);
             }
         }
     }
@@ -146,12 +282,34 @@ public final class PacketSystemBodiesSync extends BasePacket {
                 int dimId = buffer.readInt();
                 boolean descendTarget = buffer.readBoolean();
                 long boundaryRadius = buffer.readLong();
+                long radiusBlocks = buffer.readLong();
+                int parentIndex = buffer.readInt();
                 bodies.add(new RenderBody(kindOrdinal, localX, localY, localZ, dimId, descendTarget,
-                        boundaryRadius));
+                        boundaryRadius, radiusBlocks, parentIndex));
             }
             decoded.put(slotDimId, bodies);
         }
         byDim = decoded;
+
+        Map<Integer, List<RenderNebula>> decodedClouds = new LinkedHashMap<>();
+        int cloudDimCount = buffer.readInt();
+        for (int i = 0; i < cloudDimCount; i++) {
+            int slotDimId = buffer.readInt();
+            int cloudCount = buffer.readInt();
+            List<RenderNebula> clouds = new ArrayList<>();
+            for (int j = 0; j < cloudCount; j++) {
+                float dirX = buffer.readFloat();
+                float dirY = buffer.readFloat();
+                float dirZ = buffer.readFloat();
+                float angularRadius = buffer.readFloat();
+                int appearanceOrdinal = buffer.readInt();
+                float opacity = buffer.readFloat();
+                clouds.add(new RenderNebula(dirX, dirY, dirZ, angularRadius, appearanceOrdinal,
+                        opacity));
+            }
+            decodedClouds.put(slotDimId, clouds);
+        }
+        nebulaeByDim = decodedClouds;
     }
 
     @Override
@@ -164,6 +322,8 @@ public final class PacketSystemBodiesSync extends BasePacket {
     public void executeClient(EntityPlayer player) {
         CLIENT_BODIES.clear();
         CLIENT_BODIES.putAll(byDim);
+        CLIENT_NEBULAE.clear();
+        CLIENT_NEBULAE.putAll(nebulaeByDim);
     }
 
     @Override
@@ -175,5 +335,12 @@ public final class PacketSystemBodiesSync extends BasePacket {
     public static List<RenderBody> bodiesForDim(int slotDimId) {
         List<RenderBody> bodies = CLIENT_BODIES.get(slotDimId);
         return bodies == null ? Collections.<RenderBody>emptyList() : bodies;
+    }
+
+    /** Client render read: the nebulae to draw in {@code slotDimId}. Never null. */
+    @SideOnly(Side.CLIENT)
+    public static List<RenderNebula> nebulaeForDim(int slotDimId) {
+        List<RenderNebula> clouds = CLIENT_NEBULAE.get(slotDimId);
+        return clouds == null ? Collections.<RenderNebula>emptyList() : clouds;
     }
 }

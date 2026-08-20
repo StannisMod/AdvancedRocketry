@@ -43,7 +43,7 @@ public class WorldCommandPlanetLifecycleContractTest extends AbstractSharedServe
     @Test
     public void planetGenerateAddsExactlyOneEntryToRegistry() throws Exception {
         Set<Integer> before = dimIds();
-        exec("ar planet generate 0 GenTestA 10 10 10");
+        exec("ar planet generate 0 GenTestA");
         Set<Integer> after = dimIds();
         try {
             after.removeAll(before);
@@ -57,7 +57,7 @@ public class WorldCommandPlanetLifecycleContractTest extends AbstractSharedServe
     @Test
     public void planetGenerateNamesNewDimensionFromArg() throws Exception {
         Set<Integer> before = dimIds();
-        exec("ar planet generate 0 GenTestNamed 10 10 10");
+        exec("ar planet generate 0 GenTestNamed");
         Set<Integer> diff = dimIds();
         diff.removeAll(before);
         try {
@@ -73,7 +73,7 @@ public class WorldCommandPlanetLifecycleContractTest extends AbstractSharedServe
     @Test
     public void planetDeleteRemovesEntryFromRegistry() throws Exception {
         Set<Integer> before = dimIds();
-        exec("ar planet generate 0 GenTestDel 10 10 10");
+        exec("ar planet generate 0 GenTestDel");
         Set<Integer> diff = dimIds();
         diff.removeAll(before);
         assertEquals(1, diff.size());

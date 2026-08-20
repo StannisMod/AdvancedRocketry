@@ -34,10 +34,17 @@ package zmaster587.advancedRocketry.api;
  *       body-frame <em>velocity setpoint</em> (see {@link #rampSetpoint});
  *       FA computes the thrust that tracks it, cancelling gravity. Zero
  *       setpoint = hover.</li>
- *   <li>{@link #step} — Flight Assist OFF: raw Newtonian. Translation
- *       channels are direct thrust while held; release = coast under
- *       gravity. The manual brake (Shift) lives here only.</li>
+ *   <li>{@link #step} — Flight Assist OFF: raw Newtonian, and now literally so.
+ *       Translation channels are direct thrust while held; release = coast under
+ *       gravity. The manual brake (Shift) lives here only. <b>There is no ceiling on
+ *       speed</b> — only on acceleration ({@link #MAX_THRUST_ACCEL}), so you go as fast as
+ *       you are willing to burn for and must burn as long again to stop.</li>
  * </ul>
+ *
+ * <p>Where a speed bound is genuinely needed it belongs to the ENVIRONMENT rather than to the
+ * craft, and it is not imposed here: a vanilla entity's own movement resolves collision against
+ * the SWEPT box it is about to traverse ({@code Entity.move}), so a rocket cannot pass through
+ * terrain however fast it goes, and empty space has nothing to hit at all.</p>
  *
  * <p>Player intent enters via a {@link FreeFlightInput} normalised to [-1, +1].
  */
@@ -51,19 +58,63 @@ public final class FreeFlightPhysics {
     public static final double MAX_PITCH_RATE     = 4.0;
     /** Per-tick roll (bank) delta (degrees) at full roll input. */
     public static final double MAX_ROLL_RATE      = 5.0;
-    /** Max scalar speed (blocks/tick) — hard cap. */
-    public static final double MAX_SPEED          = 3.0;
+    /**
+     * The ceiling (blocks/tick) on the Flight-Assist velocity SETPOINT — the fastest cruise a pilot
+     * can dial in with the assist on.
+     *
+     * <p>It bounds what the assist can be ASKED for, and nothing else. It is not a law of motion and
+     * not a property of the craft: Flight Assist exists to hold the speed you asked for, so a ceiling
+     * on the asking is a comfort number and lives here; with the assist OFF there is no speed ceiling
+     * at all and a craft accelerates for as long as it burns (see {@link #translateNewtonian}).</p>
+     *
+     * <p>This used to be {@code MAX_SPEED}, clamped into BOTH laws, which made the documented
+     * "raw Newtonian" mode not Newtonian and put a rocket's top speed a factor of ~130 below first
+     * cosmic velocity — by its own numbers it could not reach orbit. The number itself is unchanged;
+     * only its reach is.</p>
+     */
+    public static final double FA_SETPOINT_MAX_SPEED = 3.0;
     /** Brake retention factor at full brake (0..1, lower = more aggressive). */
     public static final double BRAKE_RETENTION    = 0.85;
     /** Pitch clamp (degrees). */
     public static final double PITCH_MAX          = 85.0;
     /**
      * Arcade ceiling on per-tick thrust acceleration (blocks/tick²). Bounds an
-     * extremely high thrust-to-weight rocket so motion stays smooth; velocity is
-     * still bounded independently by {@link #MAX_SPEED}. Normal rockets sit far
+     * extremely high thrust-to-weight rocket so motion stays smooth. Normal rockets sit far
      * below this (e.g. TWR 2 &rarr; ~0.1), so the cap only bites on absurd builds.
+     *
+     * <p><b>This is the only bound on free flight.</b> Nothing caps velocity: a craft that keeps
+     * burning keeps gaining speed, and how long that takes is the whole cost. At this ceiling a
+     * turnover crossing of one system is hours rather than the impossibility a speed cap made it.</p>
      */
     public static final double MAX_THRUST_ACCEL   = 0.5;
+
+    /**
+     * The speed a craft at FULL thrust settles at in a one-atmosphere sky, in blocks/tick — the
+     * number {@link #DRAG_PER_DENSITY} is derived from, and the one to argue about if this ever
+     * feels wrong.
+     *
+     * <p>100 b/t is 2 km/s. It is deliberately generous: real hulls come apart far below it in dense
+     * air, and the point here is not to model aerodynamics but to stop an atmosphere from being a
+     * thing a craft passes through as if it were vacuum. Under the acceleration law a rocket can now
+     * arrive at a planet arbitrarily fast, and nothing charged it for that; an atmosphere charges it
+     * in the only currency this law has, which is TIME — shedding speed takes as long as building it
+     * did.</p>
+     *
+     * <p>NOT ratified as a balance number. It is derived, stated, and pinned by a test that reads it
+     * from here rather than restating it.</p>
+     */
+    public static final double ATMOSPHERIC_TERMINAL_SPEED = 100.0;
+
+    /**
+     * Quadratic drag per unit of atmospheric density, in 1/blocks: {@code Δv = -k·ρ·v·|v|}.
+     *
+     * <p>Derived, not chosen: at terminal velocity thrust equals drag, so
+     * {@code k = MAX_THRUST_ACCEL / ATMOSPHERIC_TERMINAL_SPEED²}. Both inputs are visible above, so
+     * changing either moves this the way physics says it should rather than the way a hand-tuned
+     * constant would.</p>
+     */
+    public static final double DRAG_PER_DENSITY =
+            MAX_THRUST_ACCEL / (ATMOSPHERIC_TERMINAL_SPEED * ATMOSPHERIC_TERMINAL_SPEED);
 
     /**
      * Per-tick velocity retention used by the liftoff/hover assist to bleed
@@ -90,7 +141,7 @@ public final class FreeFlightPhysics {
     /**
      * Per-held-tick change of the velocity setpoint (blocks/tick per tick) at
      * full channel deflection: holding a key sweeps one axis from 0 to
-     * {@link #MAX_SPEED} in ~{@code MAX_SPEED/SETPOINT_RAMP} = 60 ticks (3 s).
+     * {@link #FA_SETPOINT_MAX_SPEED} in ~{@code FA_SETPOINT_MAX_SPEED/SETPOINT_RAMP} = 60 ticks (3 s).
      */
     public static final double SETPOINT_RAMP = 0.05;
 
@@ -409,15 +460,13 @@ public final class FreeFlightPhysics {
             cx *= s; cy *= s; cz *= s;
         }
 
+        // No velocity clamp: the ceiling lives on the SETPOINT this law is tracking
+        // (FA_SETPOINT_MAX_SPEED), so a craft that arrives here faster than the pilot asked for -
+        // carrying momentum from a Newtonian burn - is decelerated by the thrust budget like
+        // anything else, instead of having its velocity rewritten under it.
         double newMx = mx + cx;
         double newMy = my + cy - gravity;
         double newMz = mz + cz;
-
-        double speed = Math.sqrt(newMx * newMx + newMy * newMy + newMz * newMz);
-        if (speed > MAX_SPEED) {
-            double s = MAX_SPEED / speed;
-            newMx *= s; newMy *= s; newMz *= s;
-        }
         return new Step(newMx, newMy, newMz, e[0], e[1], e[2], thrustApplied);
     }
 
@@ -453,13 +502,44 @@ public final class FreeFlightPhysics {
             double retain = 1.0 - (1.0 - BRAKE_RETENTION) * brake;
             newMx *= retain; newMy *= retain; newMz *= retain;
         }
-
-        double speed = Math.sqrt(newMx * newMx + newMy * newMy + newMz * newMz);
-        if (speed > MAX_SPEED) {
-            double s = MAX_SPEED / speed;
-            newMx *= s; newMy *= s; newMz *= s;
-        }
+        // NO speed cap. This law is Newtonian and now says so: thrust while held, coast on release,
+        // and the only bound is MAX_THRUST_ACCEL. Reaching an absurd speed is the pilot's own affair
+        // and costs him the time it takes to shed it again.
         return new Step(newMx, newMy, newMz, e[0], e[1], e[2], thrustApplied);
+    }
+
+    /**
+     * One tick of atmospheric drag on a world-frame velocity: {@code Δv = -k·ρ·v·|v|}, quadratic in
+     * speed and linear in density, applied along the velocity vector so it only ever slows a craft
+     * and never turns it.
+     *
+     * <p>Applies to every flight law rather than to one of them: an atmosphere does not ask whether
+     * Flight Assist is on. It is the counterpart of removing the speed cap — the cap used to be the
+     * only thing standing between "go as fast as you like" and "arrive at a planet at any speed",
+     * and a bound that comes from where you are is a better one than a bound written into the law.</p>
+     *
+     * <p><b>Never overshoots into a reversal.</b> A tick's drag is clamped to the speed itself, so a
+     * craft can be brought to rest but never pushed backwards by air — which an unclamped quadratic
+     * would do at high speed and low tick rate, and which reads as a hull bouncing off the sky.</p>
+     *
+     * @param density atmospheric density as a fraction of one Earth atmosphere; {@code <= 0} is
+     *                vacuum and returns the velocity untouched
+     * @return the new {@code {mx, my, mz}}
+     */
+    public static double[] atmosphericDrag(double mx, double my, double mz, double density) {
+        if (!(density > 0.0)) {
+            return new double[]{mx, my, mz};
+        }
+        double speed = Math.sqrt(mx * mx + my * my + mz * mz);
+        if (speed < 1e-9) {
+            return new double[]{mx, my, mz};
+        }
+        double decel = DRAG_PER_DENSITY * density * speed * speed;
+        if (decel > speed) {
+            decel = speed; // to rest, never through it
+        }
+        double scale = (speed - decel) / speed;
+        return new double[]{mx * scale, my * scale, mz * scale};
     }
 
     // -- Tier-2 ship translation command -----------------------------------
@@ -614,7 +694,9 @@ public final class FreeFlightPhysics {
      *. Holding a translation key RAMPS the matching axis by
      * {@link #SETPOINT_RAMP} per tick; releasing leaves the setpoint where it
      * is; {@code input.cutActive} (X) zeroes the whole vector instantly. The
-     * result is clamped to {@link #MAX_SPEED} in magnitude.
+     * result is clamped to {@link #FA_SETPOINT_MAX_SPEED} in magnitude — <b>the one place
+     * free flight has a speed ceiling</b>, and it bounds what the assist may be asked to hold,
+     * never what the craft may reach.
      *
      * @return new setpoint as {forward, right, up}
      */
@@ -628,8 +710,8 @@ public final class FreeFlightPhysics {
         double u = sane(spUp)    + input.throttleVertical * SETPOINT_RAMP;
 
         double mag = Math.sqrt(f * f + r * r + u * u);
-        if (mag > MAX_SPEED) {
-            double s = MAX_SPEED / mag;
+        if (mag > FA_SETPOINT_MAX_SPEED) {
+            double s = FA_SETPOINT_MAX_SPEED / mag;
             f *= s; r *= s; u *= s;
         }
         return new double[] {f, r, u};
@@ -686,16 +768,10 @@ public final class FreeFlightPhysics {
             cx *= s; cy *= s; cz *= s;
         }
 
+        // No velocity clamp — see the quaternion faStep: the ceiling is on the setpoint.
         double newMx = mx + cx;
         double newMy = my + cy - gravity;
         double newMz = mz + cz;
-
-        // Hard speed cap (always — safety).
-        double speed = Math.sqrt(newMx * newMx + newMy * newMy + newMz * newMz);
-        if (speed > MAX_SPEED) {
-            double s = MAX_SPEED / speed;
-            newMx *= s; newMy *= s; newMz *= s;
-        }
 
         return new Step(newMx, newMy, newMz, yawDeg, pitchDeg, rollDeg, thrustApplied);
     }
@@ -774,15 +850,7 @@ public final class FreeFlightPhysics {
             newMz *= retain;
         }
 
-        // Hard speed cap (always — safety).
-        double speed = Math.sqrt(newMx * newMx + newMy * newMy + newMz * newMz);
-        if (speed > MAX_SPEED) {
-            double s = MAX_SPEED / speed;
-            newMx *= s;
-            newMy *= s;
-            newMz *= s;
-        }
-
+        // NO speed cap — see translateNewtonian.
         return new Step(newMx, newMy, newMz, newYaw, newPitch, newRoll, thrustApplied);
     }
 

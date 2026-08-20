@@ -158,7 +158,7 @@ public class HyperspaceSurvivesARestartE2ETest {
         assertTrue("the departure crossing must put the ship into hyperspace: " + begin,
                 readBool(begin, "began"));
 
-        String tick = exec("artest space transit-tick");
+        String tick = exec("artest space transit-tick 10");
         int hyperDimBefore = readInt(tick, "hyperDim");
         int inTransit = readInt(tick, "inTransit");
         assertTrue("ARRANGEMENT: the jump must still be in flight when the server goes down, or"
@@ -213,7 +213,7 @@ public class HyperspaceSurvivesARestartE2ETest {
         String setupAfter = exec("artest space transit-setup-piloted");
         assertTrue("the transit probe stack must come up on boot 2: " + setupAfter,
                 readBool(setupAfter, "ok"));
-        int hyperDimAfter = readInt(exec("artest space transit-tick"), "hyperDim");
+        int hyperDimAfter = readInt(exec("artest space transit-tick 10"), "hyperDim");
 
         int parkedAfter = readIntOr(exec("artest vs ship-count-all " + hyperDimAfter), "count", -1);
         assertEquals("a ship parked in hyperspace must still be parked in hyperspace after a real"

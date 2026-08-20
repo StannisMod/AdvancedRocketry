@@ -26,8 +26,13 @@ import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.dimension.TerrainSource;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalacticAnchor;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.GalaxyKey;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.PlanetTypePreset;
+import zmaster587.advancedRocketry.universe.PlanetTypes;
+import zmaster587.advancedRocketry.universe.TerrainOption;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.fml.common.FMLCommonHandler;
@@ -61,10 +66,41 @@ public class XMLPlanetLoader {
     // between authored anchors; absent -> authored anchors only. All attrs are balance knobs with defaults.
     private static final String ELEMENT_GALAXYGEN = "galaxyGen";
     private static final String ELEMENT_STARTYPE = "starType";
+    private static final String ELEMENT_GALAXYTYPE = "galaxyType";
+    private static final String ATTR_PROFILE = "profile";
+    private static final String ATTR_MINRADIUS = "minRadius";
+    private static final String ATTR_MAXRADIUS = "maxRadius";
+    private static final String ATTR_THICKNESS = "thickness";
+    private static final String ATTR_ARMS = "arms";
+    private static final String ATTR_ROTATIONSPEED = "rotationSpeed";
+    private static final String ATTR_COREFRACTION = "coreFraction";
+    private static final String ATTR_MINSATELLITES = "minSatellites";
+    private static final String ATTR_MAXSATELLITES = "maxSatellites";
+    // A planet TYPE preset: the named region of parameter space a world can land in, plus everything
+    // that follows from being that kind of world. Present -> replaces the whole stock table.
+    private static final String ELEMENT_PLANETTYPE = "planetType";
+    private static final String ELEMENT_TYPE_PRESSURE = "pressure";
+    private static final String ELEMENT_TYPE_TEMPERATURE = "temperature";
+    private static final String ELEMENT_TYPE_GRAVITY = "gravity";
+    private static final String ELEMENT_TYPE_TERRAIN = "terrain";
+    private static final String ELEMENT_TYPE_GEN = "gen";
+    private static final String ATTR_MIN = "min";
+    private static final String ATTR_MAX = "max";
+    private static final String ATTR_SOURCE = "source";
+    private static final String ATTR_WORLDTYPE = "worldType";
+    private static final String ATTR_TEMPLATE_PATH = "path";
+    private static final String ATTR_GENTYPE = "genType";
+    private static final String ATTR_OPTIONS = "options";
+    private static final String ATTR_GASGIANT = "gasGiant";
+    private static final String ATTR_ALLOWS_OXYGEN = "allowsOxygen";
+    private static final String ATTR_TIDALLY_LOCKABLE = "tidallyLockable";
     private static final String ATTR_DENSITY = "density";
     private static final String ATTR_MINSPACING = "minSpacing";
-    private static final String ATTR_CLUSTERSCALE = "clusterScale";
-    private static final String ATTR_VOIDFRACTION = "voidFraction";
+    private static final String ATTR_GALAXYSPACING = "galaxySpacing";
+    private static final String ATTR_GALAXYDENSITY = "galaxyDensity";
+    private static final String ATTR_ROGUEABUNDANCE = "rogueAbundance";
+    private static final String ATTR_ROGUEGIANTFRACTION = "rogueGiantFraction";
+    private static final String ATTR_EJECTAFALLOFF = "ejectaFalloff";
     private static final String ATTR_MINSIZE = "minSize";
     private static final String ATTR_MAXSIZE = "maxSize";
     private static final String ELEMENT_PLANET = "planet";
@@ -76,10 +112,12 @@ public class XMLPlanetLoader {
     // Explicit galactic address of an authored anchor system: "sectorX,sectorY,sectorZ" (cell indices).
     // Absent -> the system falls back to a deterministic cell (Sol -> origin). See UniverseRegistry.
     private static final String ATTR_GALACTIC_COORD = "galacticCoord";
+    private static final String ATTR_GALAXY = "galaxy";
     private static final String ATTR_SIZE = "size";
     private static final String ATTR_NUMPLANETS = "numPlanets";
     private static final String ATTR_NUMGASPLANETS = "numGasGiants";
-    private static final String ATTR_SEPERATION = "separation";
+    private static final String ATTR_COMPANION_ORBIT = "orbitalDistance";
+    private static final String ATTR_COMPANION_THETA = "orbitalTheta";
     private static final String ATTR_DIMID = "DIMID";
     private static final String ATTR_NATIVEDIM = "dimMapping";
     private static final String ATTR_ICON = "customIcon";
@@ -92,6 +130,10 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_FOGCOLOR = "fogColor";
     private static final String ELEMENT_SKYCOLOR = "skyColor";
     private static final String ELEMENT_GRAVITY = "gravitationalMultiplier";
+    private static final String ELEMENT_MASS = "mass";
+    private static final String ELEMENT_RADIUS = "radius";
+    private static final String ELEMENT_TIDALLY_LOCKED = "tidallyLocked";
+    private static final String ELEMENT_METALLICITY = "metallicity";
     private static final String ELEMENT_DISTANCE = "orbitalDistance";
     private static final String ELEMENT_BASEORBITTHETA = "orbitalTheta";
     private static final String ELEMENT_PHI = "orbitalPhi";
@@ -107,6 +149,7 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_TERRAIN_SOURCE = "terrainSource";
     private static final String ELEMENT_TERRAIN_WORLDTYPE = "terrainWorldType";
     private static final String ELEMENT_TERRAIN_TEMPLATE = "terrainTemplate";
+    private static final String ELEMENT_TERRAIN_GENERATOR_OPTIONS = "terrainGeneratorOptions";
     private static final String ELEMENT_RIVER_OVERRIDE = "forceRiverGeneration";
     private static final String ELEMENT_OREGEN = "oreGen";
     private static final String ELEMENT_LASER_DRILL_ORES = "laserDrillOres";
@@ -156,7 +199,16 @@ public class XMLPlanetLoader {
      * Resolve a system's authored galactic coordinate from the live universe registry, or {@code null} when
      * no server/registry is reachable (so a no-server unit-test export simply omits the attribute).
      */
-    private static GalacticCoord anchorCoordForWrite(int starId) {
+    /**
+     * How this star's address is written back.
+     *
+     * <p>In the language it was DECLARED in, when it was declared: a galaxy-local anchor writes its
+     * galaxy and its offset, and would otherwise be written as the absolute cell it resolved to and
+     * then read back on the next load as an offset from that same galaxy — shifted twice, and further
+     * every save. A star that was never declared writes the absolute cell it was given, which is what
+     * it has.</p>
+     */
+    private static GalacticAnchor anchorForWrite(int starId) {
         MinecraftServer server;
         try {
             server = FMLCommonHandler.instance().getMinecraftServerInstance();
@@ -172,7 +224,12 @@ public class XMLPlanetLoader {
         if (registry == null) {
             return null;
         }
-        return registry.coordForSystem(starId).orElse(null);
+        GalacticAnchor declared = registry.declaredAnchorFor(starId);
+        if (declared != null) {
+            return declared;
+        }
+        GalacticCoord placed = registry.coordForSystem(starId).orElse(null);
+        return placed == null ? null : GalacticAnchor.inHome(placed);
     }
 
     private static String attr(Node node, String name) {
@@ -196,6 +253,19 @@ public class XMLPlanetLoader {
         }
     }
 
+    private static long attrLong(Node node, String name, long def) {
+        String v = attr(node, name);
+        if (v == null || v.trim().isEmpty()) {
+            return def;
+        }
+        try {
+            return Long.parseLong(v.trim());
+        } catch (NumberFormatException e) {
+            AdvancedRocketry.logger.warn("Invalid " + name + " in <galaxyGen>: " + v);
+            return def;
+        }
+    }
+
     private static double attrDouble(Node node, String name, double def) {
         String v = attr(node, name);
         if (v == null || v.trim().isEmpty()) {
@@ -209,13 +279,32 @@ public class XMLPlanetLoader {
         }
     }
 
+    /**
+     * The galaxy an authored anchor is declared against — {@code home} when unstated, which is what a
+     * pack that never thinks about galaxies gets and is always the right answer for it.
+     */
+    private static GalaxyKey readGalaxyKey(Node node, String starName) {
+        String raw = attr(node, ATTR_GALAXY);
+        if (raw == null || raw.trim().isEmpty()) {
+            return GalaxyKey.HOME;
+        }
+        GalaxyKey key = GalaxyKey.parse(raw);
+        if (key == null) {
+            AdvancedRocketry.logger.warn("star '" + starName + "' names galaxy \"" + raw
+                    + "\", which is neither \"" + GalaxyKey.HOME_NAME + "\" nor a \"gx,gy,gz\" lattice"
+                    + " index. Placing it in the home galaxy.");
+            return GalaxyKey.HOME;
+        }
+        return key;
+    }
+
     /** Parse a {@code <galaxyGen>} element (attrs + {@code <starType>} children) into a config. */
     private GalaxyGenConfig readGalaxyGen(Node node) {
         GalaxyGenConfig defaults = GalaxyGenConfig.defaults();
         double density = attrDouble(node, ATTR_DENSITY, defaults.density);
         int minSpacing = attrInt(node, ATTR_MINSPACING, defaults.minSpacing);
-        int clusterScale = attrInt(node, ATTR_CLUSTERSCALE, defaults.clusterScale);
-        double voidFraction = attrDouble(node, ATTR_VOIDFRACTION, defaults.voidFraction);
+        long galaxySpacing = attrLong(node, ATTR_GALAXYSPACING, defaults.galaxySpacing);
+        double galaxyDensity = attrDouble(node, ATTR_GALAXYDENSITY, defaults.galaxyDensity);
 
         List<GalaxyGenConfig.StarType> types = new ArrayList<>();
         NodeList children = node.getChildNodes();
@@ -229,16 +318,282 @@ public class XMLPlanetLoader {
                         attrInt(child, ATTR_WEIGHT, 1)));
             }
         }
-        // An empty <starType> list falls back to the default archetypes (handled by the config ctor).
-        return new GalaxyGenConfig(density, minSpacing, clusterScale, voidFraction, types);
+        List<GalaxyGenConfig.GalaxyType> galaxyTypes = new ArrayList<>();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (ELEMENT_GALAXYTYPE.equalsIgnoreCase(child.getNodeName())) {
+                galaxyTypes.add(readGalaxyType(child));
+            }
+        }
+        // The UNBOUND population. Its defaults are measured quantities rather than balance picks, so
+        // an element that says nothing about rogues gets the sky as it is observed to be.
+        GalaxyGenConfig.RogueTuning rogueDefaults = defaults.rogue;
+        GalaxyGenConfig.RogueTuning rogue = new GalaxyGenConfig.RogueTuning(
+                attrDouble(node, ATTR_ROGUEABUNDANCE, rogueDefaults.abundance),
+                attrDouble(node, ATTR_ROGUEGIANTFRACTION, rogueDefaults.giantFraction),
+                attrDouble(node, ATTR_EJECTAFALLOFF, rogueDefaults.ejectaFalloff),
+                rogueDefaults.types);
+        // Empty <starType> / <galaxyType> lists fall back to the stock archetypes (config ctor).
+        return new GalaxyGenConfig(minSpacing, density, galaxySpacing, galaxyDensity, types,
+                galaxyTypes).withRogueTuning(rogue);
+    }
+
+    /**
+     * Parse one {@code <galaxyType>} element into a galaxy archetype.
+     *
+     * <pre>{@code
+     * <galaxyType name="Spiral" profile="DISC" minRadius="15000" maxRadius="60000"
+     *             thickness="0.02" arms="2" rotationSpeed="220" coreFraction="0.08"
+     *             minSatellites="1" maxSatellites="3" weight="7"/>
+     * }</pre>
+     *
+     * <p>Every SHAPE attribute defaults to the stock spiral's value, so a pack that wants to change
+     * only how flat a disc is writes only {@code thickness}. Those defaults are READ OFF
+     * {@link GalaxyGenConfig#stockSpiral()} rather than written here: they were literals once, and the
+     * copy went stale the moment the galaxy scale moved. {@code weight} is the deliberate exception —
+     * it defaults to {@code 1}, the rarest, because a type a pack did not weight should not silently
+     * inherit a spiral's abundance.</p>
+     */
+    private static GalaxyGenConfig.GalaxyType readGalaxyType(Node node) {
+        String profileName = attr(node, ATTR_PROFILE);
+        GalaxyGenConfig.GalaxyProfile profile = GalaxyGenConfig.GalaxyProfile.DISC;
+        if (profileName != null && !profileName.trim().isEmpty()) {
+            try {
+                profile = GalaxyGenConfig.GalaxyProfile.valueOf(profileName.trim().toUpperCase());
+            } catch (IllegalArgumentException bad) {
+                AdvancedRocketry.logger.warn("Unknown galaxy profile \"" + profileName
+                        + "\" in <galaxyType>; using DISC");
+            }
+        }
+        String name = attr(node, ATTR_NAME);
+        GalaxyGenConfig.GalaxyType stock = GalaxyGenConfig.stockSpiral();
+        return new GalaxyGenConfig.GalaxyType(
+                (name == null || name.trim().isEmpty()) ? "Galaxy" : name.trim(),
+                profile,
+                attrDouble(node, ATTR_MINRADIUS, stock.minRadiusLy),
+                attrDouble(node, ATTR_MAXRADIUS, stock.maxRadiusLy),
+                attrDouble(node, ATTR_THICKNESS, stock.scaleHeightRatio),
+                attrInt(node, ATTR_ARMS, stock.armCount),
+                attrDouble(node, ATTR_ROTATIONSPEED, stock.rotationSpeedKmS),
+                attrDouble(node, ATTR_COREFRACTION, stock.coreRadiusFraction),
+                attrInt(node, ATTR_MINSATELLITES, stock.minSatellites),
+                attrInt(node, ATTR_MAXSATELLITES, stock.maxSatellites),
+                attrInt(node, ATTR_WEIGHT, 1));
+    }
+
+    /**
+     * Parse one {@code <planetType>} element into a preset.
+     *
+     * <pre>{@code
+     * <planetType name="ice" weight="20" allowsOxygen="false">
+     *   <pressure    min="0"  max="80"/>
+     *   <temperature min="0"  max="175"/>
+     *   <gravity     min="10" max="140"/>
+     *   <terrain>
+     *     <gen source="MOD_WORLDTYPE" worldType="RTG" options="" weight="3"/>
+     *     <gen source="NATIVE"        genType="0"                weight="2"/>
+     *     <gen source="TEMPLATE"      path="frozen_ruins"        weight="1"/>
+     *   </terrain>
+     *   <biomeIds>advancedrocketry:moondark;10,minecraft:ice_flats;30</biomeIds>
+     *   <oreGen>...</oreGen>
+     * </planetType>
+     * }</pre>
+     *
+     * <p>Ranges are in the game's own units: pressure in atmosphere-density units (100 = 1 atm),
+     * temperature in KELVIN, gravity in percent of Earth's. Every attribute has a default, so a
+     * {@code <planetType name="x"/>} with nothing else is a valid (if very greedy) preset.</p>
+     */
+    private PlanetTypePreset readPlanetType(Node node) {
+        String name = attr(node, ATTR_NAME);
+        PlanetTypePreset.Builder b = PlanetTypePreset.builder(name == null ? "" : name)
+                .weight(attrInt(node, ATTR_WEIGHT, 10))
+                .gasGiant(attrBool(node, ATTR_GASGIANT, false))
+                .allowsOxygen(attrBool(node, ATTR_ALLOWS_OXYGEN, false))
+                .tidallyLockable(attrBool(node, ATTR_TIDALLY_LOCKABLE, true));
+
+        NodeList children = node.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            String tag = child.getNodeName();
+            if (ELEMENT_TYPE_PRESSURE.equalsIgnoreCase(tag)) {
+                b.pressure(attrInt(child, ATTR_MIN, DimensionProperties.MIN_ATM_PRESSURE),
+                        attrInt(child, ATTR_MAX, DimensionProperties.MAX_ATM_PRESSURE));
+            } else if (ELEMENT_TYPE_TEMPERATURE.equalsIgnoreCase(tag)) {
+                b.temperature(attrInt(child, ATTR_MIN, 0), attrInt(child, ATTR_MAX, 5000));
+            } else if (ELEMENT_TYPE_GRAVITY.equalsIgnoreCase(tag)) {
+                b.gravity(attrInt(child, ATTR_MIN, DimensionProperties.MIN_GRAVITY),
+                        attrInt(child, ATTR_MAX, DimensionProperties.MAX_GRAVITY));
+            } else if (ELEMENT_TYPE_TERRAIN.equalsIgnoreCase(tag)) {
+                NodeList gens = child.getChildNodes();
+                for (int j = 0; j < gens.getLength(); j++) {
+                    Node gen = gens.item(j);
+                    if (ELEMENT_TYPE_GEN.equalsIgnoreCase(gen.getNodeName())) {
+                        b.terrain(new TerrainOption(
+                                TerrainSource.byName(attr(gen, ATTR_SOURCE)),
+                                attr(gen, ATTR_WORLDTYPE),
+                                attr(gen, ATTR_TEMPLATE_PATH),
+                                attrInt(gen, ATTR_GENTYPE, 0),
+                                attr(gen, ATTR_OPTIONS),
+                                attrInt(gen, ATTR_WEIGHT, 1)));
+                    }
+                }
+            } else if (ELEMENT_BIOMEIDS.equalsIgnoreCase(tag)) {
+                b.biomes(child.getTextContent());
+            } else if (ELEMENT_OREGEN.equalsIgnoreCase(tag)) {
+                b.ores(XMLOreLoader.loadOre(child));
+            } else if (ELEMENT_SEALEVEL.equalsIgnoreCase(tag)) {
+                b.seaLevel(parseIntOr(child.getTextContent(), PlanetTypePreset.SEA_LEVEL_UNSET));
+            } else if (ELEMENT_OCEANBLOCK.equalsIgnoreCase(tag)) {
+                b.oceanBlock(child.getTextContent());
+            }
+        }
+        return b.build();
+    }
+
+    /**
+     * Apply an authored biome palette — the {@code <biomeIds>} format — to a planet.
+     *
+     * <p>Public and shared because a planet TYPE declares its palette in exactly the same language a
+     * planet does, and a realized procedural world has to mean by it precisely what an authored world
+     * means. Two parsers for one format is two chances for a pack's entry to work in one place and be
+     * ignored in the other.</p>
+     *
+     * <p>Format: comma-separated entries of {@code biome} or {@code biome;weight}, where {@code biome}
+     * is a registry name (preferred) or a raw numeric id (legacy, and modset-dependent). A malformed
+     * entry is warned about and skipped; it never aborts the rest of the list.</p>
+     */
+    public static void applyBiomeList(DimensionProperties properties, String authoredList) {
+        if (properties == null || authoredList == null || authoredList.trim().isEmpty()) {
+            return;
+        }
+        for (String s : authoredList.split(",")) {
+            if (s.trim().isEmpty()) {
+                continue;
+            }
+            int biomeWeight = 30;
+            String[] weightSplit = s.trim().split(";");
+
+            //Try to get a weight out of the semicolon separator
+            if (weightSplit.length > 1) {
+                try {
+                    biomeWeight = Integer.parseInt(weightSplit[1].trim());
+                    if (biomeWeight == 0) {
+                        AdvancedRocketry.logger.warn("Weight cannot be 0! Setting weight to default");
+                        biomeWeight = 30;
+                    }
+                } catch (NumberFormatException e) {
+                    biomeWeight = 30;
+                    AdvancedRocketry.logger.warn(weightSplit[1] + " is not a valid biome weight");
+                }
+            }
+
+            //Check whether we have numeric IDs (bad!) or RL ids
+            ResourceLocation location = new ResourceLocation(weightSplit[0]);
+            if (Biome.REGISTRY.containsKey(location)) {
+                Biome biome = Biome.REGISTRY.getObject(location);
+                if (biome == null)
+                    AdvancedRocketry.logger.warn("Error adding " + weightSplit[0]); //TODO: more detailed error msg
+                else
+                    properties.addBiomeWeighted(biome, biomeWeight);
+            } else {
+                try {
+                    int biome = Integer.parseInt(weightSplit[0]);
+
+                    if (!properties.addBiome(biome))
+                        AdvancedRocketry.logger.warn(weightSplit[0] + " is not a valid biome id"); //TODO: more detailed error msg
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn(weightSplit[0] + " is not a valid biome id or name"); //TODO: more detailed error msg
+                }
+            }
+        }
+    }
+
+    private static boolean attrBool(Node node, String name, boolean def) {
+        String v = attr(node, name);
+        if (v == null || v.trim().isEmpty()) {
+            return def;
+        }
+        return Boolean.parseBoolean(v.trim());
+    }
+
+    private static int parseIntOr(String text, int def) {
+        if (text == null || text.trim().isEmpty()) {
+            return def;
+        }
+        try {
+            return Integer.parseInt(text.trim());
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    /** Emit a preset so a re-read round-trips the authored table. */
+    private static Element writePlanetType(Document doc, PlanetTypePreset preset) {
+        Element e = doc.createElement(ELEMENT_PLANETTYPE);
+        e.setAttribute(ATTR_NAME, preset.name());
+        e.setAttribute(ATTR_WEIGHT, Integer.toString(preset.weight()));
+        if (preset.gasGiant()) {
+            e.setAttribute(ATTR_GASGIANT, "true");
+        }
+        if (preset.allowsOxygen()) {
+            e.setAttribute(ATTR_ALLOWS_OXYGEN, "true");
+        }
+        if (!preset.tidallyLockable()) {
+            e.setAttribute(ATTR_TIDALLY_LOCKABLE, "false");
+        }
+        e.appendChild(range(doc, ELEMENT_TYPE_PRESSURE, preset.minPressure(), preset.maxPressure()));
+        e.appendChild(range(doc, ELEMENT_TYPE_TEMPERATURE, preset.minTemperature(), preset.maxTemperature()));
+        e.appendChild(range(doc, ELEMENT_TYPE_GRAVITY, preset.minGravity(), preset.maxGravity()));
+        Element terrain = doc.createElement(ELEMENT_TYPE_TERRAIN);
+        for (TerrainOption option : preset.terrain()) {
+            Element gen = doc.createElement(ELEMENT_TYPE_GEN);
+            gen.setAttribute(ATTR_SOURCE, option.source().name());
+            if (!option.worldType().isEmpty()) {
+                gen.setAttribute(ATTR_WORLDTYPE, option.worldType());
+            }
+            if (!option.template().isEmpty()) {
+                gen.setAttribute(ATTR_TEMPLATE_PATH, option.template());
+            }
+            if (option.source() == TerrainSource.NATIVE) {
+                gen.setAttribute(ATTR_GENTYPE, Integer.toString(option.genType()));
+            }
+            if (!option.options().isEmpty()) {
+                gen.setAttribute(ATTR_OPTIONS, option.options());
+            }
+            gen.setAttribute(ATTR_WEIGHT, Integer.toString(option.weight()));
+            terrain.appendChild(gen);
+        }
+        e.appendChild(terrain);
+        if (!preset.biomes().isEmpty()) {
+            e.appendChild(createTextNode(doc, ELEMENT_BIOMEIDS, preset.biomes()));
+        }
+        if (preset.seaLevel() != PlanetTypePreset.SEA_LEVEL_UNSET) {
+            e.appendChild(createTextNode(doc, ELEMENT_SEALEVEL, Integer.toString(preset.seaLevel())));
+        }
+        if (!preset.oceanBlock().isEmpty()) {
+            e.appendChild(createTextNode(doc, ELEMENT_OCEANBLOCK, preset.oceanBlock()));
+        }
+        return e;
+    }
+
+    private static Element range(Document doc, String tag, int min, int max) {
+        Element e = doc.createElement(tag);
+        e.setAttribute(ATTR_MIN, Integer.toString(min));
+        e.setAttribute(ATTR_MAX, Integer.toString(max));
+        return e;
     }
 
     private static Element writeGalaxyGen(Document doc, GalaxyGenConfig cfg) {
         Element e = doc.createElement(ELEMENT_GALAXYGEN);
         e.setAttribute(ATTR_DENSITY, Double.toString(cfg.density));
         e.setAttribute(ATTR_MINSPACING, Integer.toString(cfg.minSpacing));
-        e.setAttribute(ATTR_CLUSTERSCALE, Integer.toString(cfg.clusterScale));
-        e.setAttribute(ATTR_VOIDFRACTION, Double.toString(cfg.voidFraction));
+        e.setAttribute(ATTR_GALAXYSPACING, Long.toString(cfg.galaxySpacing));
+        e.setAttribute(ATTR_GALAXYDENSITY, Double.toString(cfg.galaxyDensity));
+        // Written back for the same reason the tables are: this file is REWRITTEN on every world save,
+        // so anything the reader did not turn into model state is silently lost on the first one.
+        e.setAttribute(ATTR_ROGUEABUNDANCE, Double.toString(cfg.rogue.abundance));
+        e.setAttribute(ATTR_ROGUEGIANTFRACTION, Double.toString(cfg.rogue.giantFraction));
+        e.setAttribute(ATTR_EJECTAFALLOFF, Double.toString(cfg.rogue.ejectaFalloff));
         for (GalaxyGenConfig.StarType t : cfg.starTypes) {
             Element st = doc.createElement(ELEMENT_STARTYPE);
             st.setAttribute(ATTR_TEMP, Integer.toString(t.temperature));
@@ -247,8 +602,61 @@ public class XMLPlanetLoader {
             st.setAttribute(ATTR_WEIGHT, Integer.toString(t.weight));
             e.appendChild(st);
         }
+        // The galaxy table is written back for the same reason the star table is: this file is
+        // REWRITTEN on every world save, so anything the reader did not turn into model state is lost.
+        // A pack that flattened its discs would silently get the stock ones back on the first save.
+        for (GalaxyGenConfig.GalaxyType t : cfg.galaxyTypes) {
+            Element gt = doc.createElement(ELEMENT_GALAXYTYPE);
+            gt.setAttribute(ATTR_NAME, t.name);
+            gt.setAttribute(ATTR_PROFILE, t.profile.name());
+            gt.setAttribute(ATTR_MINRADIUS, Double.toString(t.minRadiusLy));
+            gt.setAttribute(ATTR_MAXRADIUS, Double.toString(t.maxRadiusLy));
+            gt.setAttribute(ATTR_THICKNESS, Double.toString(t.scaleHeightRatio));
+            gt.setAttribute(ATTR_ARMS, Integer.toString(t.armCount));
+            gt.setAttribute(ATTR_ROTATIONSPEED, Double.toString(t.rotationSpeedKmS));
+            gt.setAttribute(ATTR_COREFRACTION, Double.toString(t.coreRadiusFraction));
+            gt.setAttribute(ATTR_MINSATELLITES, Integer.toString(t.minSatellites));
+            gt.setAttribute(ATTR_MAXSATELLITES, Integer.toString(t.maxSatellites));
+            gt.setAttribute(ATTR_WEIGHT, Integer.toString(t.weight));
+            e.appendChild(gt);
+        }
         return e;
     }
+
+    /**
+     * The two things a pack author has to know BEFORE the first save, written into the file itself.
+     *
+     * <p>Both are discoverable only from source otherwise, and by the time either is discovered the
+     * damage is done: the author has already placed a system in intergalactic space, or has already
+     * rerolled a universe that had a save attached to it. This file is rewritten on every world save,
+     * so the notice is emitted by the WRITER rather than shipped in a template that the first save
+     * would replace.</p>
+     */
+    private static final String AUTHORING_NOTICE = "\n"
+            + "  READ BEFORE EDITING\n"
+            + "\n"
+            + "  1. A star's galacticCoord is GALAXY-LOCAL, not absolute. It is an offset in cells\n"
+            + "     from the centre of the galaxy named by the star's `galaxy` attribute, which\n"
+            + "     defaults to \"home\". The home galaxy is centred on the origin and always exists,\n"
+            + "     whatever the world seed, and it is always at least 800 light years in radius, so\n"
+            + "     anything you place inside that radius is valid on every seed. Beyond it your\n"
+            + "     system may land in intergalactic space on some seeds; you get a loud error in the\n"
+            + "     log if it does. Naming another galaxy (`galaxy=\"4,-1,2\"`) forces that lattice\n"
+            + "     cell to hold one.\n"
+            + "\n"
+            + "     Why: a galaxy fills about three thousandths of a percent of its own lattice cell,\n"
+            + "     so a hand-picked absolute coordinate is in the void with probability 99.997%.\n"
+            + "\n"
+            + "  2. CHANGING ANY <galaxyGen> PARAMETER MID-SAVE IS UNDEFINED BEHAVIOUR. Nothing about\n"
+            + "     a procedural system is stored: every star, planet and generated name is derived\n"
+            + "     from (seed, coordinate) on every query. Change density, minSpacing, galaxySpacing,\n"
+            + "     galaxyDensity or the archetype tables and you get a DIFFERENT UNIVERSE, in which\n"
+            + "     every coordinate a player wrote down, every memory crystal and every route points\n"
+            + "     at nothing. There is no migration and there cannot be one, because there is no old\n"
+            + "     universe on disk to migrate. If you change these, start a new world.\n"
+            + "\n"
+            + "  Comments you add to this file do not survive a world save; this one is regenerated.\n"
+            + "  Full reference: docs/README_PLANETDEFS.md\n";
 
     public static String writeXML(IGalaxy galaxy) {
 
@@ -262,6 +670,7 @@ public class XMLPlanetLoader {
         doc = docBuilder.newDocument();
         Element galaxyElement = doc.createElement(ELEMENT_GALAXY);
         doc.appendChild(galaxyElement);
+        galaxyElement.appendChild(doc.createComment(AUTHORING_NOTICE));
 
         Collection<StellarBody> stars = galaxy.getStars();
 
@@ -273,9 +682,13 @@ public class XMLPlanetLoader {
             nodeStar.setAttribute(ATTR_TEMP, Integer.toString(star.getTemperature()));
             nodeStar.setAttribute(ATTR_X, Integer.toString(star.getPosX()));
             nodeStar.setAttribute(ATTR_Y, Integer.toString(star.getPosZ()));
-            GalacticCoord starCoord = anchorCoordForWrite(star.getId());
-            if (starCoord != null) {
-                nodeStar.setAttribute(ATTR_GALACTIC_COORD, UniverseRegistry.formatAnchor(starCoord));
+            GalacticAnchor starAnchor = anchorForWrite(star.getId());
+            if (starAnchor != null) {
+                nodeStar.setAttribute(ATTR_GALACTIC_COORD,
+                        UniverseRegistry.formatAnchor(starAnchor.local()));
+                if (!starAnchor.galaxy().isHome()) {
+                    nodeStar.setAttribute(ATTR_GALAXY, starAnchor.galaxy().toString());
+                }
             }
             nodeStar.setAttribute(ATTR_SIZE, Float.toString(star.getSize()));
             nodeStar.setAttribute(ATTR_NUMPLANETS, "0");
@@ -288,7 +701,9 @@ public class XMLPlanetLoader {
                 nodeSubStar.setAttribute(ATTR_BLACKHOLE_DISK_ANGLE, Float.toString(star2.diskAngle));
                 nodeSubStar.setAttribute(ATTR_TEMP, Integer.toString(star2.getTemperature()));
                 nodeSubStar.setAttribute(ATTR_SIZE, Float.toString(star2.getSize()));
-                nodeSubStar.setAttribute(ATTR_SEPERATION, Float.toString(star2.getStarSeparation()));
+                nodeSubStar.setAttribute(ATTR_COMPANION_ORBIT, Integer.toString(star2.getOrbitalDistance()));
+                nodeSubStar.setAttribute(ATTR_COMPANION_THETA,
+                        Double.toString(Math.toDegrees(star2.getBaseTheta())));
                 nodeStar.appendChild(nodeSubStar);
             }
 
@@ -302,8 +717,16 @@ public class XMLPlanetLoader {
 
         // Emit the active procedural generator's config so a re-read (resetFromXml) round-trips it.
         IGalaxyGenerator activeGenerator = UniverseRegistry.getGenerator();
-        if (activeGenerator instanceof ClusteredGalaxyGenerator) {
-            galaxyElement.appendChild(writeGalaxyGen(doc, ((ClusteredGalaxyGenerator) activeGenerator).config()));
+        java.util.Optional<zmaster587.advancedRocketry.universe.GalaxyGenConfig> tuning =
+                activeGenerator.tuning();
+        if (tuning.isPresent()) {
+            galaxyElement.appendChild(writeGalaxyGen(doc, tuning.get()));
+            // The planet-type table travels with the generator, and only with it: an authored-anchors-only
+            // world has nothing that draws a type, so writing the presets there would put a section into
+            // the file that nothing reads.
+            for (PlanetTypePreset preset : PlanetTypes.presets()) {
+                galaxyElement.appendChild(writePlanetType(doc, preset));
+            }
         }
 
         TransformerFactory transformerFactory = TransformerFactory.newInstance();
@@ -394,6 +817,19 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_FOGCOLOR, properties.fogColor[0] + "," + properties.fogColor[1] + "," + properties.fogColor[2]));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_SKYCOLOR, properties.skyColor[0] + "," + properties.skyColor[1] + "," + properties.skyColor[2]));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_GRAVITY, (int) (properties.getGravitationalMultiplier() * 100f)));
+        // Bulk properties are written only when the planet HAS them, so a catalogue that never stated a
+        // mass round-trips to the same file it came from.
+        if (properties.hasBulkProperties()) {
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_MASS, Double.toString(properties.getMass())));
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_RADIUS, Double.toString(properties.getRadius())));
+        }
+        if (properties.isTidallyLocked()) {
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_TIDALLY_LOCKED, "true"));
+        }
+        if (properties.getMetallicity() != 1d) {
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_METALLICITY,
+                    Double.toString(properties.getMetallicity())));
+        }
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_DISTANCE, properties.getOrbitalDist()));
         // Written as fractional degrees, not truncated to whole ones: these two angles are the only
         // authored inputs a body's durable CELL NAME is derived from, and one degree at a large
@@ -402,7 +838,7 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_BASEORBITTHETA, Math.toDegrees(properties.baseOrbitTheta)));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_PHI, properties.orbitalPhi));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_RETROGRADE, properties.isRetrograde));
-        nodePlanet.appendChild(createTextNode(doc, AVG_TEMPERATURE, properties.averageTemperature));
+        nodePlanet.appendChild(createTextNode(doc, AVG_TEMPERATURE, properties.getAverageTemp()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_PERIOD, properties.rotationalPeriod));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_ATMDENSITY, properties.getAtmosphereDensity()));
         // Custom weather properties
@@ -448,6 +884,8 @@ public class XMLPlanetLoader {
             nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_WORLDTYPE, properties.getTerrainWorldType()));
         if (!properties.getTerrainTemplate().isEmpty())
             nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_TEMPLATE, properties.getTerrainTemplate()));
+        if (!properties.getTerrainGeneratorOptions().isEmpty())
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_GENERATOR_OPTIONS, properties.getTerrainGeneratorOptions()));
 
         if (properties.oreProperties != null) {
             nodePlanet.appendChild(XMLOreLoader.writeOreEntryXML(doc, properties.oreProperties));
@@ -776,8 +1214,35 @@ public class XMLPlanetLoader {
 
                 try {
                     properties.gravitationalMultiplier = Math.min(Math.max(Integer.parseInt(planetPropertyNode.getTextContent()), DimensionProperties.MIN_GRAVITY), DimensionProperties.MAX_GRAVITY) / 100f;
+                    // Stating a gravity makes it an OVERRIDE: a planet that also declares a mass and a
+                    // radius keeps the gravity its author wrote, so adding bulk properties to an
+                    // existing planet cannot change how it plays.
+                    properties.setGravityAuthored(true);
                 } catch (NumberFormatException e) {
                     AdvancedRocketry.logger.warn("Invalid gravitationalMultiplier specified"); //TODO: more detailed error msg
+                }
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_MASS)) {
+                try {
+                    properties.setBulk(Double.parseDouble(planetPropertyNode.getTextContent()),
+                            properties.getRadius());
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid mass specified for dimension " + properties.getId());
+                }
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RADIUS)) {
+                try {
+                    properties.setBulk(properties.getMass(),
+                            Double.parseDouble(planetPropertyNode.getTextContent()));
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid radius specified for dimension " + properties.getId());
+                }
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TIDALLY_LOCKED)) {
+                properties.setTidallyLocked(Boolean.parseBoolean(planetPropertyNode.getTextContent()));
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_METALLICITY)) {
+                try {
+                    properties.setMetallicity(Double.parseDouble(planetPropertyNode.getTextContent()));
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid metallicity specified for dimension "
+                            + properties.getId());
                 }
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_DISTANCE)) {
 
@@ -836,46 +1301,7 @@ public class XMLPlanetLoader {
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RIVER_OVERRIDE))
                 properties.hasRivers = Boolean.parseBoolean(planetPropertyNode.getTextContent());
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_BIOMEIDS)) {
-
-                String[] biomeList = planetPropertyNode.getTextContent().split(",");
-                for (String s : biomeList) {
-
-                    int biomeWeight = 30;
-                    String[] weightSplit = s.split(";");
-
-                    //Try to get a weight out of the semicolon separator
-                    if (weightSplit.length > 1) {
-                        try {
-                            biomeWeight = Integer.parseInt(weightSplit[1]);
-                            if (biomeWeight == 0) {
-                                AdvancedRocketry.logger.warn("Weight cannot be 0! Setting weight to default");
-                                biomeWeight = 30;
-                            }
-                        } catch (NumberFormatException e) {
-                            biomeWeight = 30;
-                            AdvancedRocketry.logger.warn(weightSplit[1] + " is not a valid biome weight");
-                        }
-                    }
-
-                    //Check whether we have numeric IDs (bad!) or RL ids
-                    ResourceLocation location = new ResourceLocation(weightSplit[0]);
-                    if (Biome.REGISTRY.containsKey(location)) {
-                        Biome biome = Biome.REGISTRY.getObject(location);
-                        if (biome == null)
-                            AdvancedRocketry.logger.warn("Error adding " + weightSplit[0]); //TODO: more detailed error msg
-                        else
-                            properties.addBiomeWeighted(biome, biomeWeight);
-                    } else {
-                        try {
-                            int biome = Integer.parseInt(weightSplit[0]);
-
-                            if (!properties.addBiome(biome))
-                                AdvancedRocketry.logger.warn(weightSplit[0] + " is not a valid biome id"); //TODO: more detailed error msg
-                        } catch (NumberFormatException e) {
-                            AdvancedRocketry.logger.warn(weightSplit[0] + " is not a valid biome id or name"); //TODO: more detailed error msg
-                        }
-                    }
-                }
+                applyBiomeList(properties, planetPropertyNode.getTextContent());
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_CRATER_BIOMEIDS)) {
 
                 String[] biomeList = planetPropertyNode.getTextContent().split(",");
@@ -914,7 +1340,7 @@ public class XMLPlanetLoader {
                 String nbtString = "";
                 Node weightNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_WEIGHT);
                 Node groupMinNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_GROUPMIN);
-                Node groupMaxNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_GROUPMIN);
+                Node groupMaxNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_GROUPMAX);
                 Node nbtNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_NBT);
 
                 //Get spawn properties
@@ -1074,13 +1500,15 @@ public class XMLPlanetLoader {
                 properties.setTerrainWorldType(planetPropertyNode.getTextContent().trim());
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TERRAIN_TEMPLATE)) {
                 properties.setTerrainTemplate(planetPropertyNode.getTextContent().trim());
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TERRAIN_GENERATOR_OPTIONS)) {
+                // NOT trimmed: a generator settings string is opaque to us and may be whitespace-significant.
+                properties.setTerrainGeneratorOptions(planetPropertyNode.getTextContent());
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_HASRINGS))
                 properties.hasRings = Boolean.parseBoolean(planetPropertyNode.getTextContent());
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_CAN_DECORATE))
                 properties.setDecoratoration(Boolean.parseBoolean(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RING_ANGLE)) {
                 properties.ringAngle = Integer.parseInt(planetPropertyNode.getTextContent());
-                System.out.println("read rings: "+properties.ringAngle);
             }
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RINGCOLOR)) {
                 String[] colors = planetPropertyNode.getTextContent().split(",");
@@ -1169,8 +1597,13 @@ public class XMLPlanetLoader {
         //Star may not be registered at this time, use ID version instead
         properties.setStar(star.getId());
 
-        //Set temperature
-        properties.averageTemperature = AstronomicalBodyHelper.getAverageTemperature(star, properties.getSolarOrbitalDistance(), properties.getAtmosphereDensity());
+        // Set temperature. From the LOCAL star object, not through properties.getStar(): the star is
+        // not in the catalogue yet (see the line above), so the lookup would come back null here and
+        // the world would be born at the temperature of deep space. The albedo is the world's own, so
+        // an authored planet and a derived one are warmed by the same law (ledger #289).
+        properties.setAverageTemp(AstronomicalBodyHelper.getAverageTemperature(star,
+                properties.getSolarOrbitalDistance(), properties.getAtmosphereDensity(),
+                properties.getAlbedo()));
 
         //If no biomes are specified add some!
         if (properties.getBiomes().isEmpty())
@@ -1284,10 +1717,27 @@ public class XMLPlanetLoader {
                 }
             }
 
-            nameNode = planetNode.getAttributes().getNamedItem(ATTR_SEPERATION);
+            // A companion's orbit about its primary, in the same distance units a planet's is in.
+            // It used to be an angle called "separation", which could say how far off the primary a
+            // companion LOOKED from one particular world and nothing else — not where it was, not
+            // what it lit, and not that it moved.
+            nameNode = planetNode.getAttributes().getNamedItem(ATTR_COMPANION_ORBIT);
             if (nameNode != null && !nameNode.getNodeValue().isEmpty()) {
                 try {
-                    star.setStarSeparation(Float.parseFloat(nameNode.getNodeValue()));
+                    star.setOrbitalDistance(Integer.parseInt(nameNode.getNodeValue()));
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Error Reading star " + star.getName());
+                }
+            }
+
+            nameNode = planetNode.getAttributes().getNamedItem(ATTR_COMPANION_THETA);
+            if (nameNode != null && !nameNode.getNodeValue().isEmpty()) {
+                try {
+                    // DEGREES, exactly as a planet's <orbitalTheta> is. One name, one unit: an
+                    // angle that meant radians here and degrees one element away would be a trap
+                    // no author could see, because both parse and neither complains.
+                    star.setBaseTheta(Math.toRadians(
+                            Double.parseDouble(nameNode.getNodeValue()) % 360d));
                 } catch (NumberFormatException e) {
                     AdvancedRocketry.logger.warn("Error Reading star " + star.getName());
                 }
@@ -1316,6 +1766,11 @@ public class XMLPlanetLoader {
                 masterNode = masterNode.getNextSibling();
                 continue;
             }
+            if (masterNode.getNodeName().equalsIgnoreCase(ELEMENT_PLANETTYPE)) {
+                coupling.planetTypes.add(readPlanetType(masterNode));
+                masterNode = masterNode.getNextSibling();
+                continue;
+            }
             if (!masterNode.getNodeName().equals("star")) {
                 masterNode = masterNode.getNextSibling();
                 continue;
@@ -1324,12 +1779,22 @@ public class XMLPlanetLoader {
             StellarBody star = readStar(masterNode);
             coupling.stars.add(star);
 
-            // Explicit galactic address for this authored anchor (optional). Staged into the universe
-            // registry after the catalogue is built; absent -> a deterministic fallback cell downstream.
+            // Explicit galactic address for this authored anchor (optional). It is GALAXY-LOCAL: an
+            // offset from the centre of the galaxy named by `galaxy` (default `home`), not an absolute
+            // cell. A galaxy fills about three thousandths of a percent of its own lattice cell, so an
+            // absolute declaration would land in intergalactic space on virtually every seed.
+            //
+            // Resolved into an absolute cell once, at population, when the world seed is known — the
+            // galaxy's centre is a hash draw and cannot be known here.
             if (masterNode.hasAttributes()) {
                 Node coordNode = masterNode.getAttributes().getNamedItem(ATTR_GALACTIC_COORD);
                 if (coordNode != null && !coordNode.getNodeValue().isEmpty()) {
-                    coupling.anchorCoords.put(star.getId(), UniverseRegistry.parseAnchor(coordNode.getNodeValue()));
+                    GalaxyKey key = readGalaxyKey(masterNode, star.getName());
+                    coupling.anchorCoords.put(star.getId(), GalacticAnchor.of(key,
+                            UniverseRegistry.parseAnchor(coordNode.getNodeValue())));
+                    if (!key.isHome() && !coupling.declaredGalaxies.contains(key)) {
+                        coupling.declaredGalaxies.add(key);
+                    }
                 }
             }
 
@@ -1357,6 +1822,13 @@ public class XMLPlanetLoader {
             }
 
             masterNode = masterNode.getNextSibling();
+        }
+        // Every galaxy an anchor named is RESERVED. The keys are only known once the catalogue has
+        // been walked, which is after <galaxyGen> was read — so they are folded in here rather than
+        // making the document's element ORDER load-bearing.
+        if (coupling.galaxyGenConfig != null && !coupling.declaredGalaxies.isEmpty()) {
+            coupling.galaxyGenConfig =
+                    coupling.galaxyGenConfig.withReservedGalaxies(coupling.declaredGalaxies);
         }
         return coupling;
     }
@@ -1389,9 +1861,15 @@ public class XMLPlanetLoader {
         public List<DimensionProperties> dims = new LinkedList<>();
         // Authored galactic addresses, keyed by star id (parse order). Only anchors that declared an
         // explicit <star galacticCoord> appear here; the rest get a deterministic fallback at population.
-        public Map<Integer, GalacticCoord> anchorCoords = new HashMap<>();
+        // GALAXY-LOCAL: resolved into absolute cells at population, once the world seed is known.
+        public Map<Integer, GalacticAnchor> anchorCoords = new HashMap<>();
+        // Every non-home galaxy an anchor named. Each one is RESERVED — its cell holds a galaxy
+        // whatever the hash says — because authored content must exist under every seed.
+        public List<GalaxyKey> declaredGalaxies = new ArrayList<>();
         // Procedural-galaxy generation config from an optional <galaxyGen> element; null = authored-only.
         public GalaxyGenConfig galaxyGenConfig = null;
+        // Authored <planetType> presets. Empty -> the stock table stands.
+        public List<PlanetTypePreset> planetTypes = new ArrayList<>();
 
     }
 }

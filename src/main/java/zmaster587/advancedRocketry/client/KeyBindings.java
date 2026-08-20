@@ -17,6 +17,7 @@ import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.EntityRocketBase;
 import zmaster587.advancedRocketry.api.FreeFlightInput;
+import zmaster587.advancedRocketry.api.PilotInputCadence;
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
 import zmaster587.advancedRocketry.api.RocketFlightMode;
 import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
@@ -134,6 +135,11 @@ public class KeyBindings {
     public static volatile int shipGateOpenTicks;
     /** PACKET_PILOT_INPUT packets this client actually dispatched to the seat. */
     public static volatile int shipInputSendCount;
+
+    /** Client ticks of ship control, the clock {@link PilotInputCadence} counts its repeat
+     *  interval on. Not a world time: it must keep counting while the world's own clock is
+     *  whatever a loading screen left it at. */
+    private static long shipInputTick;
 
     public static boolean isCameraPinnedThisFlight() {
         return cameraPinValid;
@@ -716,7 +722,13 @@ public class KeyBindings {
         hudPitchRate = pitch;
 
         FreeFlightInput input = new FreeFlightInput(fwd, vert, strafe, yaw, pitch, roll, brake, cut);
-        if (!input.equals(lastSentShipInput)) {
+        // A change goes out at once; a HELD non-idle input is also re-asserted on its seat's own
+        // phase. The server keeps this input on a tile INSTANCE, and an instance does not outlive a
+        // chunk reload — so under send-on-change alone a craft flies on with a command the server has
+        // forgotten and a pilot who has no way to know. See PilotInputCadence for the measurement.
+        shipInputTick++;
+        if (PilotInputCadence.shouldSend(input, lastSentShipInput, shipInputTick,
+                PilotInputCadence.phaseOfSeat(seatPos.getX(), seatPos.getY(), seatPos.getZ()))) {
             seat.pendingInput = input;
             PacketHandler.sendToServer(new PacketMachine(seat, TilePilotSeat.PACKET_PILOT_INPUT));
             shipInputSendCount++;

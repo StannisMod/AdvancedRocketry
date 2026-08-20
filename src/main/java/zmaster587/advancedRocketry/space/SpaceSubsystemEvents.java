@@ -72,6 +72,8 @@ public final class SpaceSubsystemEvents {
         live.entry.tick();
         // Advance in-flight DESCENTS (the inverse crossing, same async re-seat + settle).
         live.descent.tick();
+        // Advance in-flight CELL-SEAM carries (a ship that flew out of its cell into the next one).
+        live.cellCrossings.tick();
         // Rebroadcast the per-slot render bodies (throttled) so the slot-world sky (BoundarySky)
         // tracks each settled ship's direction to the bodies of its cell.
         SystemBodiesProducer.onBroadcastTick(FMLCommonHandler.instance().getMinecraftServerInstance());

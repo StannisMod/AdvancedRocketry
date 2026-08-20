@@ -64,16 +64,16 @@ public class FreeFlightAssistsTest {
     public void rampReachesFullScaleInSixtyTicks() {
         double[] sp = {0, 0, 0};
         for (int i = 0; i < 60; i++) sp = FreeFlightPhysics.rampSetpoint(sp[0], sp[1], sp[2], fwd(1f));
-        assertEquals(FreeFlightPhysics.MAX_SPEED, sp[0], 1e-9);
+        assertEquals(FreeFlightPhysics.FA_SETPOINT_MAX_SPEED, sp[0], 1e-9);
     }
 
     @Test
-    public void setpointMagnitudeIsClampedToMaxSpeed() {
+    public void setpointMagnitudeIsClampedToTheAssistCeiling() {
         double[] sp = {0, 0, 0};
         FreeFlightInput diag = new FreeFlightInput(1f, 1f, 1f, 0f, 0f, 0f, false);
         for (int i = 0; i < 300; i++) sp = FreeFlightPhysics.rampSetpoint(sp[0], sp[1], sp[2], diag);
         double mag = Math.sqrt(sp[0]*sp[0] + sp[1]*sp[1] + sp[2]*sp[2]);
-        assertEquals(FreeFlightPhysics.MAX_SPEED, mag, 1e-9);
+        assertEquals(FreeFlightPhysics.FA_SETPOINT_MAX_SPEED, mag, 1e-9);
     }
 
     @Test
@@ -187,10 +187,22 @@ public class FreeFlightAssistsTest {
         assertEquals(-42f, s.pitch, DELTA);
     }
 
+    /**
+     * Switching the assist ON while flying faster than it can be asked for must not rewrite the
+     * craft's velocity: FA slows it down with the thrust it has, one budget per tick, like anything
+     * else. The assist's ceiling binds the SETPOINT (pinned above), never the motion.
+     *
+     * <p>This is the leg that separates "the ceiling moved onto the setpoint" from "the ceiling is
+     * still on the velocity, one call later": a clamping build brings 100 blocks/tick back to 3 in a
+     * single step, which is a stop no engine paid for.</p>
+     */
     @Test
-    public void faSpeedIsHardCapped() {
-        Step s = FreeFlightPhysics.faStep(2.9, 0, 0.9, 0f, 0f, 3.0, 3.0, 0, 0.5, 0.0, true);
+    public void faDeceleratesAnOverfastCraftAtItsThrustBudget() {
+        double entrySpeed = 100.0;
+        double budget = 0.5;
+        Step s = FreeFlightPhysics.faStep(0, 0, entrySpeed, 0f, 0f, 0, 0, 0, budget, 0.0, true);
         double speed = Math.sqrt(s.motionX*s.motionX + s.motionY*s.motionY + s.motionZ*s.motionZ);
-        assertTrue(speed <= FreeFlightPhysics.MAX_SPEED + DELTA);
+        assertEquals("FA must shed exactly the thrust budget, not the whole overspeed",
+                entrySpeed - budget, speed, DELTA);
     }
 }

@@ -1,17 +1,21 @@
 package zmaster587.advancedRocketry.hyperdrive;
 
 /**
- * The capacitor's charge, computed rather than accumulated.
+ * How long a jump bank takes to reach a level — the cooldown a pilot is quoted, and nothing else.
  *
- * <p>Nothing here ever ticks. The charge is a closed form of the world clock — {@code charge(t) =
- * min(capacity, c0 + rate·(t − since))} — so a capacitor aboard a ship parked in an unloaded cell,
- * or one that spent a month in hyperspace, is exactly as charged as one that sat in a loaded chunk
- * the whole time. Only {@code c0} and {@code since} persist, and they only change when something
- * really happens to the capacitor: a burst, or a rebuild.</p>
+ * <p><b>This class used to BE the charge, and that was the defect.</b> It held a closed form of the
+ * world clock, {@code charge(t) = min(capacity, c0 + rate·(t − since))}, so a capacitor stored no
+ * energy: its level was arithmetic over elapsed ticks and the rate was conjured by welding heat sinks
+ * on. The hyperdrive's largest single cost — the window burst, twenty times the drive's power — was
+ * therefore free, paid for in wall-clock time rather than in generation. The bank is now a real Forge
+ * Energy receiver fed by the ship (see {@code TileJumpCapacitor}), and what is left here is the one
+ * thing that was never wrong: turning a deficit and a rate into a number of ticks.</p>
  *
- * <p>The cooldown a pilot feels falls out of the same form and needs no timer of its own: after a
- * burst the capacitor is empty, so the reload is however long {@code charge(t)} takes to climb back
- * to the next burst's cost.</p>
+ * <p>What that number IS has changed with it. It used to be a prediction, because the rate was a
+ * property of the capacitor and could not be missed. It is now a <b>best case</b>: the rate is the
+ * bank's own accept limit, and whether the ship's power plant actually delivers it is the plant's
+ * business. A forecast that says "at full inflow" is honest; the same number presented as a promise
+ * would be the free energy coming back as a lie about time.</p>
  */
 public final class CapacitorCharge {
 
@@ -19,43 +23,23 @@ public final class CapacitorCharge {
     }
 
     /**
-     * The charge at {@code now}. Clamped at both ends: never below zero, never above capacity, and
-     * never advanced by a clock that has run backwards (which a restored world can do).
+     * Ticks from now until a bank holding {@code current} of {@code capacity} reaches {@code needed},
+     * fed at {@code ratePerTick}. Zero means "already"; {@code -1} means never, because the bank
+     * cannot hold that much however long anybody waits.
      */
-    public static long at(long baseCharge, long since, long chargeRate, long capacity, long now) {
-        long cap = Math.max(0L, capacity);
-        long base = Math.min(cap, Math.max(0L, baseCharge));
-        long elapsed = now - since;
-        if (elapsed <= 0L || chargeRate <= 0L) {
-            return base;
-        }
-        long gained;
-        long rate = Math.max(0L, chargeRate);
-        if (rate != 0L && elapsed > (Long.MAX_VALUE - base) / rate) {
-            gained = Long.MAX_VALUE - base; // a months-long absence overflows a naive multiply
-        } else {
-            gained = rate * elapsed;
-        }
-        return Math.min(cap, base + gained);
-    }
-
-    /**
-     * How many ticks from {@code now} until the charge reaches {@code needed}, or {@code -1} when it
-     * never will because the capacitor is too small to hold that much. Zero means "already".
-     */
-    public static long ticksUntil(long baseCharge, long since, long chargeRate, long capacity,
-                                  long now, long needed) {
+    public static long ticksToReach(long current, long capacity, long ratePerTick, long needed) {
         long cap = Math.max(0L, capacity);
         if (needed <= 0L) {
             return 0L;
         }
-        long current = at(baseCharge, since, chargeRate, cap, now);
-        if (current >= needed) {
+        long have = Math.min(cap, Math.max(0L, current));
+        if (have >= needed) {
             return 0L;
         }
-        if (needed > cap || chargeRate <= 0L) {
+        if (needed > cap || ratePerTick <= 0L) {
             return -1L; // no amount of waiting gets there
         }
-        return (needed - current + chargeRate - 1L) / chargeRate;
+        long deficit = needed - have;
+        return (deficit + ratePerTick - 1L) / ratePerTick;
     }
 }

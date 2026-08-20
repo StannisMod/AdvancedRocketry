@@ -8,7 +8,9 @@ import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody;
+import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula;
 import zmaster587.advancedRocketry.universe.SystemBody;
+import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import zmaster587.libVulpes.network.PacketHandler;
@@ -119,15 +121,30 @@ public final class SystemBodiesProducer {
             if (found != null) {
                 for (SystemBody b : found) {
                     BlockDelta dir = b.absoluteAt(worldTick).minus(observer);
+                    // "Can a ship land here", not "does a world already exist". A procedural planet has
+                    // no dimension until a descent mints one, so highlighting only realized bodies
+                    // would hide the descent boundary of every world nobody has visited — which is
+                    // precisely the set a pilot is out there looking for. The flag is a render hint;
+                    // the logic that needs a real dimension still asks isDescendTarget().
+                    boolean descendable = b.kind().canDescend();
                     // The shell is sent per body, from the ONE place that sizes it. A body that
                     // cannot be descended to has none, and zero is what says so: the client must
-                    // not have to know which kinds have a shell to render a range correctly.
-                    long shell = b.isDescendTarget() ? DescentShell.radiusAround(b) : 0L;
+                    // not have to know which kinds have a shell to render a range correctly. It is
+                    // gated on the SAME predicate as the flag beside it — a body advertised as
+                    // descendable while carrying a zero shell would draw a boundary of no radius,
+                    // which is the unvisited-planet bug above coming back through the other field.
+                    long shell = descendable ? DescentShell.radiusAround(b) : 0L;
+                    // The body's own size, converted ONCE here from the universe layer's Earth radii
+                    // into the chart blocks the client draws in. A body with no radius of its own (a
+                    // belt, a station slot) sends zero, which is what says "not a sphere".
+                    long radiusBlocks = Math.round(b.radiusEarths()
+                            * AstronomicalBodyHelper.EARTH_RADIUS_BLOCKS);
                     bodies.add(new RenderBody(b.kind().ordinal(), dir.dx(), dir.dy(), dir.dz(),
-                            renderDimIdOf(b), b.isDescendTarget(), shell));
+                            renderDimIdOf(b), descendable, shell, radiusBlocks,
+                            RenderBody.NO_PARENT));
                 }
             }
-            byDim.put(slotDim, bodies);
+            byDim.put(slotDim, linkMoonsToTheirParents(found, bodies));
         }
         return byDim;
     }
@@ -190,7 +207,8 @@ public final class SystemBodiesProducer {
 
     /** Build the live packet from the production cell bindings + universe registry, or an empty packet. */
     public static PacketSystemBodiesSync currentPacket(MinecraftServer server) {
-        return PacketSystemBodiesSync.forDims(currentByDim(server));
+        return PacketSystemBodiesSync.forDims(currentByDim(server),
+                SkyNebulaeProducer.currentByDim(server));
     }
 
     /**
@@ -206,7 +224,8 @@ public final class SystemBodiesProducer {
      * stale sky, where an absent one would leave it standing. A player who is not in a slot world at
      * all is sent nothing.</p>
      */
-    private static void broadcastTo(EntityPlayerMP player, Map<Integer, List<RenderBody>> byDim) {
+    private static void broadcastTo(EntityPlayerMP player, Map<Integer, List<RenderBody>> byDim,
+                                    Map<Integer, List<RenderNebula>> nebulaeByDim) {
         if (player == null) {
             return;
         }
@@ -218,9 +237,15 @@ public final class SystemBodiesProducer {
             }
             bodies = Collections.emptyList();
         }
+        // The clouds follow the bodies through the same gate: a cell that is his gets both halves of
+        // its sky, and a cell that is not gets neither. Absent here means the same as it does above —
+        // the cell has no cloud, and the empty list is what clears a stale one.
+        List<RenderNebula> clouds = nebulaeByDim == null ? null : nebulaeByDim.get(dim);
         Map<Integer, List<RenderBody>> one = new LinkedHashMap<>();
         one.put(dim, bodies);
-        PacketHandler.sendToPlayer(PacketSystemBodiesSync.forDims(one), player);
+        Map<Integer, List<RenderNebula>> oneSky = new LinkedHashMap<>();
+        oneSky.put(dim, clouds == null ? Collections.<RenderNebula>emptyList() : clouds);
+        PacketHandler.sendToPlayer(PacketSystemBodiesSync.forDims(one, oneSky), player);
     }
 
     /** Login send: give a joining player the sky of the dimension he arrived in. */
@@ -229,7 +254,8 @@ public final class SystemBodiesProducer {
             return;
         }
         try {
-            broadcastTo(player, currentByDim(FMLCommonHandler.instance().getMinecraftServerInstance()));
+            MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+            broadcastTo(player, currentByDim(server), SkyNebulaeProducer.currentByDim(server));
         } catch (Throwable t) {
             AdvancedRocketry.logger.warn("[SPACE] system-bodies login send failed", t);
         }
@@ -249,16 +275,53 @@ public final class SystemBodiesProducer {
         }
         try {
             Map<Integer, List<RenderBody>> byDim = currentByDim(server);
+            Map<Integer, List<RenderNebula>> nebulaeByDim = SkyNebulaeProducer.currentByDim(server);
             for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
-                broadcastTo(player, byDim);
+                broadcastTo(player, byDim, nebulaeByDim);
             }
         } catch (Throwable t) {
             AdvancedRocketry.logger.warn("[SPACE] system-bodies broadcast failed", t);
         }
     }
 
-    /** Reset the broadcast cadence (server stop). */
+    /** Reset the broadcast cadence and the sky's derived caches (server stop). */
     public static void reset() {
         tickCounter = 0;
+        SkyNebulaeProducer.reset();
+    }
+
+    /**
+     * Re-emit {@code bodies} with each MOON pointing at the body it belongs to.
+     *
+     * <p>Resolved from the invariant the universe layer already holds rather than from a new
+     * identity: a moon shares its parent's CELL, and a cell holds at most one REAL body (moons
+     * excepted, which is exactly why they can share one). So the parent of a moon is the non-moon
+     * body of the same cell — and if there is none, the moon says so with {@link
+     * RenderBody#NO_PARENT} instead of pointing at a neighbour. A wrong parent would draw a moon
+     * orbiting a world it has nothing to do with, which is worse than an unparented moon.</p>
+     */
+    private static List<RenderBody> linkMoonsToTheirParents(List<SystemBody> source,
+                                                            List<RenderBody> bodies) {
+        if (source == null || source.size() != bodies.size()) {
+            return bodies;
+        }
+        Map<String, Integer> primaryByCell = new LinkedHashMap<>();
+        for (int i = 0; i < source.size(); i++) {
+            SystemBody b = source.get(i);
+            if (b.kind() != SystemBodyKind.MOON) {
+                primaryByCell.put(b.name().cellKey(), i);
+            }
+        }
+        List<RenderBody> linked = new ArrayList<>(bodies.size());
+        for (int i = 0; i < bodies.size(); i++) {
+            SystemBody b = source.get(i);
+            RenderBody r = bodies.get(i);
+            Integer parent = b.kind() == SystemBodyKind.MOON
+                    ? primaryByCell.get(b.name().cellKey()) : null;
+            linked.add(parent == null ? r
+                    : new RenderBody(r.kindOrdinal, r.localX, r.localY, r.localZ, r.dimId,
+                            r.descendTarget, r.boundaryRadius, r.radiusBlocks, parent));
+        }
+        return linked;
     }
 }

@@ -18,7 +18,6 @@ import net.minecraftforge.client.IRenderHandler;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.apache.commons.lang3.ArrayUtils;
-import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
 import zmaster587.advancedRocketry.api.IAtmosphere;
@@ -30,6 +29,7 @@ import zmaster587.advancedRocketry.capability.DimensionCompat;
 import zmaster587.advancedRocketry.client.render.planet.RenderPlanetarySky;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.dimension.TerrainResolution;
 import zmaster587.advancedRocketry.dimension.TerrainSource;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.world.ChunkManagerPlanet;
@@ -69,48 +69,32 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
             resolveTerrainSource();
 
         if (effectiveTerrainSource == TerrainSource.MOD_WORLDTYPE)
-            return foreignWorldType.getChunkGenerator(world, world.getWorldInfo().getGeneratorOptions());
+            return foreignWorldType.getChunkGenerator(world, generatorOptions());
 
         if (effectiveTerrainSource == TerrainSource.TEMPLATE)
             return new ChunkProviderTemplate(this.world);
 
         int genType = DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).getGenType();
         if (genType == 1) {
-            return new ChunkProviderCavePlanet(this.world, false, this.world.getSeed(), world.getWorldInfo().getGeneratorOptions());
+            return new ChunkProviderCavePlanet(this.world, false, this.world.getSeed(), generatorOptions());
         } else
-            return new ChunkProviderPlanet(this.world, this.world.getSeed(), ARConfiguration.getCurrentConfig().generateVanillaStructures, world.getWorldInfo().getGeneratorOptions());
+            return new ChunkProviderPlanet(this.world, this.world.getSeed(), ARConfiguration.getCurrentConfig().generateVanillaStructures, generatorOptions());
     }
 
     /**
      * Resolves {@link #effectiveTerrainSource} (and {@link #foreignWorldType}) once from this dimension's
-     * {@link DimensionProperties}. A MOD_WORLDTYPE whose name is blank or unregistered, or a TEMPLATE with no
-     * template path, falls back to NATIVE with a warning so a mis-authored planet still generates.
+     * {@link DimensionProperties}, through the shared {@link TerrainResolution} so that this provider and
+     * the dimension's {@code WorldInfo} cannot answer differently about the same planet.
      */
     private void resolveTerrainSource() {
-        DimensionProperties props = getDimensionProperties();
-        TerrainSource requested = props.getTerrainSource();
-        if (requested == TerrainSource.MOD_WORLDTYPE) {
-            String name = props.getTerrainWorldType();
-            foreignWorldType = (name == null || name.isEmpty()) ? null : WorldType.parseWorldType(name);
-            if (foreignWorldType == null) {
-                AdvancedRocketry.logger.warn("Planet dimension " + getDimension() + " requests MOD_WORLDTYPE '" + name
-                        + "' which is not registered; falling back to NATIVE terrain");
-                effectiveTerrainSource = TerrainSource.NATIVE;
-            } else {
-                effectiveTerrainSource = TerrainSource.MOD_WORLDTYPE;
-            }
-        } else if (requested == TerrainSource.TEMPLATE) {
-            String template = props.getTerrainTemplate();
-            if (template == null || template.isEmpty()) {
-                AdvancedRocketry.logger.warn("Planet dimension " + getDimension()
-                        + " requests TEMPLATE terrain with no template path; falling back to NATIVE");
-                effectiveTerrainSource = TerrainSource.NATIVE;
-            } else {
-                effectiveTerrainSource = TerrainSource.TEMPLATE;
-            }
-        } else {
-            effectiveTerrainSource = TerrainSource.NATIVE;
-        }
+        TerrainResolution resolved = TerrainResolution.of(getDimension(), getDimensionProperties());
+        effectiveTerrainSource = resolved.source;
+        foreignWorldType = resolved.source == TerrainSource.MOD_WORLDTYPE ? resolved.worldType : null;
+    }
+
+    /** The settings string this dimension's chunk generator is configured with. Per dimension, not per save. */
+    private String generatorOptions() {
+        return getDimensionProperties().getTerrainGeneratorOptions();
     }
 
     @Override
@@ -144,7 +128,6 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
     @Override
     protected void init() {
         this.hasSkyLight = true;
-        world.getWorldInfo().setTerrainType(AdvancedRocketry.planetWorldType);
 
         resolveTerrainSource();
 
@@ -153,7 +136,7 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
         if (effectiveTerrainSource == TerrainSource.MOD_WORLDTYPE)
             this.biomeProvider = foreignWorldType.getBiomeProvider(world);
         else
-            this.biomeProvider = new ChunkManagerPlanet(world, world.getWorldInfo().getGeneratorOptions(), DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).getBiomes());
+            this.biomeProvider = new ChunkManagerPlanet(world, generatorOptions(), DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).getBiomes());
         //AdvancedRocketry.planetWorldType.getChunkManager(worldObj);
     }
 
@@ -532,9 +515,24 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
         return 63;
     }
 
+    /**
+     * Where a tidally-locked world's sun sits, permanently. Zero is noon in vanilla's angle convention
+     * ({@code (time % period) / period - 0.25} is zero at midday), so a locked world stands under a sun
+     * that never sets.
+     *
+     * <p>One sky serves a whole dimension, so this expresses the half of tidal locking a per-dimension
+     * value CAN express — that there is no day/night cycle at all. The permanently-dark hemisphere and
+     * the temperate terminator strip between them are a property of WHERE you stand, which a single
+     * celestial angle has no way to say; they belong to the terrain and biome layer.</p>
+     */
+    private static final float TIDALLY_LOCKED_CELESTIAL_ANGLE = 0f;
+
     @Override
     public float calculateCelestialAngle(long p_76563_1_, float p_76563_3_) {
         int rotationalPeriod;
+        if (getDimensionProperties(new BlockPos(0, 0, 0)).isTidallyLocked()) {
+            return TIDALLY_LOCKED_CELESTIAL_ANGLE;
+        }
         rotationalPeriod = getRotationalPeriod(new BlockPos(0, 0, 0));
 
 

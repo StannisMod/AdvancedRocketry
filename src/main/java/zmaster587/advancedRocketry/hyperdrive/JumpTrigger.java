@@ -176,7 +176,8 @@ public final class JumpTrigger {
             return new Result(Outcome.FAILED, MSG_NO_POSITION);
         }
         long speed = JumpSpeed.blocksPerTick(nav.drive().stats().drivePower(),
-                ShipMassProvider.massOf(world, flightComputerPos, shipId));
+                ShipMassProvider.massOf(world, flightComputerPos, shipId),
+                nav.drive().stats().tier());
 
         // Which world the ship must be cut out of is asked of the thing that binds cells to slots,
         // never remembered next to the coordinate: a slot id is minted per boot and re-used, so a

@@ -9,6 +9,7 @@ import org.junit.runners.MethodSorters;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static zmaster587.advancedRocketry.test.AdvancedRocketryTestConstants.HYPERSPACE_JUMP_SPEED;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -143,7 +144,7 @@ private int waitForLoadedShip(int dim) throws Exception {
     }
 
     /** Blocks per tick for the jump. Slow enough that the ship stays parked for tens of ticks. */
-private static final long PARK_SPEED = 100_000L;
+private static final long PARK_SPEED = HYPERSPACE_JUMP_SPEED;
 
 
     // ---- migrated: VSShipTransitCrewE2ETest ----
@@ -218,14 +219,14 @@ private static final long PARK_SPEED = 100_000L;
                 + bot().reportRidingEntity(), bot().reportRidingEntity().get("riding").getAsBoolean());
 
         // Depart into hyperspace at the ship anchor (1,64,1 from transit-setup-piloted).
-        String begin = exec("artest space transit-begin " + originDim + " 1 64 1");
+        String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + HYPERSPACE_JUMP_SPEED);
         assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
 
         // Advance the jump: tick until it arrives (inTransit == 0), capturing the target cell's slot dim.
         int targetDim = -1;
         String lastTick = "";
         for (int i = 0; i < 80 && targetDim < 0; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 targetDim = readInt(lastTick, "targetDim");
                 break;
@@ -238,7 +239,7 @@ private static final long PARK_SPEED = 100_000L;
         // drive the retries) and observe the CLIENT until it is riding again in the target dim, bounded.
         boolean crewSurvived = false;
         for (int i = 0; i < 60 && !crewSurvived; i++) {
-            exec("artest space transit-tick");
+            exec("artest space transit-tick 10");
             bot().waitTicks(2);
             crewSurvived = bot().reportRidingEntity().get("riding").getAsBoolean()
                     && bot().reportWeather().get("dim").getAsInt() == targetDim;
@@ -375,7 +376,7 @@ private static final long PARK_SPEED = 100_000L;
         boolean ridingInFlight = false;
         String lastTick = "";
         for (int i = 0; i < 120; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 break; // arrived - everything after this point is the far end, which is another test's
             }
@@ -519,13 +520,13 @@ private boolean waitForRegisteredShip(int dim) throws Exception {
         assertTrue("the bot must be seated on the ship BEFORE the jump (control): "
                 + bot().reportRidingEntity(), bot().reportRidingEntity().get("riding").getAsBoolean());
 
-        String begin = execEnvelope("artest space transit-begin " + originDim + " 1 64 1");
+        String begin = execEnvelope("artest space transit-begin " + originDim + " 1 64 1 " + HYPERSPACE_JUMP_SPEED);
         assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
 
         int targetDim = -1;
         String lastTick = "";
         for (int i = 0; i < 80 && targetDim < 0; i++) {
-            lastTick = execEnvelope("artest space transit-tick");
+            lastTick = execEnvelope("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 targetDim = readInt(lastTick, "targetDim");
                 break;
@@ -539,7 +540,7 @@ private boolean waitForRegisteredShip(int dim) throws Exception {
         // is nothing in this world to load it.
         boolean reseated = false;
         for (int i = 0; i < RESEAT_POLLS && !reseated; i++) {
-            execEnvelope("artest space transit-tick");
+            execEnvelope("artest space transit-tick 10");
             bot().waitTicks(2);
             reseated = bot().reportRidingEntity().get("riding").getAsBoolean()
                     && bot().reportWeather().get("dim").getAsInt() == targetDim;
@@ -694,7 +695,7 @@ private String chat() throws Exception {
         long tunnelInFlight = -1L;
         String lastTick = "";
         for (int i = 0; i < 120; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 break;
             }
@@ -744,7 +745,7 @@ private String chat() throws Exception {
 
         // ── ARRIVAL ─────────────────────────────────────────────────────────────────────────────
         for (int i = 0; i < 60 && readInt(lastTick, "inTransit") != 0; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             bot().waitTicks(2);
         }
         assertEquals("the transit must have finished for the arrival message to be owed: " + lastTick,
@@ -941,7 +942,7 @@ private String chat() throws Exception {
         int hyperDim = -1;
         String lastTick = "";
         for (int i = 0; i < 120; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 break;
             }
@@ -1097,7 +1098,7 @@ private String chat() throws Exception {
         // scenario shares, with a crew record for a player who is no longer alive to be re-seated.
         // Ending the transit puts the shared world back the way this scenario found it.
         for (int i = 0; i < 200; i++) {
-            if (readInt(exec("artest space transit-tick"), "inTransit") == 0) {
+            if (readInt(exec("artest space transit-tick 10"), "inTransit") == 0) {
                 break;
             }
             bot().waitTicks(2);
@@ -1158,7 +1159,7 @@ private String chat() throws Exception {
         String captureInFlight = "";
         String lastTick = "";
         for (int i = 0; i < 120; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 break; // arrived — the far end is another scenario's subject
             }
@@ -1204,7 +1205,7 @@ private String chat() throws Exception {
         // says nothing about the second.
         int targetDim = -1;
         for (int i = 0; i < 120 && targetDim < 0; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 targetDim = readInt(lastTick, "targetDim");
                 break;
@@ -1221,7 +1222,7 @@ private String chat() throws Exception {
         // Drive the placement's retries and watch the CLIENT, exactly as the seated siblings do.
         boolean carriedOn = false;
         for (int i = 0; i < RESEAT_POLLS && !carriedOn; i++) {
-            exec("artest space transit-tick");
+            exec("artest space transit-tick 10");
             bot().waitTicks(2);
             carriedOn = bot().reportWeather().get("dim").getAsInt() == targetDim
                     && readBool(exec("artest vs deck-capture"), "alreadyTracked");
@@ -1295,7 +1296,7 @@ private String chat() throws Exception {
         int hyperDim = -1;
         String lastTick = "";
         for (int i = 0; i < 120; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 break;
             }
@@ -1391,7 +1392,7 @@ private String chat() throws Exception {
         int hyperDim = -1;
         String lastTick = "";
         for (int i = 0; i < 120; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 break;
             }
@@ -1422,7 +1423,7 @@ private String chat() throws Exception {
         // ── FINISH THE JUMP ─────────────────────────────────────────────────────────────────────
         int targetDim = -1;
         for (int i = 0; i < 120 && targetDim < 0; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (readInt(lastTick, "inTransit") == 0) {
                 targetDim = readInt(lastTick, "targetDim");
                 break;
@@ -1441,7 +1442,7 @@ private String chat() throws Exception {
         // neither the loss nor the window it happened in.
         boolean carriedOn = false;
         for (int i = 0; i < RESEAT_POLLS && !carriedOn; i++) {
-            exec("artest space transit-tick");
+            exec("artest space transit-tick 10");
             bot().waitTicks(2);
             JsonObject state = bot().reportState();
             com.google.gson.JsonElement health = state.get("health");
