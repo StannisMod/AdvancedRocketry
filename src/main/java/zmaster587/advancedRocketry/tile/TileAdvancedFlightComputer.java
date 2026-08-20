@@ -519,10 +519,24 @@ public class TileAdvancedFlightComputer extends TileEntity
             if (ledger != null && cell != null) {
                 double[] pose = VSIntegration.getShipWorldPosition(world, getPos());
                 if (pose != null) {
-                    // A ship reports its position WITHIN its cell. It may not rename the cell by moving:
-                    // the name is the world it is in, the slot it is bound to and the ledger row that
-                    // protects that cell from collection, and none of those follow a pose over a cell
-                    // face. A pose outside the local range is therefore saturated, not carried.
+                    // FLYING OUT OF THE CELL. A ship far enough past its face is carried into the
+                    // neighbour it left through - the crossing cuts this tile out of the world, so
+                    // nothing below may run on this tick. The margin that "far enough" means, and the
+                    // depth the ship arrives at, are the seam's; this call site only owns the ORDER:
+                    // the carry is asked BEFORE the position is reported, because a report that
+                    // saturates is what a ship gets when the carry was refused, not what it gets while
+                    // one is available.
+                    zmaster587.advancedRocketry.space.CellCrossingController seamCtl =
+                            zmaster587.advancedRocketry.space.SpaceSubsystem.cellCrossings();
+                    if (seamCtl != null && seamCtl.requestCarry(world.provider.getDimension(),
+                            getPos(), shipId, cell, pose)) {
+                        return;
+                    }
+                    // The carry did not happen (none was needed, or the pool refused one). A ship
+                    // reports its position WITHIN its cell: the name is the world it is in, the slot it
+                    // is bound to and the ledger row that protects that cell from collection, and none
+                    // of those follow a pose over a cell face on their own. So a pose outside the local
+                    // range is saturated - wrong by the overshoot, but naming a cell that exists.
                     ledger.updatePosition(shipId, zmaster587.advancedRocketry.space.CellWorldMapper
                             .coordOfPoseWithin(cell, pose[0], pose[1], pose[2]));
                     // Only a SETTLED ship can be at its cell's edge by flying there. A ship mid-crossing
@@ -538,9 +552,10 @@ public class TileAdvancedFlightComputer extends TileEntity
                             .poseEscapesCell(pose[0], pose[1], pose[2])) {
                         cellEdgeReported = true;
                         zmaster587.advancedRocketry.AdvancedRocketry.logger.warn(
-                                "[SPACE] ship {} reached the edge of cell {} (pose {},{},{}) - its position "
-                                        + "is held at the boundary. Leaving a neighbourhood is a jump, not a "
-                                        + "flight.",
+                                "[SPACE] ship {} is outside cell {} (pose {},{},{}) and was not carried "
+                                        + "into the neighbour - its position is held at the boundary. "
+                                        + "Either it has not yet passed the carry margin, or the carry was "
+                                        + "refused (no free slot); the seam logs a refusal when it is one.",
                                 shipId, cellKey, pose[0], pose[1], pose[2]);
                     }
                 }
@@ -591,10 +606,24 @@ public class TileAdvancedFlightComputer extends TileEntity
                             double distance = Math.sqrt(shipCoord.staticFrameDistanceSqTo(
                                     body.addressAt(zmaster587.advancedRocketry.space.SpaceSubsystem
                                             .spaceClock())));
-                            if (zmaster587.advancedRocketry.space.DescentController
-                                        .shouldTriggerDescent(true, distance, radius)
-                                    && descentCtl.requestDescent(world.provider.getDimension(),
-                                            getPos(), shipId, body.dimId())) {
+                            if (!zmaster587.advancedRocketry.space.DescentController
+                                    .shouldTriggerDescent(true, distance, radius)) {
+                                continue;
+                            }
+                            // A procedural body has no dimension until somebody flies down to it, so
+                            // the world is minted HERE — once the ship is genuinely close enough to
+                            // descend. The scan above must never allocate a dimension.
+                            int targetDim = body.dimId();
+                            if (targetDim == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                                targetDim = zmaster587.advancedRocketry.universe.PlanetRealizer
+                                        .realize(server, body.name());
+                                if (targetDim
+                                        == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                                    continue; // nothing landable here after all
+                                }
+                            }
+                            if (descentCtl.requestDescent(world.provider.getDimension(),
+                                            getPos(), shipId, targetDim)) {
                                 // The crossing started: this tile was cut out of the slot world - stop
                                 // publishing from a stale tick. The re-assembled ship resumes planet-side.
                                 return;
@@ -804,7 +833,11 @@ public class TileAdvancedFlightComputer extends TileEntity
         java.util.List<zmaster587.advancedRocketry.universe.SystemBody> found =
                 new java.util.ArrayList<>();
         for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(shipCoord)) {
-            if (b.isDescendTarget()) {
+            // "Can a ship land here", not "does a world already exist". A procedural body has no
+            // dimension until a descent mints one, so filtering on isDescendTarget() would hide
+            // every world nobody has visited — and this list is the ONLY gate the descent loop
+            // sees, so the principle has to live here rather than at the call site.
+            if (b.kind().canDescend()) {
                 found.add(b);
             }
         }
@@ -892,7 +925,7 @@ public class TileAdvancedFlightComputer extends TileEntity
         }
         long capacity = drive.capacitorCapacity();
         hudDriveCharge = capacity <= 0 ? 0f
-                : (float) Math.min(1.0, (double) drive.capacitorCharge(now) / (double) capacity);
+                : (float) Math.min(1.0, (double) drive.capacitorCharge() / (double) capacity);
         zmaster587.advancedRocketry.navigation.ShipNavigation nav =
                 new zmaster587.advancedRocketry.navigation.ShipNavigation(world, getPos(), shipId);
         zmaster587.advancedRocketry.tile.TileNavigationComputer computer = nav.findNavComputer();

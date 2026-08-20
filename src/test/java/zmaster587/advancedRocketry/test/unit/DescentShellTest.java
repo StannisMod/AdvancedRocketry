@@ -98,4 +98,47 @@ public class DescentShellTest {
         assertEquals("the readout must differ from the centre distance by exactly the shell",
                 R, d - DescentShell.distanceToShell(d, R), 0d);
     }
+
+    // ── the shell is a property of the BODY ───────────────────────────────────
+
+    /** A body of {@code radiusEarths}, standing at the origin, with nothing else stated. */
+    private static zmaster587.advancedRocketry.universe.SystemBody sized(double radiusEarths) {
+        return zmaster587.advancedRocketry.universe.SystemBody.fixedAt(
+                        zmaster587.advancedRocketry.space.GalacticCoord.ORIGIN,
+                        zmaster587.advancedRocketry.universe.SystemBodyKind.PLANET,
+                        zmaster587.advancedRocketry.api.Constants.INVALID_PLANET, 0)
+                .withRadius(radiusEarths);
+    }
+
+    @Test
+    public void aShellStandsOutsideTheWorldItBounds() {
+        // The defect this closes: radiusAround ignored its argument and returned a flat 512 blocks,
+        // chosen when a body had no size. Against the radii that now exist that is 1/50 of an Earth
+        // and 1/548 of a Jupiter — the surface a descent fires at lay deep inside the world it belongs
+        // to. Every size the generator can produce is checked, not one convenient case.
+        double[] radii = {0.1d, 0.5d, 1d, 2.5d, 11d, 30d};
+        for (double r : radii) {
+            zmaster587.advancedRocketry.universe.SystemBody body = sized(r);
+            long shell = zmaster587.advancedRocketry.space.DescentShell.radiusAround(body);
+            double surface = r * zmaster587.advancedRocketry.util.AstronomicalBodyHelper.EARTH_RADIUS_BLOCKS;
+
+            assertTrue("a descent shell must stand OUTSIDE the body it bounds: " + shell
+                            + " against a surface at " + Math.round(surface) + " (r=" + r + ")",
+                    shell > surface);
+            assertTrue("and an entering ship must spawn outside that shell, or it arrives already "
+                            + "inside the trigger it is flying towards (r=" + r + ")",
+                    zmaster587.advancedRocketry.space.ShipEntryController.entryRingAround(body) > shell);
+        }
+    }
+
+    @Test
+    public void aBodyWithNoSizeKeepsTheFlatProximityRadius() {
+        // A belt or a station slot is not a sphere and has no surface to stand above, so the constant
+        // is the right answer there rather than a fallback — and a body whose atmosphere would be
+        // thinner than a ship's manoeuvring scale keeps it too.
+        assertEquals(zmaster587.advancedRocketry.space.ShipEntryController.DESCENT_RADIUS_BLOCKS,
+                zmaster587.advancedRocketry.space.DescentShell.radiusAround(sized(0d)));
+        assertEquals(zmaster587.advancedRocketry.space.ShipEntryController.DESCENT_RADIUS_BLOCKS,
+                zmaster587.advancedRocketry.space.DescentShell.radiusAround(null));
+    }
 }

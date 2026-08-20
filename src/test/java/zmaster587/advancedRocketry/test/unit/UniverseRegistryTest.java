@@ -16,19 +16,27 @@ import zmaster587.advancedRocketry.space.AbsolutePos;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalacticAnchor;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
-import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.PlanetarySystem;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
+import zmaster587.advancedRocketry.universe.IUniverseLaws;
+import zmaster587.advancedRocketry.universe.UniverseLawsV0;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
+import zmaster587.advancedRocketry.universe.UniverseSchema;
+import zmaster587.advancedRocketry.universe.UniverseSchemaMismatchException;
+import zmaster587.advancedRocketry.universe.UniverseSchemas;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Contract tests for the Layer-1 universe registry: the cell-keyed coord&harr;system placement
@@ -40,6 +48,13 @@ import static org.junit.Assert.assertTrue;
  * location-agnostic systems), not internal field shapes.</p>
  */
 public class UniverseRegistryTest {
+
+    /**
+     * A sector far enough away to be a DIFFERENT system's territory. An anchor owns every cell of its
+     * super-cell, so "elsewhere" has to be stated in super-cells; a literal few thousand sectors is
+     * the same neighbourhood, and a fixture using one proves nothing about attribution.
+     */
+    private static final long ANOTHER_SUPER_CELL = 2L * GalaxyGenConfig.DEFAULT_MIN_SPACING;
 
     private static StellarBody star(int id) {
         StellarBody s = new StellarBody();
@@ -250,22 +265,22 @@ public class UniverseRegistryTest {
         GalacticCoord placedCell = GalacticCoord.ofSectorLocal(5, 5, 5, 0, 0, 0);
         reg.place(placedCell, 42);
 
-        Optional<StarSystem> atPlaced = reg.systemForCoord(placedCell);
+        Optional<PlanetarySystem> atPlaced = reg.systemForCoord(placedCell);
         assertTrue(atPlaced.isPresent());
-        assertSame("stored placement must win over the generator", stored, atPlaced.get().star());
-        assertEquals(42, atPlaced.get().starId());
+        assertSame("stored placement must win over the generator", stored, atPlaced.get().star().get());
+        assertEquals(42, atPlaced.get().systemId());
 
         // A member cell of the stored anchor's super-cell attributes to the STORED system, not the
         // generator: an authored anchor owns every cell of its super-cell.
-        Optional<StarSystem> nearStored = reg.systemForCoord(GalacticCoord.ofSectorLocal(6, 6, 6, 0, 0, 0));
+        Optional<PlanetarySystem> nearStored = reg.systemForCoord(GalacticCoord.ofSectorLocal(6, 6, 6, 0, 0, 0));
         assertTrue(nearStored.isPresent());
-        assertEquals(42, nearStored.get().starId());
+        assertEquals(42, nearStored.get().systemId());
 
         // A cell in a DIFFERENT super-cell falls through to the generator.
-        Optional<StarSystem> farAway = reg.systemForCoord(
-                GalacticCoord.ofSectorLocal(4_000, 4_000, 4_000, 0, 0, 0));
+        Optional<PlanetarySystem> farAway = reg.systemForCoord(
+                GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, ANOTHER_SUPER_CELL, ANOTHER_SUPER_CELL, 0, 0, 0));
         assertTrue(farAway.isPresent());
-        assertEquals(777, farAway.get().starId());
+        assertEquals(777, farAway.get().systemId());
     }
 
     @Test
@@ -275,17 +290,18 @@ public class UniverseRegistryTest {
         // system; the zone read returns exactly that cell's body.
         UniverseRegistry reg = new UniverseRegistry();
         reg.bindWorldSeed(0xBEEF);
-        GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 16, 8, 0.0d, null);
+        GalaxyGenConfig cfg = new GalaxyGenConfig(16, 0.9d, GalaxyGenConfig.DEFAULT_GALAXY_SPACING,
+                GalaxyGenConfig.DEFAULT_GALAXY_DENSITY, null, null);
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(cfg));
 
         // Find an occupied super-cell and a non-star body of its system.
         GalacticCoord anchor = null;
         SystemBody planet = null;
         for (long sup = 0; sup < 8 && planet == null; sup++) {
-            Optional<StarSystem> sys = reg.systemForCoord(
+            Optional<PlanetarySystem> sys = reg.systemForCoord(
                     GalacticCoord.ofSectorLocal(sup * cfg.minSpacing, 0, 0, 0, 0, 0));
-            if (!sys.isPresent()) {
-                continue;
+            if (!sys.isPresent() || !sys.get().star().isPresent()) {
+                continue; // a starless system has no star body to be the anchor of this comparison
             }
             for (SystemBody b : reg.systemBodiesAt(
                     GalacticCoord.ofSectorLocal(sup * cfg.minSpacing, 0, 0, 0, 0, 0))) {
@@ -301,9 +317,9 @@ public class UniverseRegistryTest {
         assertFalse("the sampled body must sit in its OWN cell", planet.name().sameCell(anchor));
 
         // The body's cell resolves to the same system (member attribution).
-        Optional<StarSystem> atBody = reg.systemForCoord(planet.name());
+        Optional<PlanetarySystem> atBody = reg.systemForCoord(planet.name());
         assertTrue(atBody.isPresent());
-        assertEquals(planet.starId(), atBody.get().starId());
+        assertEquals(planet.starId(), atBody.get().systemId());
 
         // Zone read at the body's cell returns the body; at the anchor it returns the star, not the body.
         List<SystemBody> zone = reg.bodiesAt(planet.name());
@@ -326,7 +342,8 @@ public class UniverseRegistryTest {
     public void pinOnTouchSnapshotsAProceduralSystemAgainstSeedChange() {
         UniverseRegistry reg = new UniverseRegistry();
         reg.bindWorldSeed(1234L);
-        GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 8, 8, 0.0d, null);
+        GalaxyGenConfig cfg = new GalaxyGenConfig(8, 0.9d, GalaxyGenConfig.DEFAULT_GALAXY_SPACING,
+                GalaxyGenConfig.DEFAULT_GALAXY_DENSITY, null, null);
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(cfg));
 
         GalacticCoord anchor = null;
@@ -339,7 +356,7 @@ public class UniverseRegistryTest {
         }
         assertNotNull("need an occupied procedural super-cell", anchor);
 
-        int starIdBefore = reg.systemForCoord(anchor).get().starId();
+        int starIdBefore = reg.systemForCoord(anchor).get().systemId();
         List<SystemBody> bodiesBefore = reg.systemBodiesAt(anchor);
 
         // TOUCH: pin the system (addPoi would do the same implicitly).
@@ -349,7 +366,7 @@ public class UniverseRegistryTest {
         // A config/seed change (the drift scenario) must NOT move or reshape the pinned system…
         reg.bindWorldSeed(999_999L);
         assertEquals("pinned system survives a seed change", starIdBefore,
-                reg.systemForCoord(anchor).get().starId());
+                reg.systemForCoord(anchor).get().systemId());
         assertEquals("pinned bodies survive a seed change", bodiesBefore, reg.systemBodiesAt(anchor));
 
         // …and the pin round-trips through NBT (reads from the save, not the generator or catalogue).
@@ -359,7 +376,7 @@ public class UniverseRegistryTest {
         round.readFromNBT(tag);
         round.bindWorldSeed(999_999L);
         assertTrue(round.systemForCoord(anchor).isPresent());
-        assertEquals(starIdBefore, round.systemForCoord(anchor).get().starId());
+        assertEquals(starIdBefore, round.systemForCoord(anchor).get().systemId());
         assertEquals(bodiesBefore, round.systemBodiesAt(anchor));
     }
 
@@ -373,9 +390,9 @@ public class UniverseRegistryTest {
     public void systemsAreLocationAgnostic() {
         // The coordinate is obtainable ONLY from the registry; the system handle exposes no coordinate.
         StellarBody body = star(9);
-        StarSystem sys = new StarSystem(body);
-        assertEquals(9, sys.starId());
-        assertSame(body, sys.star());
+        PlanetarySystem sys = PlanetarySystem.ofStar(body);
+        assertEquals(9, sys.systemId());
+        assertSame(body, sys.star().get());
 
         UniverseRegistry reg = new UniverseRegistry();
         assertFalse("an unregistered system has no coord", reg.coordForStar(body).isPresent());
@@ -386,17 +403,17 @@ public class UniverseRegistryTest {
     @Test
     public void anchorsDrainOnceThenPersistedStoreWins() {
         UniverseRegistry reg = new UniverseRegistry();
-        Map<Integer, GalacticCoord> anchors = new HashMap<>();
-        anchors.put(1, GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0));
-        anchors.put(2, GalacticCoord.ofSectorLocal(2, 0, 0, 0, 0, 0));
+        Map<Integer, GalacticAnchor> anchors = new HashMap<>();
+        anchors.put(1, GalacticAnchor.inHome(GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0)));
+        anchors.put(2, GalacticAnchor.inHome(GalacticCoord.ofSectorLocal(2, 0, 0, 0, 0, 0)));
 
         reg.applyAnchors(anchors, false);
         assertEquals(Optional.of(GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0)), reg.coordForSystem(1));
         assertEquals(Optional.of(GalacticCoord.ofSectorLocal(2, 0, 0, 0, 0, 0)), reg.coordForSystem(2));
 
         // Second drain with DIFFERENT anchors is a no-op (already seeded) unless a reset is forced.
-        Map<Integer, GalacticCoord> moved = new HashMap<>();
-        moved.put(1, GalacticCoord.ofSectorLocal(50, 0, 0, 0, 0, 0));
+        Map<Integer, GalacticAnchor> moved = new HashMap<>();
+        moved.put(1, GalacticAnchor.inHome(GalacticCoord.ofSectorLocal(50, 0, 0, 0, 0, 0)));
         reg.applyAnchors(moved, false);
         assertEquals("re-draining without reset must not move the anchor",
                 Optional.of(GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0)), reg.coordForSystem(1));
@@ -417,8 +434,8 @@ public class UniverseRegistryTest {
         round.readFromNBT(tag);
 
         // The latch survived, so a fresh anchor drain is ignored (persisted store wins across restarts).
-        Map<Integer, GalacticCoord> anchors = new HashMap<>();
-        anchors.put(3, GalacticCoord.ofSectorLocal(3, 0, 0, 0, 0, 0));
+        Map<Integer, GalacticAnchor> anchors = new HashMap<>();
+        anchors.put(3, GalacticAnchor.inHome(GalacticCoord.ofSectorLocal(3, 0, 0, 0, 0, 0)));
         round.applyAnchors(anchors, false);
         assertFalse("a restart must not re-seed anchors over the persisted store",
                 round.coordForSystem(3).isPresent());
@@ -472,9 +489,9 @@ public class UniverseRegistryTest {
     public void poiStoreRoundTripsThroughNbt() {
         UniverseRegistry source = new UniverseRegistry();
         GalacticCoord sys = GalacticCoord.ofSectorLocal(3, 3, 3, 0, 0, 0);
-        source.addPoi(new SystemBody(GalacticCoord.ofSectorLocal(3, 3, 3, 50_000, 0, 0),
+        source.addPoi(SystemBody.fixedAt(GalacticCoord.ofSectorLocal(3, 3, 3, 50_000, 0, 0),
                 SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, 7));
-        source.addPoi(new SystemBody(GalacticCoord.ofSectorLocal(3, 3, 3, -20_000, 10_000, 0),
+        source.addPoi(SystemBody.fixedAt(GalacticCoord.ofSectorLocal(3, 3, 3, -20_000, 10_000, 0),
                 SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET, 7));
         assertTrue("adding a POI must mark dirty", source.isDirty());
 
@@ -499,7 +516,9 @@ public class UniverseRegistryTest {
     public void bodiesAtMergesProceduralBodiesAndPois() {
         UniverseRegistry reg = new UniverseRegistry();
         reg.bindWorldSeed(0xABCDEFL);
-        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(new GalaxyGenConfig(0.9d, 1, 8, 0.0d, null)));
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(new GalaxyGenConfig(1, 0.9d,
+                GalaxyGenConfig.DEFAULT_GALAXY_SPACING, GalaxyGenConfig.DEFAULT_GALAXY_DENSITY,
+                null, null)));
 
         GalacticCoord found = null;
         for (long x = 0; x < 300 && found == null; x++) {
@@ -514,7 +533,7 @@ public class UniverseRegistryTest {
         assertFalse("a procedural system must have bodies", procedural.isEmpty());
         int before = procedural.size();
 
-        reg.addPoi(new SystemBody(
+        reg.addPoi(SystemBody.fixedAt(
                 GalacticCoord.ofSectorLocal(found.sectorX(), found.sectorY(), found.sectorZ(), 100_000, 0, 0),
                 SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, -5));
         List<SystemBody> merged = reg.bodiesAt(found);
@@ -557,7 +576,7 @@ public class UniverseRegistryTest {
 
         UniverseRegistry reg = new UniverseRegistry();
         reg.place(GalacticCoord.ORIGIN, 6001);
-        reg.place(GalacticCoord.ofSectorLocal(4000, 0, 0, 0, 0, 0), 6002);
+        reg.place(GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, 0, 0, 0, 0, 0), 6002);
 
         DimensionProperties original = bodyOfStar(sol, 6100, 150, 0.3);
         Optional<GalacticCoord> firstName = reg.coordForPlanet(original);
@@ -575,7 +594,7 @@ public class UniverseRegistryTest {
         assertTrue("the new body's name must lie in ITS system's neighbourhood",
                 reg.anchorForCell(secondName.get()).isPresent());
         assertEquals("...which is its own star's anchor",
-                GalacticCoord.ofSectorLocal(4000, 0, 0, 0, 0, 0),
+                GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, 0, 0, 0, 0, 0),
                 reg.anchorForCell(secondName.get()).get());
     }
 
@@ -615,7 +634,7 @@ public class UniverseRegistryTest {
 
         // The star is re-placed a long way off — an XML edit, a re-authored layout. The recorded name
         // is now nowhere near the system it belongs to.
-        GalacticCoord newAnchor = GalacticCoord.ofSectorLocal(9000, 0, 0, 0, 0, 0);
+        GalacticCoord newAnchor = GalacticCoord.ofSectorLocal(3L * ANOTHER_SUPER_CELL, 0, 0, 0, 0, 0);
         reg.place(newAnchor, 6004);
 
         Optional<GalacticCoord> served = reg.coordForPlanet(body);
@@ -704,7 +723,7 @@ public class UniverseRegistryTest {
         assertTrue("the fixture's void cell must belong to the system",
                 reg.anchorForCell(voidCell).isPresent());
         assertTrue("...and hold no body of its own", reg.bodiesAt(voidCell).isEmpty());
-        reg.addPoi(new SystemBody(voidCell.plusLocalSaturating(1_000L, 0L, 0L),
+        reg.addPoi(SystemBody.fixedAt(voidCell.plusLocalSaturating(1_000L, 0L, 0L),
                 SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, 6007));
 
         List<SystemBody> sky = reg.skyBodiesAt(voidCell);
@@ -734,10 +753,410 @@ public class UniverseRegistryTest {
     public void interstellarVoidIsFedNothing() {
         UniverseRegistry reg = new UniverseRegistry();
         reg.place(GalacticCoord.ORIGIN, 6008);
-        GalacticCoord farAway = GalacticCoord.ofSectorLocal(500_000, 0, 0, 0, 0, 0);
+        GalacticCoord farAway = GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, 0, 0, 0, 0, 0);
         assertFalse("the fixture's cell must belong to no system",
                 reg.anchorForCell(farAway).isPresent());
         assertTrue("the space between stars is black", reg.skyBodiesAt(farAway).isEmpty());
+    }
+
+    // ── the world-model stamp ─────────────────────────────────────────────────
+
+    /** The configuration a pack states, and a retuned one — one knob apart. */
+    private static GalaxyGenConfig packConfig() {
+        return GalaxyGenConfig.defaults();
+    }
+
+    private static GalaxyGenConfig retunedConfig() {
+        return GalaxyGenConfig.defaults().withRogueTuning(
+                new GalaxyGenConfig.RogueTuning(7d, 0.012d, 3d, GalaxyGenConfig.defaultRogueTypes()));
+    }
+
+    @Test
+    public void aFreshWorldTakesTheCurrentModelAndRecordsIt() {
+        // Nothing to reconcile against: a new world is generated under whatever this build ships, and
+        // that fact is written down so the NEXT load has something to check.
+        UniverseRegistry reg = new UniverseRegistry();
+        assertEquals("a world with no history carries no stamp", UniverseRegistry.UNSTAMPED,
+                reg.schemaVersion());
+
+        UniverseSchema schema = reg.reconcileSchema(packConfig());
+
+        assertEquals("a fresh world is generated under the current model",
+                UniverseSchemas.CURRENT, schema.version());
+        assertEquals("and the model it was generated under is recorded",
+                UniverseSchemas.CURRENT, reg.schemaVersion());
+        assertEquals("along with the configuration that produced it",
+                packConfig().fingerprint(), reg.configFingerprint());
+    }
+
+    @Test
+    public void theModelAWorldWasGeneratedUnderSurvivesASave() {
+        UniverseRegistry source = new UniverseRegistry();
+        source.reconcileSchema(packConfig());
+
+        NBTTagCompound tag = new NBTTagCompound();
+        source.writeToNBT(tag);
+        UniverseRegistry round = new UniverseRegistry();
+        round.readFromNBT(tag);
+
+        assertEquals("the schema version must outlive the session", source.schemaVersion(),
+                round.schemaVersion());
+        assertEquals("and so must the configuration it was generated under",
+                source.configFingerprint(), round.configFingerprint());
+    }
+
+    @Test
+    public void theSameConfigurationOpensTheWorldUnchanged() {
+        // The ordinary case, and the one that must never cost the player anything: same pack, same
+        // build, second boot.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        UniverseRegistry reopened = new UniverseRegistry();
+        reopened.readFromNBT(tag);
+
+        UniverseSchema schema = reopened.reconcileSchema(packConfig());
+        assertEquals("an unchanged world opens under the model it was made with",
+                UniverseSchemas.CURRENT, schema.version());
+    }
+
+    @Test
+    public void aRetunedConfigurationIsRefusedRatherThanSubstituted() {
+        // The defect this whole stamp exists for: a pack edit silently re-deriving every system a
+        // player has not visited. It must stop the load, not warn into a log nobody reads.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        UniverseRegistry reopened = new UniverseRegistry();
+        reopened.readFromNBT(tag);
+
+        try {
+            reopened.reconcileSchema(retunedConfig());
+            fail("a world whose <galaxyGen> has been retuned must not load silently");
+        } catch (UniverseSchemaMismatchException expected) {
+            assertTrue("the refusal must name the configuration the world was made under: "
+                            + expected.getMessage(),
+                    expected.getMessage().contains(packConfig().fingerprint()));
+            assertTrue("and the one the pack now states: " + expected.getMessage(),
+                    expected.getMessage().contains(retunedConfig().fingerprint()));
+        }
+    }
+
+    @Test
+    public void aWorldFromAModelThisBuildDoesNotCarryIsRefused() {
+        // A save from a newer jar. There is no honest way to open it: this build cannot reproduce the
+        // universe it describes, and deriving a different one under the same save is the silent
+        // corruption the refusal exists to prevent.
+        UniverseRegistry reg = new UniverseRegistry();
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        tag.setInteger("schemaVersion", 9999);
+        tag.setString("galaxyConfigFingerprint", packConfig().fingerprint());
+        UniverseRegistry fromTheFuture = new UniverseRegistry();
+        fromTheFuture.readFromNBT(tag);
+
+        try {
+            fromTheFuture.reconcileSchema(packConfig());
+            fail("a world from an unknown schema version must not load");
+        } catch (UniverseSchemaMismatchException expected) {
+            assertTrue("the refusal must name the version the world needs: " + expected.getMessage(),
+                    expected.getMessage().contains("9999"));
+        }
+    }
+
+    @Test
+    public void anUpgradeAcceptsTheNewConfigurationDeliberately() {
+        // The door out of the refusal above: the player asks for it, and afterwards the world opens
+        // under what the pack now says.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+
+        reg.adoptSchema(retunedConfig());
+
+        assertEquals("an upgrade records the configuration it accepted",
+                retunedConfig().fingerprint(), reg.configFingerprint());
+        assertEquals("under the current model", UniverseSchemas.CURRENT, reg.schemaVersion());
+        assertEquals("and the world then opens without complaint", UniverseSchemas.CURRENT,
+                reg.reconcileSchema(retunedConfig()).version());
+    }
+
+    @Test
+    public void theLawsAWorldWasGeneratedUnderAreRecordedTheSameWay() {
+        // The metric and the expansion are stamped, not versioned by implementation: a changed metric
+        // means every address denotes a different distance, which no existing world can be RUN under.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+
+        assertEquals("a fresh world records the laws it was generated under",
+                UniverseRegistry.currentLawsFingerprint(), reg.lawsFingerprint());
+
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        UniverseRegistry round = new UniverseRegistry();
+        round.readFromNBT(tag);
+        assertEquals("and they outlive the session", reg.lawsFingerprint(), round.lawsFingerprint());
+    }
+
+    @Test
+    public void theShippedModelIsTheAlphaAndSaysSo() {
+        // The leading zero is the whole statement: this model may be REPLACED rather than extended, and
+        // a player is told so on any world that uses it.
+        UniverseSchema current = UniverseSchemas.current();
+
+        assertEquals("the first released model is version 0", 0, current.version());
+        assertEquals("and its human label carries the zero", "0.1", current.label());
+        assertFalse("a 0.x label is not a stable release", current.isStable());
+    }
+
+    @Test
+    public void anAbsentStampIsNotReadAsVersionZero() {
+        // The trap that version 0 creates: NBT answers 0 for an absent integer, and 0 is now a real
+        // version. Reading the value instead of asking whether the key exists would report every
+        // stampless save as "generated by the alpha" and skip the adoption a fresh world is owed.
+        NBTTagCompound bare = new NBTTagCompound();
+        assertEquals("arrangement: NBT must indeed default an absent integer to zero",
+                0, bare.getInteger("schemaVersion"));
+
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.readFromNBT(bare);
+
+        assertEquals("a save with no stamp must read as UNSTAMPED, not as the alpha",
+                UniverseRegistry.UNSTAMPED, reg.schemaVersion());
+        assertTrue("and UNSTAMPED must be a value no version can take",
+                UniverseRegistry.UNSTAMPED < 0);
+    }
+
+    @Test
+    public void anAlphaWorldIsRecognisedAsStampedAfterAReload() {
+        // The other half of the same trap: a world genuinely generated under version 0 must come back
+        // as version 0, not as "never stamped".
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+        assertEquals("arrangement: the fresh world takes the alpha", 0, reg.schemaVersion());
+
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        UniverseRegistry reopened = new UniverseRegistry();
+        reopened.readFromNBT(tag);
+
+        assertEquals("an alpha world must reload as the alpha", 0, reopened.schemaVersion());
+        assertEquals("and its configuration must not have been re-adopted",
+                reg.configFingerprint(), reopened.configFingerprint());
+    }
+
+    @Test
+    public void aVersionsLawsTravelWithIt() {
+        // The point of the whole exercise: selecting a version selects the metric too, so a build that
+        // ships a new one does not re-measure the worlds already made under the old.
+        UniverseSchema v1 = UniverseSchemas.current();
+
+        assertSame("the generator a schema builds must measure by that schema's laws",
+                v1.laws(), v1.generator(packConfig()).laws());
+        assertEquals("and the stamp is that schema's laws, measured",
+                UniverseRegistry.lawsFingerprintOf(v1.laws()),
+                UniverseRegistry.currentLawsFingerprint());
+    }
+
+    @Test
+    public void theLawsFingerprintMeasuresBehaviourNotDeclarations() {
+        // Taken by RUNNING the conversions, so an implementation whose internal constant moved is caught
+        // even though it publishes the same list of names.
+        IUniverseLaws shifted = new ShiftedLaws();
+
+        assertNotEquals("one cell of difference in one conversion must change the identity",
+                UniverseRegistry.lawsFingerprintOf(UniverseLawsV0.INSTANCE),
+                UniverseRegistry.lawsFingerprintOf(shifted));
+    }
+
+    /** Version 1's laws with a single conversion moved — a stand-in for a version that measures anew. */
+    private static final class ShiftedLaws implements IUniverseLaws {
+        private final IUniverseLaws base = UniverseLawsV0.INSTANCE;
+
+        @Override
+        public long cellsForLightYears(double lightYears) {
+            return base.cellsForLightYears(lightYears) + 1L;
+        }
+
+        @Override
+        public long cellsAt(double lightYears) {
+            return base.cellsAt(lightYears);
+        }
+
+        @Override
+        public double lightYearsForCells(double cells) {
+            return base.lightYearsForCells(cells);
+        }
+
+        @Override
+        public double lightYearsPerTick(double kilometresPerSecond) {
+            return base.lightYearsPerTick(kilometresPerSecond);
+        }
+
+        @Override
+        public long cellsForOrbitUnits(double orbitUnits) {
+            return base.cellsForOrbitUnits(orbitUnits);
+        }
+
+        @Override
+        public double orbitUnitsForCells(long cells) {
+            return base.orbitUnitsForCells(cells);
+        }
+
+        @Override
+        public long seatMarginCells(long spacingCells) {
+            return base.seatMarginCells(spacingCells);
+        }
+
+        @Override
+        public double retinueReachLy(double primaryRadiusLy) {
+            return base.retinueReachLy(primaryRadiusLy);
+        }
+
+        @Override
+        public double scaleFactorAt(long tick) {
+            return base.scaleFactorAt(tick);
+        }
+
+        @Override
+        public long driftHorizonTicks() {
+            return base.driftHorizonTicks();
+        }
+    }
+
+    @Test
+    public void aReleasedVersionWhoseLawsWereEditedInPlaceIsRefused() {
+        // A released version's laws may never move: a changed metric ships as a NEW version, which old
+        // worlds simply do not use. So a mismatch here is not a player's situation at all — it says this
+        // jar's schema 1 is not the schema 1 that made the world, and nobody downstream can accept that
+        // away.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        tag.setString("universeLawsFingerprint", "0000deadbeef0000");
+        UniverseRegistry otherLaws = new UniverseRegistry();
+        otherLaws.readFromNBT(tag);
+
+        try {
+            otherLaws.reconcileSchema(packConfig());
+            fail("a world generated under different laws must not load silently");
+        } catch (UniverseSchemaMismatchException expected) {
+            assertTrue("the refusal must name the laws the world was made under: "
+                    + expected.getMessage(), expected.getMessage().contains("0000deadbeef0000"));
+            assertTrue("and what this build's schema 1 measures: " + expected.getMessage(),
+                    expected.getMessage().contains(UniverseRegistry.currentLawsFingerprint()));
+            assertFalse("it must not blame the pack's configuration, which has not moved: "
+                    + expected.getMessage(), expected.getMessage().contains("<galaxyGen> configuration"));
+        }
+    }
+
+    @Test
+    public void anUpgradeMayNotAcceptEditedLaws() {
+        // The one door that must NOT open. A configuration is the pack author's to change and an
+        // operator may accept it; a released version's laws moving is a broken build, and accepting it
+        // would silently re-measure everything the world already holds.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+        reg.armUpgrade();
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        tag.setString("universeLawsFingerprint", "0000deadbeef0000");
+        UniverseRegistry brokenBuild = new UniverseRegistry();
+        brokenBuild.readFromNBT(tag);
+
+        try {
+            brokenBuild.reconcileSchema(packConfig());
+            fail("an armed upgrade must not accept a released version's laws having moved");
+        } catch (UniverseSchemaMismatchException expected) {
+            assertTrue("the permission must still be standing, unspent", brokenBuild.isUpgradeArmed());
+        }
+    }
+
+    @Test
+    public void anArmedUpgradeIsSpentOnceAndOnlyOnce() {
+        // The remedy has to outlive the session that authorised it: a changed <galaxyGen> stops the
+        // load, so the permission is given while the world still opens and spent at the boot after.
+        // Once — a second edit is a second decision.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+        reg.armUpgrade();
+
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        UniverseRegistry nextBoot = new UniverseRegistry();
+        nextBoot.readFromNBT(tag);
+        assertTrue("the permission must survive the restart it exists to cross",
+                nextBoot.isUpgradeArmed());
+
+        nextBoot.reconcileSchema(retunedConfig());
+        assertEquals("the armed load accepts the new configuration",
+                retunedConfig().fingerprint(), nextBoot.configFingerprint());
+        assertFalse("and the permission is spent", nextBoot.isUpgradeArmed());
+
+        GalaxyGenConfig retunedAgain = GalaxyGenConfig.defaults().withRogueTuning(
+                new GalaxyGenConfig.RogueTuning(3d, 0.012d, 3d, GalaxyGenConfig.defaultRogueTypes()));
+        try {
+            nextBoot.reconcileSchema(retunedAgain);
+            fail("a second configuration change must be refused like any other");
+        } catch (UniverseSchemaMismatchException expected) {
+            assertTrue("and the refusal must still say how to accept it deliberately: "
+                    + expected.getMessage(), expected.getMessage().contains("upgrade confirm"));
+        }
+    }
+
+    @Test
+    public void anArmedWorldWhoseConfigurationDidNotChangeKeepsItsPermission() {
+        // Arming is not a countdown: a world that boots unchanged has spent nothing, and the operator
+        // who armed it can still make the edit he armed it for.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(packConfig());
+        reg.armUpgrade();
+
+        reg.reconcileSchema(packConfig());
+
+        assertTrue("an unchanged load must not consume the permission", reg.isUpgradeArmed());
+    }
+
+    @Test
+    public void anAuthoredOnlyUniverseHasAModelOfItsOwn() {
+        // No <galaxyGen> is a legitimate world, not a missing configuration — and it is a DIFFERENT
+        // world from one that declares a generator, so the two must not share a fingerprint.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.reconcileSchema(null);
+
+        assertEquals("an authored-anchors-only world is stamped like any other",
+                UniverseSchemas.CURRENT, reg.schemaVersion());
+        assertNotEquals("declaring no generator is not the same universe as declaring one",
+                packConfig().fingerprint(), reg.configFingerprint());
+        assertEquals("and it reopens unchanged", UniverseSchemas.CURRENT,
+                reg.reconcileSchema(null).version());
+    }
+
+    @Test
+    public void aConfigurationsFingerprintIsAboutTheUniverseItDescribes() {
+        // Two configurations that describe the same universe must agree, or every load is a false
+        // alarm; two that describe different ones must differ, or the check sees nothing.
+        assertEquals("the same knobs must fingerprint the same, run after run",
+                GalaxyGenConfig.defaults().fingerprint(), GalaxyGenConfig.defaults().fingerprint());
+        assertNotEquals("a retuned knob is a different universe",
+                GalaxyGenConfig.defaults().fingerprint(), retunedConfig().fingerprint());
+    }
+
+    @Test
+    public void reservingAGalaxyKeepsWhatThePackSaidAboutRogues() {
+        // Authored anchors are folded in AFTER <galaxyGen> is read, so the fold must not quietly drop
+        // the rest of what the pack stated — the stamp would then record a universe nobody authored.
+        GalaxyGenConfig authored = retunedConfig();
+        GalaxyGenConfig withGalaxy = authored.withReservedGalaxies(
+                java.util.Collections.singletonList(zmaster587.advancedRocketry.universe.GalaxyKey.of(1L, 0L, 0L)));
+
+        assertEquals("the authored rogue abundance must survive reserving a galaxy",
+                authored.rogue.abundance, withGalaxy.rogue.abundance, 0d);
+        assertEquals("and so must the rest of the tuning", authored.rogue.giantFraction,
+                withGalaxy.rogue.giantFraction, 0d);
     }
 
     /** A test generator that claims every cell with one fixed system — to prove stored placements win. */
@@ -749,14 +1168,14 @@ public class UniverseRegistryTest {
         }
 
         @Override
-        public Optional<StarSystem> systemAt(long seed, GalacticCoord coord) {
-            return Optional.of(new StarSystem(body));
+        public Optional<PlanetarySystem> systemAt(long seed, GalacticCoord coord) {
+            return Optional.of(PlanetarySystem.ofStar(body));
         }
 
         @Override
-        public Map<GalacticCoord, StarSystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
-            Map<GalacticCoord, StarSystem> m = new HashMap<>();
-            m.put(min.cellCentre(), new StarSystem(body));
+        public Map<GalacticCoord, PlanetarySystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
+            Map<GalacticCoord, PlanetarySystem> m = new HashMap<>();
+            m.put(min.cellCentre(), PlanetarySystem.ofStar(body));
             return m;
         }
     }

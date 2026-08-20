@@ -188,7 +188,7 @@ public class VSDoubleQueuedShipLoadDoesNotKillTheServerE2ETest extends AbstractH
     }
 
     private static double extractDouble(String json, String key) {
-        Matcher m = Pattern.compile("\"" + key + "\":(-?\\d+(?:\\.\\d+)?)").matcher(json);
+        Matcher m = Pattern.compile("\"" + key + "\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)").matcher(json);
         return m.find() ? Double.parseDouble(m.group(1)) : 0.0;
     }
 }

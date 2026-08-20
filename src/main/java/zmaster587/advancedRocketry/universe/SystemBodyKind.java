@@ -19,10 +19,38 @@ public enum SystemBodyKind {
      * rather than a {@link #PLANET}. Appended last on purpose: this ordinal travels on the render wire
      * ({@code PacketSystemBodiesSync}), so the existing kinds keep the numbers they already had.
      */
-    GAS_GIANT;
+    GAS_GIANT,
+    /**
+     * A world with no star: a planet that was thrown out of the system it formed in, and now stands
+     * alone as the PRIMARY of its own cell. Its warmth is what is left of its own formation, so
+     * everything a star decides for an ordinary world — insolation, a year, a zone — it decides for
+     * itself or not at all.
+     *
+     * <p>It is a kind of its own rather than a cold {@link #PLANET} around a cold {@link #STAR}, and
+     * that is the whole point of it existing: the arithmetic of a tiny 30 K star does come out right,
+     * and it would leave the model holding a {@code STAR} that is not a star. What a name is for is
+     * being true.</p>
+     *
+     * <p>Appended last, like {@link #GAS_GIANT} before it: this ordinal travels on the render wire
+     * ({@code PacketSystemBodiesSync}), so the existing kinds keep the numbers they already had.</p>
+     */
+    ROGUE_PLANET;
 
-    /** {@code true} for the body kinds that can back a walkable dimension (planets and moons). */
+    /**
+     * {@code true} for the body kinds that can back a walkable dimension (planets and moons).
+     *
+     * <p><b>A {@link #ROGUE_PLANET} is not among them yet, and that is a bound of the DIMENSION model
+     * rather than of the world.</b> A realized dimension resolves its sky colour, its insolation, its
+     * year and its temperature through a star it is required to have, in some thirty unguarded places;
+     * a starless world is that model's own piece of work. Until it is done a rogue is a place a ship
+     * flies to and looks at, and the descent trigger never fires on one rather than failing at it.</p>
+     */
     public boolean canDescend() {
         return this == PLANET || this == MOON;
+    }
+
+    /** {@code true} for the kinds that are a WORLD — something with a surface, lit or not. */
+    public boolean isWorld() {
+        return this == PLANET || this == MOON || this == ROGUE_PLANET;
     }
 }

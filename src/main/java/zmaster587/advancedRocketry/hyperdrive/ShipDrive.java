@@ -99,11 +99,11 @@ public final class ShipDrive {
         return gen == null ? ShipDriveStats.NONE : gen.stats();
     }
 
-    /** Charge available across every connected capacitor at {@code now}. */
-    public long capacitorCharge(long now) {
+    /** Charge available across every connected capacitor. */
+    public long capacitorCharge() {
         long total = 0L;
         for (TileJumpCapacitor capacitor : capacitors()) {
-            total += capacitor.chargeAt(now);
+            total += capacitor.charge();
         }
         return total;
     }
@@ -118,21 +118,23 @@ public final class ShipDrive {
     }
 
     /**
-     * Ticks until the bank can open a window again, or {@code -1} when it never can. This is the
-     * cooldown, and it is entirely a consequence of what the player built.
+     * Ticks until the bank can open a window again <b>if the ship feeds it at the bank's full accept
+     * rate</b>, or {@code -1} when it never can. A BEST CASE: the energy comes from the ship's own
+     * generation, so a pilot who has under-built his reactors waits longer than this says. It is still
+     * entirely a consequence of what the player built — now of two things he built rather than one.
      */
-    public long cooldownTicks(long now) {
+    public long cooldownTicks() {
         long needed = stats().burstCost();
         if (needed <= 0L) {
             return -1L;
         }
         long best = -1L;
-        long charge = capacitorCharge(now);
+        long charge = capacitorCharge();
         if (charge >= needed) {
             return 0L;
         }
         for (TileJumpCapacitor capacitor : capacitors()) {
-            long ticks = capacitor.ticksUntil(needed, now);
+            long ticks = capacitor.ticksUntilAtFullInflow(needed);
             if (ticks < 0L) {
                 continue;
             }
@@ -149,7 +151,7 @@ public final class ShipDrive {
      */
     public boolean fireBurst(long now) {
         long needed = stats().burstCost();
-        if (needed <= 0L || capacitorCharge(now) < needed) {
+        if (needed <= 0L || capacitorCharge() < needed) {
             return false;
         }
         long remaining = needed;
@@ -157,9 +159,9 @@ public final class ShipDrive {
             if (remaining <= 0L) {
                 break;
             }
-            long available = capacitor.chargeAt(now);
+            long available = capacitor.charge();
             long take = Math.min(available, remaining);
-            if (take > 0L && capacitor.discharge(take, now) == take) {
+            if (take > 0L && capacitor.discharge(take) == take) {
                 remaining -= take;
             }
         }

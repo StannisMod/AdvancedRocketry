@@ -45,11 +45,43 @@ public final class ShipEntryController {
     public static final long DESCENT_RADIUS_BLOCKS = 512L;
 
     /**
-     * Entry spawn-ring distance from the launch body's POI (blocks, cell-local). MUST stay
-     * strictly greater than {@link #DESCENT_RADIUS_BLOCKS} — the entry&harr;descent hysteresis
-     * contract (an entering ship never spawns inside the descent trigger). {@code tunable}.
+     * Entry spawn-ring distance from the launch body's POI (blocks, cell-local), for a body with no
+     * size of its own. MUST stay strictly greater than {@link #DESCENT_RADIUS_BLOCKS} — the
+     * entry&harr;descent hysteresis contract (an entering ship never spawns inside the descent
+     * trigger). {@code tunable}.
+     *
+     * <p>For a body that HAS a radius the ring follows the shell instead of this constant — see
+     * {@link #entryRingAround}. The hysteresis is a relation between the two, not a pair of numbers,
+     * and it stopped being expressible as a pair the moment the shell started depending on the body.</p>
      */
     public static final long ENTRY_RING_BLOCKS = DESCENT_RADIUS_BLOCKS * 2L;
+
+    /**
+     * The ring an entering ship spawns on around {@code body} — always strictly outside that body's
+     * descent shell, so a ship that has just entered is never already inside the trigger it is about
+     * to fly towards.
+     */
+    public static long entryRingAround(zmaster587.advancedRocketry.universe.SystemBody body) {
+        long shell = zmaster587.advancedRocketry.space.DescentShell.radiusAround(body);
+        return Math.max(ENTRY_RING_BLOCKS, shell * 2L);
+    }
+
+    /**
+     * The same ring for a body known only by ADDRESS — the entry path holds a coordinate, not the
+     * body object, so the body is resolved through the registry and the flat ring is used when there
+     * is nothing there to resolve (an unplaced launch, the config home anchor).
+     */
+    public static long entryRingAround(GalacticCoord bodyAddress) {
+        if (bodyAddress == null) {
+            return ENTRY_RING_BLOCKS;
+        }
+        long widest = ENTRY_RING_BLOCKS;
+        for (zmaster587.advancedRocketry.universe.SystemBody b
+                : zmaster587.advancedRocketry.universe.UniverseRegistry.bodiesAtOnServer(bodyAddress)) {
+            widest = Math.max(widest, entryRingAround(b));
+        }
+        return widest;
+    }
 
     /** Ticks a ship waits after a refused/failed entry before the ceiling check may re-trigger. */
     private static final int RETRY_COOLDOWN_TICKS = 100;
@@ -297,7 +329,7 @@ public final class ShipEntryController {
         if (body == null) {
             body = GalacticCoord.ORIGIN;
         }
-        return StandoffRing.pointAround(body, ENTRY_RING_BLOCKS, shipId.hashCode());
+        return StandoffRing.pointAround(body, entryRingAround(body), shipId.hashCode());
     }
 
     /** Advance every in-flight entry one tick (the shared crossing settle loop). */

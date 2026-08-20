@@ -1449,6 +1449,18 @@ public class AdvancedRocketry {
                     PacketHandler.sendToPlayer(new PacketSyncKnownPlanets(station.getId(), station.getKnownPlanetList()), player);
                 }
             }
+
+            // An ALPHA world model is told to the player, on the world it applies to, every time he
+            // arrives. Not once and not in a changelog: what it warns about is that this world may have
+            // no way forward, and that is worth knowing before he invests another evening in it.
+            zmaster587.advancedRocketry.universe.UniverseRegistry.activeSchema().ifPresent(schema -> {
+                if (!schema.isStable()) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentTranslation(
+                            "msg.advancedrocketry.universe.alpha", schema.label())
+                            .setStyle(new net.minecraft.util.text.Style()
+                                    .setColor(net.minecraft.util.text.TextFormatting.GOLD)));
+                }
+            });
         }
     }
 }

@@ -191,8 +191,10 @@ in [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 > [!CAUTION]
 > **This line will not load worlds created by the 2.x Advanced Rocketry fork.** The save format changed with
-> no migration path. Procedural-universe parameters are the same story: they are inputs to a derived
-> universe, so changing one relocates every star and every coordinate a player wrote down. Start a new world.
+> no migration path. Procedural-universe parameters are a milder story: they are inputs to a derived
+> universe, so changing one moves every system nobody has visited yet — the world therefore refuses to
+> open under a changed configuration, and `/stellurgy universe upgrade` is the deliberate way through,
+> freezing everything already explored. See the planetDefs reference before you touch them.
 
 ## For pack developers
 
@@ -203,6 +205,7 @@ Stars, planets, planet types, the procedural galaxy and ores are configured in X
 templates in [`docs/`](docs/):
 
 - planetDefs — [reference](docs/README_PLANETDEFS.md) · [template](docs/TEMPLATE_planetdefs.xml)
+  — every element and attribute, its unit, and what wins when two of them disagree
 - oreConfig — [reference](docs/README_ORECONFIG.md) · [template](docs/TEMPLATE_oreconfig.xml)
 
 Coming from an older 2.x build: commands moved into subcommands, so **command scripts and quest-book command

@@ -15,6 +15,7 @@
     "MixinEntityPlayerInventoryAccess",
     "MixinEntityPlayerMPInventoryAccess",
     "MixinPlayerList",
+    "MixinWorldProvider",
     "MixinWorldServer",
     "MixinWorldServerMulti",
     "MixinWorldSetBlockState"

@@ -2,6 +2,7 @@ package zmaster587.advancedRocketry.test.unit;
 
 import net.minecraft.nbt.NBTTagCompound;
 import org.junit.Test;
+import zmaster587.advancedRocketry.space.AbsolutePos;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
 import static org.junit.Assert.assertEquals;
@@ -30,15 +31,52 @@ public class GalacticCoordTest {
         assertTrue("localZ in [-HALF, HALF)", c.localZ() >= -HALF && c.localZ() < HALF);
     }
 
+
+    // The sector+local identity, read through the type that can hold it. GalacticCoord no longer
+    // materialises a whole-block absolute of its own: the product overflows a long seven orders
+    // before the sector index does, so the coordinate could name positions it could not express.
+
+    private static AbsolutePos wholeOf(GalacticCoord c) {
+        return AbsolutePos.ofSectorLocal(c.sectorX(), c.sectorY(), c.sectorZ(),
+                c.localX(), c.localY(), c.localZ());
+    }
+
+    private static long blocksX(GalacticCoord c) {
+        return wholeOf(c).minus(AbsolutePos.ORIGIN).dx();
+    }
+
+    private static long blocksY(GalacticCoord c) {
+        return wholeOf(c).minus(AbsolutePos.ORIGIN).dy();
+    }
+
+    private static long blocksZ(GalacticCoord c) {
+        return wholeOf(c).minus(AbsolutePos.ORIGIN).dz();
+    }
+
+    @Test
+    public void aCoordinateBeyondTheOldBlockCeilingStillMeasuresCorrectly() {
+        // The defect R4 removes: sector * CELL overflows a long at 2.9e11 while a sector index runs
+        // to 9.2e18. Two coordinates out where the product cannot fit must still be a cell apart —
+        // under the old arithmetic the difference wrapped and came back small, pointing anywhere.
+        long farOut = 1_000_000_000_000L; // 3.4 orders past where the product stops fitting
+        GalacticCoord a = GalacticCoord.ofSectorLocal(farOut, 0L, 0L, 0L, 0L, 0L);
+        GalacticCoord b = GalacticCoord.ofSectorLocal(farOut + 1L, 0L, 0L, 0L, 0L, 0L);
+
+        assertEquals("one cell apart, however far out they are",
+                (double) CELL, a.staticFrameDistanceTo(b), 1.0);
+        assertEquals("and the same measured through an absolute position", (double) CELL,
+                AbsolutePos.ofCellName(a).distanceTo(AbsolutePos.ofCellName(b)), 1.0);
+    }
+
     @Test
     public void absoluteRoundTripWithinCell() {
         GalacticCoord c = GalacticCoord.ofAbsolute(123L, -456L, 789L);
         assertEquals(0L, c.sectorX());
         assertEquals(0L, c.sectorY());
         assertEquals(0L, c.sectorZ());
-        assertEquals(123L, c.absoluteX());
-        assertEquals(-456L, c.absoluteY());
-        assertEquals(789L, c.absoluteZ());
+        assertEquals(123L, blocksX(c));
+        assertEquals(-456L, blocksY(c));
+        assertEquals(789L, blocksZ(c));
         assertLocalCanonical(c);
     }
 
@@ -48,18 +86,18 @@ public class GalacticCoordTest {
         long ay = -12L * CELL - 5L;
         long az = 4L * CELL - HALF; // lands exactly on a cell's lower edge
         GalacticCoord c = GalacticCoord.ofAbsolute(ax, ay, az);
-        assertEquals(ax, c.absoluteX());
-        assertEquals(ay, c.absoluteY());
-        assertEquals(az, c.absoluteZ());
+        assertEquals(ax, blocksX(c));
+        assertEquals(ay, blocksY(c));
+        assertEquals(az, blocksZ(c));
         assertLocalCanonical(c);
     }
 
     @Test
     public void sectorLocalIdentityHolds() {
         GalacticCoord c = GalacticCoord.ofSectorLocal(5L, -3L, 8L, 100L, -200L, 300L);
-        assertEquals(5L * CELL + 100L, c.absoluteX());
-        assertEquals(-3L * CELL - 200L, c.absoluteY());
-        assertEquals(8L * CELL + 300L, c.absoluteZ());
+        assertEquals(5L * CELL + 100L, blocksX(c));
+        assertEquals(-3L * CELL - 200L, blocksY(c));
+        assertEquals(8L * CELL + 300L, blocksZ(c));
     }
 
     @Test
@@ -67,9 +105,9 @@ public class GalacticCoordTest {
         // Local offsets far outside a cell must fold back in and carry into the sector.
         GalacticCoord c = GalacticCoord.ofSectorLocal(0L, 0L, 0L, CELL + 10L, -CELL - 10L, 3L * CELL);
         assertLocalCanonical(c);
-        assertEquals(CELL + 10L, c.absoluteX());
-        assertEquals(-CELL - 10L, c.absoluteY());
-        assertEquals(3L * CELL, c.absoluteZ());
+        assertEquals(CELL + 10L, blocksX(c));
+        assertEquals(-CELL - 10L, blocksY(c));
+        assertEquals(3L * CELL, blocksZ(c));
     }
 
     @Test
@@ -119,7 +157,7 @@ public class GalacticCoordTest {
         assertEquals(0, centre.localY());
         assertEquals(0, centre.localZ());
         // The centre of sector s sits at absolute s*CELL.
-        assertEquals(7L * CELL, centre.absoluteX());
+        assertEquals(7L * CELL, blocksX(centre));
     }
 
     @Test
@@ -152,7 +190,7 @@ public class GalacticCoordTest {
         GalacticCoord oneShot = GalacticCoord.ORIGIN.plusLocal(7_000_000L, 0L, 0L);
 
         assertEquals(oneShot, stepwise);
-        assertEquals(7_000_000L, stepwise.absoluteX());
+        assertEquals(7_000_000L, blocksX(stepwise));
     }
 
     @Test
@@ -161,7 +199,7 @@ public class GalacticCoordTest {
         GalacticCoord crossed = near.plusLocal(20L, 0L, 0L);
         assertEquals(1L, crossed.sectorX());
         assertLocalCanonical(crossed);
-        assertEquals(HALF + 10L, crossed.absoluteX());
+        assertEquals(HALF + 10L, blocksX(crossed));
     }
 
     @Test

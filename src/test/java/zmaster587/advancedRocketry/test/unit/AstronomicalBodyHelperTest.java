@@ -86,8 +86,95 @@ public class AstronomicalBodyHelperTest {
         blackHole.setBlackHole(true);
         double dimmed = AstronomicalBodyHelper.getStellarBrightness(blackHole, 100);
 
-        // Implementation multiplies by 0.25 when the primary (and all sub-stars) are black holes.
+        // A black hole emits a quarter of what its size and temperature would otherwise give.
         assertEquals(normal * 0.25, dimmed, 1e-9);
+    }
+
+    /**
+     * Every star in a system lights the worlds in it. Before this was true, the companion list was
+     * walked only to decide a boolean and no companion ever contributed a photon.
+     */
+    @Test
+    public void everyStarInASystemContributesItsOwnLight() {
+        double alone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
+
+        StellarBody contactPair = sunLikeStar();
+        StellarBody touching = sunLikeStar();
+        touching.setOrbitalDistance(0); // the degenerate case: both stars at the same place
+        contactPair.addSubStar(touching);
+
+        assertEquals("two identical stars in the same place light a world twice as brightly",
+                2 * alone, AstronomicalBodyHelper.getStellarBrightness(contactPair, 100), 1e-9);
+    }
+
+    @Test
+    public void aCompanionsContributionFallsOffWithItsOwnDistance() {
+        // The defect: every companion used to be fed the PRIMARY's distance, so a companion twenty AU
+        // away warmed a world exactly as much as one sitting beside its star. A separation that costs
+        // nothing is a separation the model does not really have.
+        double alone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
+
+        StellarBody close = sunLikeStar();
+        StellarBody nearby = sunLikeStar();
+        nearby.setOrbitalDistance(5); // 0.05 AU
+        close.addSubStar(nearby);
+
+        StellarBody wide = sunLikeStar();
+        StellarBody distant = sunLikeStar();
+        distant.setOrbitalDistance(2_000); // 20 AU, an Alpha-Centauri-like pair
+        wide.addSubStar(distant);
+
+        double closeBrightness = AstronomicalBodyHelper.getStellarBrightness(close, 100);
+        double wideBrightness = AstronomicalBodyHelper.getStellarBrightness(wide, 100);
+
+        assertTrue("a close companion nearly doubles the light", closeBrightness > 1.9 * alone);
+        assertTrue("a distant one adds only a little", wideBrightness < 1.1 * alone);
+        assertTrue("but it is never nothing", wideBrightness > alone);
+    }
+
+    @Test
+    public void aWorldOfTheCompanionIsLitByThePrimaryToo() {
+        // An S-type planet is a planet in a binary, not a planet with one sun that happens to have a
+        // bright neighbour. The walk therefore starts at the system's root, not at the star the
+        // planet is bound to.
+        double alone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
+
+        StellarBody primary = sunLikeStar();
+        StellarBody companion = sunLikeStar();
+        companion.setOrbitalDistance(0);
+        primary.addSubStar(companion);
+
+        assertEquals("a world of the companion sees both stars", 2 * alone,
+                AstronomicalBodyHelper.getStellarBrightness(companion, 100), 1e-9);
+    }
+
+    /**
+     * A companion does not repeal the primary's nature.
+     *
+     * <p>The case this pins used to invert: any ordinary companion cleared the black-hole flag, after
+     * which the luminosity was taken from the BLACK HOLE's own size and temperature at FULL strength —
+     * so a black hole with a companion came out brighter than a bare one and lit by the wrong body,
+     * while the companion contributed nothing.</p>
+     */
+    @Test
+    public void aCompanionDoesNotTurnABlackHoleBackIntoAStar() {
+        double sunAlone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
+
+        StellarBody bareHole = sunLikeStar();
+        bareHole.setBlackHole(true);
+        double holeAlone = AstronomicalBodyHelper.getStellarBrightness(bareHole, 100);
+
+        StellarBody holeWithCompanion = sunLikeStar();
+        holeWithCompanion.setBlackHole(true);
+        StellarBody companion = sunLikeStar();
+        companion.setOrbitalDistance(0); // separation is not what this test is about
+        holeWithCompanion.addSubStar(companion);
+        double together = AstronomicalBodyHelper.getStellarBrightness(holeWithCompanion, 100);
+
+        assertEquals("a black hole and its companion each light the world on their own terms",
+                holeAlone + sunAlone, together, 1e-9);
+        assertTrue("the hole stays dimmed: the pair is never as bright as two ordinary stars",
+                together < 2 * sunAlone);
     }
 
     @Test
@@ -145,6 +232,128 @@ public class AstronomicalBodyHelperTest {
                             + ", expected within [" + expectedMin[i] + ", " + expectedMax[i] + "]",
                     plm >= expectedMin[i] && plm <= expectedMax[i]);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // The reference frame, pinned by VALUE.
+    //
+    // The assertions above are mostly relative — thicker is warmer, farther is cooler — and a
+    // relative assertion cannot notice that a scale constant moved: rescale the atmosphere axis and
+    // "thicker is warmer" still holds while every temperature is wrong. These pin the absolute
+    // numbers instead, each derived from the frame's own definitions (100 distance units = 1 AU,
+    // 48 days = a year, 8 = a lunar month) rather than recorded from a run.
+    //
+    // They exist so that naming the scale constants can be shown to change nothing — and they stay
+    // afterwards as the guard for the next edit. The temperature ones matter most: the distance
+    // scale and the atmosphere scale are both 100 and live four lines apart, so a well-meant
+    // search-and-replace can silently corrupt one of them.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * A world's temperature follows its ALBEDO, which its type states. The formula used to hard-code
+     * 0.3 for every surface, so an ice world and a lava world at the same distance were the same
+     * temperature — and the physical direction matters: more reflective means colder, which is what
+     * keeps ice being ice.
+     */
+    @Test
+    public void albedoCoolsAWorldAndTheDefaultIsEarths() {
+        StellarBody star = sunLikeStar();
+        int dark = AstronomicalBodyHelper.getAverageTemperature(star, 100, 0, 0.10d);
+        int earthLike = AstronomicalBodyHelper.getAverageTemperature(star, 100, 0, 0.30d);
+        int icy = AstronomicalBodyHelper.getAverageTemperature(star, 100, 0, 0.60d);
+
+        assertTrue("a darker surface absorbs more and runs hotter", dark > earthLike);
+        assertTrue("a more reflective surface runs colder", icy < earthLike);
+        assertEquals("the albedo-less form must still mean Earth's albedo",
+                AstronomicalBodyHelper.getAverageTemperature(star, 100, 0), earthLike);
+    }
+
+    @Test
+    public void orbitalPeriodFollowsTheThreeHalvesPowerLawExactly() {
+        // Four times the distance is eight times the period.
+        assertEquals(384.0, AstronomicalBodyHelper.getOrbitalPeriod(400, 1.0f), 1e-9);
+        // A heavier star pulls the same distance into a shorter year, as sqrt(M) — Kepler's third law,
+        // P = 48 * a^1.5 / sqrt(M) = 48 * 1.5^1.5 / sqrt(2). The second argument is a MASS in solar
+        // masses; while it was read as a RADIUS this line expected 31.176914536239792, i.e. 1.5^1.5/2^1.5.
+        assertEquals(62.353829072479584, AstronomicalBodyHelper.getOrbitalPeriod(150, 2.0f), 1e-9);
+    }
+
+    /**
+     * A star's year is set by its MASS. A star that states no mass supplies one from its radius through
+     * the main-sequence relation, which is exact for Sol — and is emphatically not the radius itself.
+     */
+    @Test
+    public void aYearIsKeyedOnStellarMassAndAStarWithoutOneDerivesItFromItsRadius() {
+        StellarBody sol = sunLikeStar(); // size 1.0
+        assertEquals("Sol's mass and radius are both 1, so nothing can tell them apart here",
+                1.0, sol.getMass(), 1e-6);
+        assertEquals(48.0, AstronomicalBodyHelper.getOrbitalPeriod(100, sol.getMass()), 1e-9);
+
+        StellarBody big = sunLikeStar();
+        big.setSize(2.0f);
+        // R = 2 gives M = 2^1.25 = 2.3784, so the year is 48/sqrt(2.3784) days. The mass is a float, so
+        // the exact figure below carries that narrowing — deliberately, per this file's header.
+        assertEquals(2.378414230005442, big.getMass(), 1e-6);
+        assertEquals(31.124149808586335, AstronomicalBodyHelper.getOrbitalPeriod(100, big.getMass()), 1e-9);
+        // A star two Sol-radii across is HEAVIER than two solar masses, so keying the year on its mass
+        // gives a shorter year than substituting the radius would. Any star but Sol separates the two.
+        assertTrue("a two-radius star masses more than two Suns", big.getMass() > big.getSize());
+        assertTrue("so its year is shorter than a radius substitution gives",
+                AstronomicalBodyHelper.getOrbitalPeriod(100, big.getMass())
+                        < AstronomicalBodyHelper.getOrbitalPeriod(100, big.getSize()));
+
+        StellarBody stated = sunLikeStar();
+        stated.setSize(2.0f);
+        stated.setMass(4.0f);
+        assertEquals("a stated mass wins over the derivation", 4.0, stated.getMass(), 1e-6);
+    }
+
+    @Test
+    public void moonPeriodScalesWithParentMassAndDistanceExactly() {
+        // Four times the parent mass halves the period.
+        assertEquals(4.0, AstronomicalBodyHelper.getMoonOrbitalPeriod(100f, 4.0f), 1e-9);
+        assertEquals(22.627416997969522, AstronomicalBodyHelper.getMoonOrbitalPeriod(200f, 1.0f), 1e-9);
+    }
+
+    @Test
+    public void temperatureAtOneAuUnderOneAtmosphereIsPinned() {
+        // 1 AU, one atmosphere: the radiative balance times the greenhouse term.
+        assertEquals(287, AstronomicalBodyHelper.getAverageTemperature(sunLikeStar(), 100, 100));
+    }
+
+    @Test
+    public void aVacuumWorldGetsTheBareRadiativeBalance() {
+        // atmPressure 0 falls to the max(1, ...) floor — no greenhouse lift at all.
+        assertEquals(255, AstronomicalBodyHelper.getAverageTemperature(sunLikeStar(), 100, 0));
+    }
+
+    @Test
+    public void temperatureAtFourAuIsPinned() {
+        assertEquals(143, AstronomicalBodyHelper.getAverageTemperature(sunLikeStar(), 400, 100));
+    }
+
+    @Test
+    public void brightnessFallsWithTheSquareOfDistanceExactly() {
+        assertEquals(0.25, AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 200), 1e-9);
+    }
+
+    // The tick-taking overloads of the theta helpers do NOT touch the mod proxy — only the no-arg
+    // forms do, which is what the class note above excludes. They carry the same law, so the wrap
+    // is checkable here as well as in the integration test.
+
+    @Test
+    public void orbitalThetaWrapsOncePerPeriod() {
+        long periodTicks = (long) (48.0 * 24000.0);
+        assertEquals(0.0, AstronomicalBodyHelper.getOrbitalThetaAt(100, 1.0f, 0L), 1e-9);
+        assertEquals(Math.PI / 2.0,
+                AstronomicalBodyHelper.getOrbitalThetaAt(100, 1.0f, periodTicks / 4L), 1e-9);
+        assertEquals(0.0, AstronomicalBodyHelper.getOrbitalThetaAt(100, 1.0f, periodTicks), 1e-9);
+    }
+
+    @Test
+    public void aDegenerateOrbitStaysAddressableRatherThanNaN() {
+        assertEquals(0.0, AstronomicalBodyHelper.getOrbitalThetaAt(0, 1.0f, 12345L), 1e-9);
+        assertEquals(0.0, AstronomicalBodyHelper.getMoonOrbitalThetaAt(100, 0f, 12345L), 1e-9);
     }
 
 }

@@ -10,9 +10,11 @@ import java.util.Optional;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.space.BlockDelta;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
+import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
@@ -119,6 +121,71 @@ public class SystemContentTest {
                         b.name().sameCell(first.name()));
             }
         }
+    }
+
+    @Test
+    public void oneOrbitalDistanceMeansOneDistanceInBothFamilies() {
+        // The acceptance the scale rework exists for. An authored planet and a procedural one at the
+        // same orbital distance must stand the same distance from their stars — the field is
+        // documented in one unit, and every derived number (insolation, temperature, period) is
+        // computed from it and never from where the body was placed. They used to be turned into
+        // positions by two different laws: authored linear and absolute, procedural logarithmic and
+        // normalised to whatever neighbourhood the system had been given. Order survived; proportion
+        // did not, and the science and the flight time disagreed.
+        StellarBody star = new StellarBody();
+        star.setId(4244);
+        star.setName("ScaleStar");
+        planet(720, 300, 0.0).setStar(star);
+
+        GalacticCoord anchor = GalacticCoord.ofSectorLocal(11, -4, 6, 0, 0, 0);
+        SystemBody authored = null;
+        for (SystemBody b : SystemContent.bodiesOf(star, anchor)) {
+            if (b.dimId() == 720) {
+                authored = b;
+            }
+        }
+        assertNotNull(authored);
+        double authoredPerUnit = authored.absoluteAt(0L).distanceTo(
+                zmaster587.advancedRocketry.space.AbsolutePos.ofCellName(anchor))
+                / authored.orbitalDistance();
+
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(
+                new GalaxyGenConfig(GalaxyGenConfig.DEFAULT_MIN_SPACING, 1.0d,
+                        GalaxyGenConfig.DEFAULT_GALAXY_SPACING, GalaxyGenConfig.DEFAULT_GALAXY_DENSITY,
+                        null, null));
+        long spacing = GalaxyGenConfig.DEFAULT_MIN_SPACING;
+        // SWEEP for an occupied super-cell rather than demanding one particular cube. Occupancy is a
+        // draw scaled by the galaxy's profile, so any single cube is a coin toss and a fixture that
+        // insists on one is testing the coin.
+        // It must be a seat with a STAR: the comparison is between one authored planet's orbit and one
+        // procedural planet's, and a starless system has no orbits at all to compare with.
+        // Asked what each TERRITORY holds, never what its corner point resolves to: the lattice is
+        // divided uniformly, so a point probe samples one seat in k-cubed and a sweep built on it
+        // reads a populated field as an almost empty one.
+        Optional<GalacticCoord> seat = Optional.empty();
+        for (long i = 1; i <= 16 && !seat.isPresent(); i++) {
+            for (GalacticCoord candidate : gen.anchorsInTerritory(0xBEEFL,
+                    GalacticCoord.ofSectorLocal(i * spacing, spacing, spacing, 0L, 0L, 0L), 64)) {
+                if (gen.systemAt(0xBEEFL, candidate).get().star().isPresent()) {
+                    seat = Optional.of(candidate);
+                    break;
+                }
+            }
+        }
+        assertTrue("the fixture needs an occupied super-cell with a star in it", seat.isPresent());
+        int compared = 0;
+        for (SystemBody b : gen.bodiesFor(0xBEEFL, seat.get())) {
+            if (b.kind() != SystemBodyKind.PLANET && b.kind() != SystemBodyKind.GAS_GIANT) {
+                continue;
+            }
+            double proceduralPerUnit = b.absoluteAt(0L).distanceTo(
+                    zmaster587.advancedRocketry.space.AbsolutePos.ofCellName(seat.get()))
+                    / b.orbitalDistance();
+            assertEquals("one orbit unit must be one distance in both families",
+                    authoredPerUnit, proceduralPerUnit, authoredPerUnit * 1e-6d);
+            compared++;
+        }
+        assertTrue("the procedural system must have bodies to compare against", compared > 0);
     }
 
     @Test
@@ -383,6 +450,63 @@ public class SystemContentTest {
                 moonBody.inCellOffsetAt(0L).equals(moonBody.inCellOffsetAt(quarterPeriod)));
         assertTrue("a planet is at its own cell's frame origin, so it has no offset to move",
                 planetBody.inCellOffsetAt(quarterPeriod).isZero());
+    }
+
+    /**
+     * A moon's period is set by its parent's MASS, not by the gravity you would feel standing on it.
+     *
+     * <p>The two are the same number only at one Earth radius — {@code g = M/R²} — and every orbital
+     * law here used to be handed gravity. Exact for Earth; for a Jupiter (318 Earth masses, 2.53 g)
+     * wrong by {@code sqrt(318/2.53)}, so a giant's moons crawled round it 11 times too slowly. The
+     * fixture below is that Jupiter, and the two readings are 11× apart, so a run cannot satisfy this
+     * test by accident.</p>
+     */
+    @Test
+    public void aMoonsPeriodFollowsItsParentsMassNotItsSurfaceGravity() {
+        StellarBody star = new StellarBody();
+        star.setId(4251);
+        star.setSize(1f);
+        DimensionProperties parent = planet(780, 200, 0.5);
+        parent.setBulk(318d, 11.2d); // a Jupiter: gravity falls out as M/R² = 2.53
+        DimensionProperties moon = planet(781, 127, 0.9);
+        DimensionManager.getInstance().setDimProperties(780, parent);
+        DimensionManager.getInstance().setDimProperties(781, moon);
+        parent.setStar(star);
+        moon.setParentPlanet(parent);
+
+        assertEquals("the fixture must be a giant, or the two readings coincide and prove nothing",
+                2.535d, parent.gravitationalMultiplier, 0.01d);
+
+        long massPeriodTicks = (long) (24000d
+                * AstronomicalBodyHelper.getMoonOrbitalPeriod(127f, (float) parent.getOrbitalMass()));
+        long gravityPeriodTicks = (long) (24000d
+                * AstronomicalBodyHelper.getMoonOrbitalPeriod(127f, parent.gravitationalMultiplier));
+        assertTrue("mass and gravity must give periods far enough apart to tell apart: "
+                        + massPeriodTicks + " vs " + gravityPeriodTicks,
+                gravityPeriodTicks > massPeriodTicks * 5);
+
+        SystemBody moonBody = bodyOf(SystemContent.bodiesOf(star, GalacticCoord.ORIGIN), 781);
+        assertNotNull(moonBody);
+
+        BlockDelta start = moonBody.inCellOffsetAt(0L);
+        BlockDelta afterOnePeriod = moonBody.inCellOffsetAt(massPeriodTicks);
+        BlockDelta afterHalf = moonBody.inCellOffsetAt(massPeriodTicks / 2L);
+
+        // The orbit is 127 units at MOON_UNIT_BLOCKS, so its radius is 25 400 blocks: half a turn puts
+        // the moon ~50 800 blocks from where it started, and one full turn puts it back.
+        double halfTurn = separation(start, afterHalf);
+        double fullTurn = separation(start, afterOnePeriod);
+        assertTrue("half a mass-derived period must carry the moon to the far side (was " + halfTurn + ")",
+                halfTurn > 40_000d);
+        assertTrue("one mass-derived period must bring it back (was " + fullTurn + ")",
+                fullTurn < 500d);
+    }
+
+    private static double separation(BlockDelta a, BlockDelta b) {
+        double dx = a.dx() - b.dx();
+        double dy = a.dy() - b.dy();
+        double dz = a.dz() - b.dz();
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /**

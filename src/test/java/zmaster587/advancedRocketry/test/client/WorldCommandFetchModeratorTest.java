@@ -53,8 +53,8 @@ public class WorldCommandFetchModeratorTest {
     private static final String BOT1_NAME = "ModBot1";
     private static final String BOT2_NAME = "ModBot2";
 
-    private static final Pattern PLAYER_POS_X = Pattern.compile("\"playerPosX\":(-?\\d+(?:\\.\\d+)?)");
-    private static final Pattern PLAYER_POS_Z = Pattern.compile("\"playerPosZ\":(-?\\d+(?:\\.\\d+)?)");
+    private static final Pattern PLAYER_POS_X = Pattern.compile("\"playerPosX\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
+    private static final Pattern PLAYER_POS_Z = Pattern.compile("\"playerPosZ\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
 
     private RealDedicatedServerHarness server;
     private RealClientHarness bot1Harness;

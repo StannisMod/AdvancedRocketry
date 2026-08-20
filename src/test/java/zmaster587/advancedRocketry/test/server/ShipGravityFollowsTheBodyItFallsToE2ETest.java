@@ -169,7 +169,9 @@ public class ShipGravityFollowsTheBodyItFallsToE2ETest extends AbstractHeadlessS
      */
     private int authorLowGravityBody() throws Exception {
         Set<Integer> before = arDims();
-        exec("ar planet generate 0 LowGravityWitness 10 10 10");
+        // Two arguments, not five: a planet is DERIVED from its star and its index now, so the
+        // old randomness factors are gone from the command.
+        exec("ar planet generate 0 LowGravityWitness");
         Set<Integer> fresh = arDims();
         fresh.removeAll(before);
         assertEquals("planet generate must add exactly one dim - got " + fresh, 1, fresh.size());

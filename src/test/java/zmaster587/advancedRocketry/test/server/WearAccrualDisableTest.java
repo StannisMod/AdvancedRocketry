@@ -25,7 +25,7 @@ public class WearAccrualDisableTest extends AbstractSharedServerTest {
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
     private static final Pattern ROCKET_LIST_ID = Pattern.compile("\"id\":(-?\\d+)");
     private static final Pattern BREAKING_PROB =
-            Pattern.compile("\"breakingProb\":(-?\\d+(?:\\.\\d+)?)");
+            Pattern.compile("\"breakingProb\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
 
     private String cmd(String c) throws Exception {
         return String.join("\n", client().execute(c));

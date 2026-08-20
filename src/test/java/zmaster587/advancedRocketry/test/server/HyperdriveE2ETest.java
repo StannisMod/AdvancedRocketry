@@ -286,4 +286,77 @@ public class HyperdriveE2ETest extends AbstractSharedServerTest {
         assertEquals("and a dampener with power in its buffer is one that will protect somebody",
                 3L, field(info, "poweredDampeners"));
     }
+
+    // ─── The bank is filled by the SHIP, not by the clock ──────────────────────
+
+    /** Its own site: this family drains, feeds and unloads a bank, and must disturb nobody else. */
+    private static final String SHIP_E = "2840 82 2840";
+
+    @Test
+    public void aFRESHBANKSTAYSEMPTYWHILETIMEPASSES() throws Exception {
+        // THE property the old model got wrong, asked of a real world with a real clock — which is the
+        // strongest form of the question, because the defect WAS the clock. The bank used to be a closed
+        // form of elapsed ticks, so the biggest cost in the family (the window burst, twenty times the
+        // drive's power) was paid for by waiting. A buffer nobody feeds must stay at nothing.
+        buildDrive(SHIP_E, 4, 8, 4, 0, 0);
+        exec("artest drive charge 0 " + SHIP_E + " empty");
+
+        long before = field(exec("artest drive info 0 " + SHIP_E), "charge");
+        assertEquals("a drained bank starts empty", 0L, before);
+
+        zmaster587.advancedRocketry.test.ServerTicks.await(client(), 0, 100);
+
+        String after = exec("artest drive info 0 " + SHIP_E);
+        assertEquals("100 ticks of a running server must not have put a single unit into a bank that"
+                        + " nothing is feeding: " + after, 0L, field(after, "charge"));
+        assertTrue("and it must still WANT charge, or this proves nothing",
+                field(after, "burstCost") > 0L);
+    }
+
+    @Test
+    public void whatTheSHIPPUSHESINthroughItsGridIsWhatTheBankHolds() throws Exception {
+        // The positive half of the same wiring, and it goes through the real Forge Energy capability —
+        // the same one an adjacent reactor, array or cable pushes into — rather than through the
+        // fixture seam that sets the level directly.
+        buildDrive(SHIP_E, 4, 8, 4, 0, 0);
+        exec("artest drive charge 0 " + SHIP_E + " empty");
+
+        String pushed = exec("artest drive push 0 " + SHIP_E + " 1000000000");
+        assertTrue("the bank must expose an energy port for the ship to push into: " + pushed,
+                field(pushed, "ports") > 0L);
+        long accepted = field(pushed, "accepted");
+        assertTrue("and it must have taken some of it: " + pushed, accepted > 0L);
+        assertEquals("what it took is what it holds", accepted,
+                field(exec("artest drive info 0 " + SHIP_E), "charge"));
+
+        // One push is one tick's worth: the accept rate is a THROUGHPUT ceiling, so a billion offered
+        // at once does not fill a bank that a hundred pushes would.
+        long capacity = field(exec("artest drive info 0 " + SHIP_E), "capacity");
+        assertTrue("a single tick of inflow must not fill the whole bank (" + accepted + " of "
+                + capacity + ")", capacity <= 0L || accepted < capacity);
+
+        String again = exec("artest drive push 0 " + SHIP_E + " 1000000000");
+        assertTrue("a second push must add more", field(again, "charge") > accepted);
+    }
+
+    @Test
+    public void aBanksChargeSurvivesAREALunloadAndReload() throws Exception {
+        // The write half of the persistence contract, which only a real save can exercise: a
+        // force-loaded chunk never leaves memory, so a test against one proves the object was not
+        // collected rather than that its NBT round-trips. `chunk cycle` saves, drops and reads back.
+        buildDrive(SHIP_E, 4, 8, 4, 0, 0);
+        exec("artest drive charge 0 " + SHIP_E + " full");
+        long before = field(exec("artest drive info 0 " + SHIP_E), "charge");
+        assertTrue("the fixture needs a bank with something in it", before > 0L);
+
+        int cx = 2840 >> 4;
+        int cz = 2840 >> 4;
+        String cycled = exec("artest chunk cycle 0 " + cx + " " + cz);
+        assertTrue("the chunk must really have left memory, or nothing was read back from disk: "
+                + cycled, cycled.contains("\"dropped\":true"));
+
+        String after = exec("artest drive info 0 " + SHIP_E);
+        assertEquals("a bank that came back from disk holds what it held: " + after, before,
+                field(after, "charge"));
+    }
 }

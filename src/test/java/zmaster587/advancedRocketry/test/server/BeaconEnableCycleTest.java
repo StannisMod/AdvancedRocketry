@@ -70,7 +70,7 @@ public class BeaconEnableCycleTest extends AbstractSharedServerTest {
     @BeforeClass
     public static void generateSharedPlanet() throws Exception {
         Set<Integer> before = arDims();
-        exec("ar planet generate 0 BeaconPhase3 10 10 10");
+        exec("ar planet generate 0 BeaconPhase3");
         Set<Integer> diff = arDims();
         diff.removeAll(before);
         assertTrue("planet generate must add exactly one dim — diff=" + diff,

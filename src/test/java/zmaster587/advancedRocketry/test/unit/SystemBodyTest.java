@@ -31,7 +31,7 @@ public class SystemBodyTest {
 
     @Test
     public void nbtRoundTripPreservesEveryField() {
-        SystemBody body = new SystemBody(GalacticCoord.ofSectorLocal(4, -5, 6, 123_456, -7_890, 42),
+        SystemBody body = SystemBody.fixedAt(GalacticCoord.ofSectorLocal(4, -5, 6, 123_456, -7_890, 42),
                 SystemBodyKind.STATION_SLOT, 815, -12345);
         NBTTagCompound tag = new NBTTagCompound();
         body.writeToNBT(tag);
@@ -126,7 +126,7 @@ public class SystemBodyTest {
     @Test
     public void aBodyRebindsToTheFrameOfTheCellItIsServedFrom() {
         GalacticCoord name = GalacticCoord.ofSectorLocal(3, 0, 0, 5_000, 0, 0);
-        SystemBody station = new SystemBody(name, SystemBodyKind.STATION_SLOT,
+        SystemBody station = SystemBody.fixedAt(name, SystemBodyKind.STATION_SLOT,
                 Constants.INVALID_PLANET, 0);
         assertEquals("a bare POI stands still", station.absoluteAt(0L), station.absoluteAt(500L));
 
@@ -142,32 +142,32 @@ public class SystemBodyTest {
     @Test
     public void onlyRealBodiesDefineACellsFrame() {
         GalacticCoord at = GalacticCoord.ORIGIN;
-        assertTrue(new SystemBody(at, SystemBodyKind.STAR, Constants.INVALID_PLANET, 0).definesFrame());
-        assertTrue(new SystemBody(at, SystemBodyKind.PLANET, 1, 0).definesFrame());
-        assertTrue(new SystemBody(at, SystemBodyKind.GAS_GIANT, 2, 0).definesFrame());
-        assertTrue(new SystemBody(at, SystemBodyKind.ASTEROID_BELT,
+        assertTrue(SystemBody.fixedAt(at, SystemBodyKind.STAR, Constants.INVALID_PLANET, 0).definesFrame());
+        assertTrue(SystemBody.fixedAt(at, SystemBodyKind.PLANET, 1, 0).definesFrame());
+        assertTrue(SystemBody.fixedAt(at, SystemBodyKind.GAS_GIANT, 2, 0).definesFrame());
+        assertTrue(SystemBody.fixedAt(at, SystemBodyKind.ASTEROID_BELT,
                 Constants.INVALID_PLANET, 0).definesFrame());
-        assertFalse(new SystemBody(at, SystemBodyKind.MOON, 3, 0).definesFrame());
-        assertFalse(new SystemBody(at, SystemBodyKind.STATION_SLOT,
+        assertFalse(SystemBody.fixedAt(at, SystemBodyKind.MOON, 3, 0).definesFrame());
+        assertFalse(SystemBody.fixedAt(at, SystemBodyKind.STATION_SLOT,
                 Constants.INVALID_PLANET, 0).definesFrame());
     }
 
     @Test
     public void descendTargetOnlyForPlanetOrMoonWithARealDimension() {
         GalacticCoord at = GalacticCoord.ofSectorLocal(1, 1, 1, 10, 20, 30);
-        assertTrue(new SystemBody(at, SystemBodyKind.PLANET, 7, 1).isDescendTarget());
-        assertTrue(new SystemBody(at, SystemBodyKind.MOON, 8, 1).isDescendTarget());
+        assertTrue(SystemBody.fixedAt(at, SystemBodyKind.PLANET, 7, 1).isDescendTarget());
+        assertTrue(SystemBody.fixedAt(at, SystemBodyKind.MOON, 8, 1).isDescendTarget());
         assertFalse("a planet with no realized dim is not yet a descent target",
-                new SystemBody(at, SystemBodyKind.PLANET, Constants.INVALID_PLANET, 1).isDescendTarget());
-        assertFalse(new SystemBody(at, SystemBodyKind.STAR, Constants.INVALID_PLANET, 1).isDescendTarget());
-        assertFalse(new SystemBody(at, SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, 1).isDescendTarget());
-        assertFalse(new SystemBody(at, SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET, 1).isDescendTarget());
+                SystemBody.fixedAt(at, SystemBodyKind.PLANET, Constants.INVALID_PLANET, 1).isDescendTarget());
+        assertFalse(SystemBody.fixedAt(at, SystemBodyKind.STAR, Constants.INVALID_PLANET, 1).isDescendTarget());
+        assertFalse(SystemBody.fixedAt(at, SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, 1).isDescendTarget());
+        assertFalse(SystemBody.fixedAt(at, SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET, 1).isDescendTarget());
     }
 
     @Test
     public void unknownKindDecodesToAnInertPoiRatherThanCrashing() {
         NBTTagCompound tag = new NBTTagCompound();
-        new SystemBody(GalacticCoord.ORIGIN, SystemBodyKind.PLANET, 5, 1).writeToNBT(tag);
+        SystemBody.fixedAt(GalacticCoord.ORIGIN, SystemBodyKind.PLANET, 5, 1).writeToNBT(tag);
         tag.setString("kind", "SOME_FUTURE_KIND"); // a kind this version doesn't know
         SystemBody round = SystemBody.readFromNBT(tag);
         assertEquals(SystemBodyKind.STATION_SLOT, round.kind());
@@ -181,5 +181,57 @@ public class SystemBodyTest {
         assertFalse(SystemBodyKind.STAR.canDescend());
         assertFalse(SystemBodyKind.ASTEROID_BELT.canDescend());
         assertFalse(SystemBodyKind.STATION_SLOT.canDescend());
+    }
+
+    @Test
+    public void aBodyCarriesItsOwnRadiusThroughNbt() {
+        // A body's SIZE travels with it: nothing downstream can recover it (a procedural world has no
+        // dimension until a descent mints one, and the render feed reaches a client with no registry).
+        SystemBody sized = SystemBody.fixedAt(GalacticCoord.ORIGIN, SystemBodyKind.GAS_GIANT,
+                Constants.INVALID_PLANET, 4).withRadius(11.2d);
+        NBTTagCompound tag = new NBTTagCompound();
+        sized.writeToNBT(tag);
+        assertEquals(11.2d, SystemBody.readFromNBT(tag).radiusEarths(), 1e-9);
+
+        // A body that is not a sphere says so, and says it the same way after a round trip — the
+        // renderer draws that as a marker rather than inventing a size for it.
+        SystemBody belt = SystemBody.fixedAt(GalacticCoord.ORIGIN, SystemBodyKind.ASTEROID_BELT,
+                Constants.INVALID_PLANET, 4);
+        NBTTagCompound beltTag = new NBTTagCompound();
+        belt.writeToNBT(beltTag);
+        assertEquals(SystemBody.RADIUS_UNKNOWN, SystemBody.readFromNBT(beltTag).radiusEarths(), 0d);
+        assertFalse("an unstated radius writes no key at all", beltTag.hasKey("radiusEarths"));
+    }
+
+    @Test
+    public void aGiantsMoonSystemSpansFromInsideItsOwnRadiusToBeyondTheCell() {
+        // The last form the model owes: a giant whose retinue runs from a moon skimming its surface
+        // out to one that no longer fits in the cell they share. Both must be EXPRESSIBLE, and the
+        // far one must not corrupt the address — a body outside its own cell would be a body in a
+        // different cell, so the offset saturates on the face instead (and, since 2026-08-16, says
+        // so in the log rather than flattening a whole moon system onto one point in silence).
+        GalacticCoord giantCell = GalacticCoord.ofSectorLocal(9, 0, -3, 0, 0, 0);
+        CellFrame frame = CellFrame.staticAt(giantCell);
+
+        SystemBody inner = new SystemBody(giantCell, frame, orbit(2d, 100_000L),
+                SystemBodyKind.MOON, Constants.INVALID_PLANET, 1);
+        SystemBody outer = new SystemBody(giantCell, frame,
+                orbit(4d, GalacticCoord.HALF_CELL), SystemBodyKind.MOON,
+                Constants.INVALID_PLANET, 1);
+
+        assertEquals("both moons share the giant's cell — they are one destination",
+                inner.name(), outer.name());
+        assertNotEquals("and they are not in the same place inside it",
+                inner.inCellOffsetAt(0L), outer.inCellOffsetAt(0L));
+
+        for (long tick = 0L; tick < 1000L; tick += 137L) {
+            long dx = Math.abs(outer.inCellOffsetAt(tick).dx());
+            long dy = Math.abs(outer.inCellOffsetAt(tick).dy());
+            long dz = Math.abs(outer.inCellOffsetAt(tick).dz());
+            assertTrue("an offset may never leave the cell that names it, got " + dx + "," + dy
+                            + "," + dz + " against a half-cell of " + GalacticCoord.HALF_CELL,
+                    dx <= GalacticCoord.HALF_CELL && dy <= GalacticCoord.HALF_CELL
+                            && dz <= GalacticCoord.HALF_CELL);
+        }
     }
 }

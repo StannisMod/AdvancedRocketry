@@ -14,9 +14,8 @@ import net.minecraft.nbt.NBTTagCompound;
  *
  * <p>The sector grid <i>is</i> the bubble grid: a cell is one {@link #CELL}-block cube, so two
  * positions with equal sector triples share a cell (and, once loaded, the same world). The local
- * offset is kept canonical in {@code [-HALF_CELL, HALF_CELL)}, i.e. within &plusmn;2M blocks of the
- * cell centre, so every local coordinate stays inside the range where 1.12.2 entity doubles, chunks
- * and lighting are crisp. Cell-centre content is at local {@code (0,0,0)}.</p>
+ * offset is kept canonical in {@code [-HALF_CELL, HALF_CELL)}, i.e. within &plusmn;16M blocks of the
+ * cell centre. Cell-centre content is at local {@code (0,0,0)}.</p>
  *
  * <p><b>The sector triple is a cell NAME, not a place.</b> A cell rides the body it belongs
  * to, so {@code absolute = sector * CELL + local} is the STATIC-frame reading — true for a void cell
@@ -30,8 +29,28 @@ import net.minecraft.nbt.NBTTagCompound;
  */
 public final class GalacticCoord {
 
-    /** Edge length of one cell / sector, in blocks. The sector grid is the bubble grid. */
-    public static final long CELL = 4_000_000L;
+    /**
+     * Edge length of one cell / sector, in blocks. The sector grid is the bubble grid.
+     *
+     * <p><b>Why 32M and not the 4M this started at.</b> The old size rested on one sentence — that
+     * entity doubles, chunks and lighting degrade past ~&plusmn;2M in 1.12.2 — and all three named
+     * mechanisms were measured CLEAN out to 24M, on a real player and a real flying ship: walking
+     * distance, collision stand-off, standing, client/server agreement, camera-step granularity and a
+     * sub-block position round trip, each against an origin control in the same run. The wall that
+     * actually existed was a mod constant (the physics mod's reserved shipyard quadrant), and it is
+     * moved out of the way by {@code ShipChunkAllocator.CHUNK_X_START}, which this size is paired
+     * with: the two must move together or a pose past the old quadrant is silently cancelled.</p>
+     *
+     * <p>16M of half-cell against 24M measured clean is 1.5&times; margin. What is NOT covered:
+     * vanilla documents sound-positioning degradation at 2&sup2;&#8308; = 16 777 216, which the far
+     * shell of this cell crosses — accepted knowingly, and cosmetic.</p>
+     *
+     * <p>The size is what lets a system fit inside its own cell at the chart metric the mod already
+     * ships ({@code AstronomicalBodyHelper.METRES_PER_CHART_BLOCK}): at 250 m/block Jupiter's outer
+     * moons sit ~7.5M blocks out, which is under half of this half-cell and nearly four times the
+     * old one.</p>
+     */
+    public static final long CELL = 32_000_000L;
 
     /** Half a cell; the canonical local offset lives in {@code [-HALF_CELL, HALF_CELL)}. */
     public static final long HALF_CELL = CELL / 2L;
@@ -88,10 +107,11 @@ public final class GalacticCoord {
     public int localY() { return localY; }
     public int localZ() { return localZ; }
 
-    /** Absolute X in blocks. May overflow {@code long} at extreme sector magnitudes (see class doc). */
-    public long absoluteX() { return sectorX * CELL + localX; }
-    public long absoluteY() { return sectorY * CELL + localY; }
-    public long absoluteZ() { return sectorZ * CELL + localZ; }
+    // absoluteX/Y/Z — sector * CELL + local — are gone. A sector index reaches 9.2e18 while the
+    // product overflows at 2.9e11, so they could NAME a position they could not express, silently,
+    // over seven orders of magnitude. Nothing materialises a single global block absolute any more:
+    // a distance comes from the sector delta plus the offset delta (staticFrameDistanceTo below, or
+    // AbsolutePos for a position at a tick), which is exact nearby and cannot overflow far away.
 
     /** {@code true} iff {@code other} is in the same cell (equal sector triple) as this coordinate. */
     public boolean sameCell(GalacticCoord other) {

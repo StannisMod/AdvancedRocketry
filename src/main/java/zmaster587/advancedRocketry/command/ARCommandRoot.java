@@ -15,6 +15,7 @@ import zmaster587.advancedRocketry.command.sub.star.StarCommand;
 import zmaster587.advancedRocketry.command.sub.station.StationCommand;
 import zmaster587.advancedRocketry.command.sub.teleport.FetchCommand;
 import zmaster587.advancedRocketry.command.sub.teleport.GoToCommand;
+import zmaster587.advancedRocketry.command.sub.universe.UniverseCommand;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ public class ARCommandRoot extends CommandTreeBase {
         aliases.add("advancedrocketry");
         aliases.add("advrocketry");
         aliases.add("ar");
+        aliases.add("stellurgy");
 
         addSubcommand(new WeatherCommand());
         addSubcommand(new AddSealantCommand());
@@ -40,6 +42,7 @@ public class ARCommandRoot extends CommandTreeBase {
         addSubcommand(new StationCommand());
         addSubcommand(new GoToCommand());
         addSubcommand(new FillDataCommand());
+        addSubcommand(new UniverseCommand());
         addSubcommand(new DevCommand());
 
         addSubcommand(new CommandTreeHelp(this));

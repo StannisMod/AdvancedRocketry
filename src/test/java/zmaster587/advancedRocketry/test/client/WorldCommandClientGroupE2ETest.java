@@ -60,10 +60,13 @@ public class WorldCommandClientGroupE2ETest extends AbstractSharedClientE2ETest 
     private static final Pattern DIM_LINE = Pattern.compile("DIM(\\d+):");
     private static final Pattern PLAYER_NAME = Pattern.compile("\"player\":\"([^\"]+)\"");
     private static final Pattern STATION_ID = Pattern.compile("\"id\":(-?\\d+)");
-    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?\\d+(?:\\.\\d+)?)");
+    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
 
     /** The space dim, where {@code /ar goto station} lands the player. */
     private static final int SPACE_DIM = -2;
+
+    /** The registered name of AR's planet world type (WorldTypePlanetGen). */
+    private static final String AR_PLANET_WORLD_TYPE = "PlanetGen";
 
     @Override
     protected String subsystem() {
@@ -238,7 +241,7 @@ public class WorldCommandClientGroupE2ETest extends AbstractSharedClientE2ETest 
         scenario().arranging("op the bot and generate a planet to travel to");
         opTheBot();
         String before = exec("ar planet list");
-        exec("ar planet generate 0 GotoTarget 10 10 10");
+        exec("ar planet generate 0 GotoTarget");
         String after = exec("ar planet list");
         int targetDim = newDimFromDiff(before, after);
         scenario().record("targetDim", targetDim);
@@ -260,6 +263,56 @@ public class WorldCommandClientGroupE2ETest extends AbstractSharedClientE2ETest 
             exec("artest tp " + plot().dim);
             exec("ar planet delete " + targetDim);
         }
+    }
+
+    /**
+     * The planet's own world type has to reach the CLIENT, because client-side terrain code
+     * identifies a world by it — and a secondary world's {@code WorldInfo} used to answer with the
+     * SAVE's world type, so every planet a player entered claimed to be the overworld's kind.
+     *
+     * <p>The overworld's value is read first, in this same scenario, and the assertion is that the
+     * value CHANGED on crossing. Asserting the planet's name alone would also pass on a build that
+     * hard-codes one world type everywhere, which is the failure this is about.</p>
+     */
+    @Test
+    public void arGotoMakesTheClientRenderThePlanetsOwnWorldType() throws Exception {
+        scenario().arranging("op the bot and generate a planet to travel to");
+        opTheBot();
+        String home = clientWorldType();
+        scenario().record("homeWorldType", home);
+        scenario().requireArranged("the client must name the world type it starts in, else the"
+                + " comparison below has nothing to change FROM; got '" + home + "'", !home.isEmpty());
+
+        String before = exec("ar planet list");
+        exec("ar planet generate 0 WorldTypeTarget");
+        String after = exec("ar planet list");
+        int targetDim = newDimFromDiff(before, after);
+        scenario().record("targetDim", targetDim);
+        scenario().requireArranged("planet generate must yield a new dim id; before=" + before
+                + " after=" + after, targetDim != -1);
+        try {
+            exec("artest dim load " + targetDim);
+
+            scenario().asserting("the client renders the planet's own world type after arriving");
+            bot().sendChat("/ar goto dimension " + targetDim);
+            waitForClientDim(targetDim);
+
+            String onPlanet = clientWorldType();
+            scenario().record("planetWorldType", onPlanet);
+            assertEquals("the client must learn the planet's own world type on arrival, not the"
+                    + " one the save was created with", AR_PLANET_WORLD_TYPE, onPlanet);
+            assertNotEquals("the world type the client renders must differ between the overworld"
+                    + " and a planet, or it is not per-dimension at all", home, onPlanet);
+        } finally {
+            exec("artest tp " + plot().dim);
+            exec("ar planet delete " + targetDim);
+        }
+    }
+
+    /** The world type the CLIENT believes it is in, by name. */
+    private String clientWorldType() throws Exception {
+        JsonObject state = bot().reportState();
+        return state != null && state.has("worldType") ? state.get("worldType").getAsString() : "";
     }
 
     // ── /ar goto station ──────────────────────────────────────────────────────

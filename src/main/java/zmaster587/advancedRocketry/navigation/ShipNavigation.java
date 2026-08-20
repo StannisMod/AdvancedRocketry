@@ -15,6 +15,7 @@ import zmaster587.advancedRocketry.hyperdrive.ShipMassProvider;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.ShipLedger;
+import zmaster587.advancedRocketry.space.ShipTransitManager;
 import zmaster587.advancedRocketry.space.SpaceSubsystem;
 import zmaster587.advancedRocketry.tile.TileNavigationComputer;
 
@@ -92,7 +93,7 @@ public final class ShipNavigation implements JumpGate.ShipContext {
 
     @Override
     public long capacitorCharge() {
-        return drive().capacitorCharge(SpaceSubsystem.spaceClock());
+        return drive().capacitorCharge();
     }
 
     @Override
@@ -126,7 +127,8 @@ public final class ShipNavigation implements JumpGate.ShipContext {
     /** Blocks per tick this ship would fly at, given its drive and its hull. */
     public long plannedSpeed() {
         return JumpSpeed.blocksPerTick(drive().stats().drivePower(),
-                ShipMassProvider.massOf(world, flightComputerPos, shipId));
+                ShipMassProvider.massOf(world, flightComputerPos, shipId),
+                drive().stats().tier());
     }
 
     /** How long the flight to the current target would take, in ticks. Zero without a target. */
@@ -137,6 +139,25 @@ public final class ShipNavigation implements JumpGate.ShipContext {
             return 0L;
         }
         return JumpSpeed.transitTicks(
+                SpaceSubsystem.frames().distanceBetween(origin, target, SpaceSubsystem.spaceClock()),
+                plannedSpeed());
+    }
+
+    /**
+     * Would this jump be performed as a single crossing rather than flown through hyperspace?
+     *
+     * <p>Asked of {@link ShipTransitManager#isDirectCrossing} — the same predicate the departure reads,
+     * never a second copy of the rule. A console that quoted one mechanism while the drive performed
+     * the other would be showing the pilot a flight he is not going to get, and he has no way to
+     * check.</p>
+     */
+    public boolean plannedJumpIsDirect() {
+        GalacticCoord target = target();
+        GalacticCoord origin = currentCoord();
+        if (target == null || origin == null) {
+            return false;
+        }
+        return ShipTransitManager.isDirectCrossing(
                 SpaceSubsystem.frames().distanceBetween(origin, target, SpaceSubsystem.spaceClock()),
                 plannedSpeed());
     }

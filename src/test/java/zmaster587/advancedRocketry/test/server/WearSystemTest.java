@@ -100,7 +100,7 @@ public class WearSystemTest extends AbstractSharedServerTest {
 
     private double breakingProbOf(int entityId) throws Exception {
         String info = String.join("\n", client().execute("artest rocket info " + entityId));
-        Matcher m = Pattern.compile("\"breakingProb\":(-?\\d+(?:\\.\\d+)?)").matcher(info);
+        Matcher m = Pattern.compile("\"breakingProb\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)").matcher(info);
         assertTrue("no breakingProb in info: " + info, m.find());
         return Double.parseDouble(m.group(1));
     }

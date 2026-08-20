@@ -71,6 +71,14 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public static final int MIN_DISTANCE = 1;
     public static final int MAX_GRAVITY = 400;
     public static final int MIN_GRAVITY = 0;
+    /**
+     * A planet's rotational period when nothing else determines it: the default day length, and the
+     * scale the gravity-derived period is expressed in. Numerically equal to
+     * {@link zmaster587.advancedRocketry.util.AstronomicalBodyHelper#TICKS_PER_DAY} but a DIFFERENT
+     * quantity — that one is the platform's tick rate, this one is a per-planet property that most
+     * planets do not keep. Do not collapse them.
+     */
+    public static final int DEFAULT_ROTATIONAL_PERIOD = 24000;
     public static final int WEATHER_START_LENGTH = 168000;
     public static final int WEATHER_PROLONGATION_LENGTH = 12000;
 
@@ -95,8 +103,17 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     //Used in solar panels
     public double peakInsolationMultiplier;
     public double peakInsolationMultiplierWithoutAtmosphere;
-    //Stored in Kelvin
-    public int averageTemperature;
+    /**
+     * This world's surface temperature in KELVIN — a DERIVED quantity, cached here.
+     *
+     * <p><b>Private, and it is the point.</b> It used to be a public field that
+     * {@link #getAverageTemp()} ASSIGNED on every call, while a dozen readers inside this class took
+     * the field directly — so what any of them saw depended on whether anything had happened to call
+     * the accessor first, and the value NBT had faithfully restored was discarded by the first read
+     * after a load. One door in ({@link #setAverageTemp}), one door out, and the recompute now happens
+     * where an INPUT changes rather than where the answer is asked for.</p>
+     */
+    private int averageTemperature;
     public int rotationalPeriod;
     //Stored in radians
     public double orbitTheta;
@@ -181,6 +198,67 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     private TerrainSource terrainSource = TerrainSource.NATIVE;
     private String terrainWorldType = ""; // foreign WorldType name for MOD_WORLDTYPE
     private String terrainTemplate = "";  // template folder name for TEMPLATE
+    /**
+     * The settings string handed to this dimension's chunk generator — vanilla's "generator options",
+     * per dimension instead of per save. A foreign {@link net.minecraft.world.WorldType} receives it
+     * as the second argument of {@code getChunkGenerator}, and reads it back off this world's
+     * {@code WorldInfo} when it identifies itself; an empty string means "your defaults".
+     */
+    private String terrainGeneratorOptions = "";
+
+    // ─── Bulk properties: mass and radius are PRIMARY, gravity is derived from them ────────────────
+    /**
+     * This body's mass in Earth masses, or {@link #BULK_UNSET} when nothing has stated one.
+     *
+     * <p>Mass and radius are the PRIMARY bulk properties and surface gravity is what falls out of them
+     * ({@code g = M/R²}) — not the other way round. That ordering is what lets a scan advertise a
+     * planet's mass ({@code PlanetInfoField.MASS} is promised at telescope tier, for every planet,
+     * authored ones included) and what makes the zoning of a procedural system physical rather than
+     * tabulated: a big cold body accretes gas and becomes a giant, a small hot one cannot hold air.</p>
+     *
+     * <p>{@link #gravitationalMultiplier} REMAINS an explicit override. A planet whose XML states a
+     * gravity keeps exactly that gravity, whatever its mass and radius say, so no authored world moves
+     * when this arrives; the derivation only fills in a gravity nobody stated.</p>
+     */
+    private double mass = BULK_UNSET;
+    /** This body's radius in Earth radii, or {@link #BULK_UNSET}. See {@link #mass}. */
+    private double radius = BULK_UNSET;
+    /**
+     * The fraction of incident light this world's surface reflects, 0..1 — stated by its TYPE and
+     * used to derive its temperature. Defaults to Earth's, so a world whose type says nothing keeps
+     * exactly the temperature it had when 0.3 was hard-coded into the formula.
+     */
+    private double albedo = AstronomicalBodyHelper.EARTH_ALBEDO;
+    /**
+     * Whether {@link #gravitationalMultiplier} was STATED rather than derived. The single bit that keeps
+     * "authored planets are unchanged" true: it is set by the XML element, by the public setter and by
+     * anything that assigns the field directly through the legacy path, and it makes
+     * {@link #setBulk} leave the gravity alone.
+     */
+    private boolean gravityAuthored;
+    /**
+     * Whether this world keeps one face permanently to its star.
+     *
+     * <p>An explicit flag and not a {@code rotationalPeriod} of zero: zero is mapped back to a full day
+     * by the sleep arithmetic, so it would silently mean "an ordinary planet" — the one value that
+     * cannot express this. A locked world has no day/night cycle at all, which is a different statement
+     * from "its day is long".</p>
+     */
+    private boolean tidallyLocked;
+    /**
+     * The parent star's metal content relative to Sol, and therefore how metal-rich this world's ore is.
+     *
+     * <p>It scales the METALLIC entries of whatever ore palette this world's climate earns it; it does
+     * not decide which kinds of deposit are possible. Climate answers "what sort of deposits", the star
+     * answers "how much metal is in them", and the two multiply rather than compete.</p>
+     */
+    private double metallicity = 1d;
+    /** Lazily-built, never persisted: this world's own scaled copy of the shared climate ore table. */
+    private transient OreGenProperties scaledOreCache;
+    private transient double scaledOreCacheFor = Double.NaN;
+
+    /** Sentinel for {@link #mass} / {@link #radius}: nobody has stated one. */
+    public static final double BULK_UNSET = 0d;
     //public int target_sea_level;
 
     // modId must be declared explicitly: this @SidedProxy lives outside the @Mod class, and the jar
@@ -247,6 +325,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terrainSource = TerrainSource.NATIVE;
         terrainWorldType = "";
         terrainTemplate = "";
+        terrainGeneratorOptions = "";
 
         //target_sea_level = seaLevel;
         //water_can_exist = true;
@@ -437,7 +516,19 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public OreGenProperties getOreGenProperties(World world) {
         if (oreProperties != null)
             return oreProperties;
-        return OreGenProperties.getOresForPressure(AtmosphereTypes.getAtmosphereTypeFromValue(originalAtmosphereDensity), Temps.getTempFromValue(getAverageTemp()));
+        OreGenProperties climate = OreGenProperties.getOresForPressure(
+                AtmosphereTypes.getAtmosphereTypeFromValue(originalAtmosphereDensity),
+                Temps.getTempFromValue(getAverageTemp()));
+        if (climate == null || metallicity == 1d)
+            return climate;
+        // The climate table is a SHARED static object — one instance per (pressure, temperature) cell,
+        // handed to every world that lands in it — so a per-planet scaling must never mutate it. This
+        // world gets its own copy instead, cached because ore generation asks per chunk.
+        if (scaledOreCache == null || scaledOreCacheFor != metallicity) {
+            scaledOreCache = climate.withMetalsScaled(metallicity);
+            scaledOreCacheFor = metallicity;
+        }
+        return scaledOreCache;
     }
 
     /**
@@ -449,7 +540,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         sunriseSunsetColors = new float[]{.7f, .2f, .2f, 1};
         ringColor = new float[]{.4f, .4f, .7f};
         gravitationalMultiplier = 1;
-        rotationalPeriod = 24000;
+        rotationalPeriod = DEFAULT_ROTATIONAL_PERIOD;
         orbitalDist = 100;
         originalAtmosphereDensity = atmosphereDensity = 100;
         childPlanets = new HashSet<>();
@@ -469,7 +560,118 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terrainSource = TerrainSource.NATIVE;
         terrainWorldType = "";
         terrainTemplate = "";
+        terrainGeneratorOptions = "";
         laserDrillOres = new ArrayList<>();
+        mass = BULK_UNSET;
+        radius = BULK_UNSET;
+        albedo = AstronomicalBodyHelper.EARTH_ALBEDO;
+        gravityAuthored = false;
+        tidallyLocked = false;
+        metallicity = 1d;
+        scaledOreCache = null;
+        scaledOreCacheFor = Double.NaN;
+    }
+
+    // ─── Bulk properties ───────────────────────────────────────────────────────
+
+    /** This body's mass in Earth masses, or {@link #BULK_UNSET} when nobody has stated one. */
+    public double getMass() {
+        return mass;
+    }
+
+    /** This body's radius in Earth radii, or {@link #BULK_UNSET}. */
+    public double getRadius() {
+        return radius;
+    }
+
+    /** The fraction of incident light this world reflects, 0..1. */
+    public double getAlbedo() {
+        return albedo;
+    }
+
+    /** State this world's albedo; clamped to 0..1. */
+    public void setAlbedo(double a) {
+        this.albedo = Math.min(Math.max(a, 0d), 1d);
+    }
+
+    public boolean hasBulkProperties() {
+        return mass > BULK_UNSET && radius > BULK_UNSET;
+    }
+
+    /**
+     * The mass, in Earth masses, to use in a two-body orbital law about this body — what a moon's
+     * period is derived from.
+     *
+     * <p>Falls back to surface gravity when nothing has stated a mass, and that is not a fudge:
+     * {@code g = M/R²}, so gravity and mass are the same number at one Earth radius, and a body with
+     * no stated bulk is precisely a body nobody has given a radius. What it replaces IS the fudge —
+     * every caller used to pass gravity unconditionally, which is exact for Earth and off by
+     * {@code sqrt(M/g)} for everything else.</p>
+     */
+    public double getOrbitalMass() {
+        return mass > BULK_UNSET ? mass : gravitationalMultiplier;
+    }
+
+    /**
+     * State this body's mass and radius, deriving surface gravity from them unless a gravity was
+     * explicitly authored.
+     *
+     * @param massEarths   mass in Earth masses
+     * @param radiusEarths radius in Earth radii
+     */
+    public void setBulk(double massEarths, double radiusEarths) {
+        this.mass = Math.max(0d, massEarths);
+        this.radius = Math.max(0d, radiusEarths);
+        if (!gravityAuthored && hasBulkProperties()) {
+            gravitationalMultiplier = (float) derivedGravity(this.mass, this.radius);
+        }
+    }
+
+    /**
+     * Surface gravity in Earth gravities from mass and radius — {@code g = M/R²} — clamped to the range
+     * the game can actually run a player in. The floor is the same one the legacy random generator has
+     * always used; the ceiling is {@link #MAX_GRAVITY}.
+     */
+    public static double derivedGravity(double massEarths, double radiusEarths) {
+        double g = massEarths / Math.max(1e-6d, radiusEarths * radiusEarths);
+        double lo = 0.05d;
+        double hi = MAX_GRAVITY / 100d;
+        if (Double.isNaN(g) || g < lo) {
+            return lo;
+        }
+        return g > hi ? hi : g;
+    }
+
+    /** Whether a gravity was STATED for this body rather than derived from its bulk. */
+    public boolean isGravityAuthored() {
+        return gravityAuthored;
+    }
+
+    /** Mark this body's {@link #gravitationalMultiplier} as authored — the XML/override path. */
+    public void setGravityAuthored(boolean authored) {
+        this.gravityAuthored = authored;
+    }
+
+    /**
+     * Whether this world keeps one face to its star: no day/night cycle at all, rather than a long day.
+     */
+    public boolean isTidallyLocked() {
+        return tidallyLocked;
+    }
+
+    public void setTidallyLocked(boolean locked) {
+        this.tidallyLocked = locked;
+    }
+
+    /** The parent star's metal content relative to Sol — see {@link #metallicity}. */
+    public double getMetallicity() {
+        return metallicity;
+    }
+
+    public void setMetallicity(double value) {
+        this.metallicity = (Double.isNaN(value) || value <= 0d) ? 1d : value;
+        this.scaledOreCache = null;
+        this.scaledOreCacheFor = Double.NaN;
     }
 
     public List<Fluid> getHarvestableGasses() {
@@ -488,6 +690,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     @Override
     public void setGravitationalMultiplier(float mult) {
         gravitationalMultiplier = mult;
+        // Stating a gravity is what makes it an override: from here on the mass/radius derivation must
+        // not touch it, or an authored planet would silently change the moment it gained a mass.
+        gravityAuthored = true;
     }
 
     public List<SpawnListEntryNBT> getSpawnListEntries() {
@@ -830,6 +1035,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         int prevAtm = this.atmosphereDensity;
         this.atmosphereDensity = atmosphereDensity;
+
+        // The ONE input that changes while a world is in play — the terraformer thickens or thins the
+        // air, and the greenhouse term moves with it. Everything else a temperature is derived from
+        // (the stars, the orbit, the albedo) is fixed when the world is materialized, and is STATED
+        // through setAverageTemp rather than recomputed here: a load path that recomputed would be
+        // running before its own inputs had all been read.
+        recalculateTemperature();
 
         load_terraforming_helper(true);
 
@@ -1713,6 +1925,16 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         }
 
         gravitationalMultiplier = nbt.getFloat("gravitationalMultiplier");
+        // Bulk properties, written only when stated: an absent key leaves the sentinel, so a world
+        // saved before planets had a mass reloads with exactly the gravity it already had.
+        mass = nbt.hasKey("mass") ? nbt.getDouble("mass") : BULK_UNSET;
+        radius = nbt.hasKey("radius") ? nbt.getDouble("radius") : BULK_UNSET;
+        albedo = nbt.hasKey("albedo") ? nbt.getDouble("albedo") : AstronomicalBodyHelper.EARTH_ALBEDO;
+        gravityAuthored = nbt.getBoolean("gravityAuthored");
+        tidallyLocked = nbt.getBoolean("tidallyLocked");
+        metallicity = nbt.hasKey("metallicity") ? nbt.getDouble("metallicity") : 1d;
+        scaledOreCache = null;
+        scaledOreCacheFor = Double.NaN;
         orbitalDist = nbt.getInteger("orbitalDist");
         orbitTheta = nbt.getDouble("orbitTheta");
         baseOrbitTheta = nbt.getDouble("baseOrbitTheta");
@@ -1748,6 +1970,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terrainSource = nbt.hasKey("terrainSource") ? TerrainSource.byName(nbt.getString("terrainSource")) : TerrainSource.NATIVE;
         terrainWorldType = nbt.getString("terrainWorldType");
         terrainTemplate = nbt.getString("terrainTemplate");
+        terrainGeneratorOptions = nbt.getString("terrainGeneratorOptions");
         canGenerateCraters = nbt.getBoolean("canGenerateCraters");
         canGenerateGeodes = nbt.getBoolean("canGenerateGeodes");
         canGenerateStructures = nbt.getBoolean("canGenerateStructures");
@@ -2108,6 +2331,26 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         nbt.setInteger("starId", starId);
         nbt.setFloat("gravitationalMultiplier", gravitationalMultiplier);
+        // Non-default-only, the terrainSource idiom: a planet that never stated a mass writes no mass
+        // key, so its NBT stays byte-identical to what it wrote before bulk properties existed.
+        if (mass > BULK_UNSET) {
+            nbt.setDouble("mass", mass);
+        }
+        if (radius > BULK_UNSET) {
+            nbt.setDouble("radius", radius);
+        }
+        if (albedo != AstronomicalBodyHelper.EARTH_ALBEDO) {
+            nbt.setDouble("albedo", albedo);
+        }
+        if (gravityAuthored) {
+            nbt.setBoolean("gravityAuthored", true);
+        }
+        if (tidallyLocked) {
+            nbt.setBoolean("tidallyLocked", true);
+        }
+        if (metallicity != 1d) {
+            nbt.setDouble("metallicity", metallicity);
+        }
         nbt.setInteger("orbitalDist", orbitalDist);
         nbt.setDouble("orbitTheta", orbitTheta);
         nbt.setDouble("baseOrbitTheta", baseOrbitTheta);
@@ -2140,6 +2383,8 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
             nbt.setString("terrainWorldType", terrainWorldType);
         if (!terrainTemplate.isEmpty())
             nbt.setString("terrainTemplate", terrainTemplate);
+        if (!terrainGeneratorOptions.isEmpty())
+            nbt.setString("terrainGeneratorOptions", terrainGeneratorOptions);
         nbt.setBoolean("canGenerateCraters", canGenerateCraters);
         nbt.setBoolean("canGenerateGeodes", canGenerateGeodes);
         nbt.setBoolean("canGenerateStructures", canGenerateStructures);
@@ -2199,21 +2444,33 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
      */
     @Override
     public int getAverageTemp() {
-        averageTemperature = AstronomicalBodyHelper.getAverageTemperature(this.getStar(), this.getSolarOrbitalDistance(), this.getAtmosphereDensity());
-
-        /*
-        int temp = averageTemperature;
-        float pressure = (float) (atmosphereDensity + 1) / (float) 100;
-        pressure = (float) Math.max(0.01, pressure);
-        float water_can_exist_value = 400;
-        float planetvalue = temp / pressure;
-
-        if (planetvalue < water_can_exist_value) {
-            water_can_exist = true;
-        } else water_can_exist = false;
-        */
-
         return averageTemperature;
+    }
+
+    /**
+     * State this world's surface temperature, in KELVIN.
+     *
+     * <p>The one door in. A caller that MATERIALIZES a world — realization from a derived profile, an
+     * XML load, a probe fixture — states the number it already has; everything else changes an INPUT
+     * and lets {@link #recalculateTemperature()} follow.</p>
+     */
+    public void setAverageTemp(int kelvin) {
+        this.averageTemperature = kelvin;
+    }
+
+    /**
+     * Recompute the surface temperature from this world's current inputs — its stars, its orbit, its
+     * atmosphere and its albedo.
+     *
+     * <p>Called where an input CHANGES, never where the answer is read. On a world that was
+     * materialized from a derived profile this is a no-op by construction: {@code PlanetDerivation}
+     * ends on this same call with this same albedo, so a recompute reproduces the number a telescope
+     * already reported. That equality is the contract, and it is what stopped a scanned world from
+     * cooling down on the way there.</p>
+     */
+    public void recalculateTemperature() {
+        setAverageTemp(AstronomicalBodyHelper.getAverageTemperature(getStar(),
+                getSolarOrbitalDistance(), getAtmosphereDensity(), albedo));
     }
 
     public IBlockState getOceanBlock() {
@@ -2306,11 +2563,11 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         double theta = 0d;
         if (isMoon() && getParentProperties() != null) {
             theta = AstronomicalBodyHelper.getMoonOrbitalThetaAt(orbitalDist,
-                    getParentProperties().gravitationalMultiplier, worldTick);
+                    (float) getParentProperties().getOrbitalMass(), worldTick);
         } else {
             StellarBody host = getStar();
             if (host != null) {
-                theta = AstronomicalBodyHelper.getOrbitalThetaAt(orbitalDist, host.getSize(), worldTick);
+                theta = AstronomicalBodyHelper.getOrbitalThetaAt(orbitalDist, host.getMass(), worldTick);
             }
         }
         return (theta + baseOrbitTheta) * (isRetrograde ? -1 : 1);
@@ -2421,6 +2678,14 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         this.terrainTemplate = terrainTemplate == null ? "" : terrainTemplate;
     }
 
+    public String getTerrainGeneratorOptions() {
+        return terrainGeneratorOptions;
+    }
+
+    public void setTerrainGeneratorOptions(String terrainGeneratorOptions) {
+        this.terrainGeneratorOptions = terrainGeneratorOptions == null ? "" : terrainGeneratorOptions;
+    }
+
     public void setGenerateCraters(boolean canGenerateCraters) {
         this.canGenerateCraters = canGenerateCraters;
     }
@@ -2485,12 +2750,35 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         return this.canGenerateCaves;
     }
 
+    /**
+     * How big this world is drawn in the planet view.
+     *
+     * <p><b>It follows the body's RADIUS, which is what a drawn size is.</b> It used to be
+     * {@code max(g², 0.5)} — a size synthesised from gravity, which is not a size — and that was a
+     * necessary approximation only while a planet had no radius of its own. It has had one since mass
+     * and radius became primary properties, and gravity is now DERIVED from them, so sizing by gravity
+     * squared means sizing by mass²/radius⁴: a dense small world drew larger than a big light one.</p>
+     *
+     * <p>The floor and the per-kind factors are unchanged, so an Earth-sized world (radius 1) draws
+     * exactly as it did — what moves is everything that is not Earth-sized.</p>
+     */
     public float getRenderSizePlanetView() {
-        return (isMoon() ? 8f : 10f) * Math.max(this.getGravitationalMultiplier() * this.getGravitationalMultiplier(), .5f) * 100;
+        return (isMoon() ? 8f : 10f) * renderRadiusFactor() * 100;
     }
 
+    /** The same, in the solar view, where a moon is drawn much smaller against its system. */
     public float getRenderSizeSolarView() {
-        return (isMoon() ? 0.2f : 1f) * Math.max(this.getGravitationalMultiplier() * this.getGravitationalMultiplier(), .5f) * 100;
+        return (isMoon() ? 0.2f : 1f) * renderRadiusFactor() * 100;
+    }
+
+    /**
+     * The body's radius in Earth radii, floored — the one quantity both views scale by. A world with
+     * no stated bulk falls back to one Earth radius, which is what an unstated bulk describes
+     * everywhere else in this layer.
+     */
+    private float renderRadiusFactor() {
+        double r = getRadius();
+        return (float) Math.max(r > 0d ? r : 1d, 0.5d);
     }
 
     // Relative to parent

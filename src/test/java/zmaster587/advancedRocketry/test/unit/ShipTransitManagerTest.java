@@ -217,8 +217,11 @@ public class ShipTransitManagerTest {
         return new SpaceManager.Config(SpaceManager.GcPolicy.NEVER, 0, 0);
     }
 
-    // Speed >= the 4,000,000-block inter-cell distance so a single tick arrives; a small speed does not.
-    private static final long ARRIVE_IN_ONE_TICK = 5_000_000L;
+    // A speed that covers the inter-cell distance in ONE tick, so an arrival can be asserted without
+    // ticking a flight out. DERIVED from the cell edge (the same 1.25x margin it always carried), not
+    // written down: as a literal it silently became a speed that arrives in eight ticks the moment the
+    // cell grew, and eight of these tests then read as "the arrival never happened".
+    private static final long ARRIVE_IN_ONE_TICK = GalacticCoord.CELL * 5L / 4L;
 
     @Test
     public void departPutsShipInTransitAndAllocatesALane() {
@@ -399,7 +402,11 @@ public class ShipTransitManagerTest {
         assertEquals("the origin is persisted: progress is meaningless without it", cell(1), r.origin);
         assertEquals(cell(2), r.target);
         assertEquals("nothing flown yet (not ticked)", 0L, r.travelledBlocks);
-        assertEquals("the flight is priced at depart, once", 4_000_000L, r.distanceBlocks);
+        // ONE cell apart, so the price IS the cell edge — bound to the constant, because this is the
+        // one distance here that is derived rather than chosen. The fixture distances passed to
+        // importTransit elsewhere in this file are NOT this number: they are magnitudes picked so a
+        // flight completes inside a test's tick budget, and they merely used to equal it.
+        assertEquals("the flight is priced at depart, once", GalacticCoord.CELL, r.distanceBlocks);
         assertEquals(7L, r.speed);
         assertTrue("no crew captured yet (option-A capture is the VS layer)", r.crew.isEmpty());
     }
@@ -712,7 +719,7 @@ public class ShipTransitManagerTest {
 
         int originDim = space.materialize(cell(1));
         mgr.beginTransit(UUID.randomUUID().toString(), cell(1), originDim, new BlockPos(0, 64, 0),
-                cell(2), 5_000_000L);
+                cell(2), ARRIVE_IN_ONE_TICK);
         assertEquals("control: while it is still parked, a re-cut is exactly what should happen",
                 1, mgr.refreshSnapshots());
 
