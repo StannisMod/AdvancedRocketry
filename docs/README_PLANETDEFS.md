@@ -70,7 +70,7 @@ So: edit the **template**, not the live copy, and keep the template under versio
 | **planet temperature** | KELVIN | Computed, not authored — see `avgTemperature` in §7. |
 | **rotational period** | ticks | `24000` = one Minecraft day. Must be `> 0`. |
 | **star map position** | arbitrary map units | `x` / `y` on `<star>`; affects the star-selector GUI only. |
-| **galactic anchor** | cell indices | `"sectorX,sectorY,sectorZ"`, GALAXY-LOCAL (see §5). One cell is 4 000 000 blocks. |
+| **galactic anchor** | cell indices | `"sectorX,sectorY,sectorZ"`, GALAXY-LOCAL (see §5). One cell is 32 000 000 blocks. |
 
 **The chart scale.** One orbital-distance unit is **5 983 914 blocks**, i.e. one AU is
 149 597 870 700 m at 250 m per block. This is the one law that turns an orbit into a place, and it is
@@ -219,15 +219,38 @@ against 5 000 AU of room, a factor of nearly nine. It becomes reachable only if 
 more than two orders of magnitude — below roughly 170 000 cells systems start losing outer worlds,
 and below about 8 cells only the star survives.
 
-### Changing a `<galaxyGen>` parameter mid-save is UNDEFINED
+### Changing a `<galaxyGen>` parameter mid-save is a PROCEDURE, not an edit
 
 `density`, `minSpacing`, `galaxySpacing` and `galaxyDensity` are inputs to a **derived** universe:
 nothing about a procedural system is stored, so changing any of them relocates every star, every
-planet and every generated name. **You get a different universe, and anything a player recorded about
-the old one — coordinates, memory crystals, a route — points at nothing.**
+planet and every generated name that nobody has looked at yet.
 
-There is no migration and there cannot be one: there is no old universe on disk to migrate. If you
-change these, start a new world.
+**The world refuses to open under a changed configuration.** The save carries a fingerprint of the
+`<galaxyGen>` it was generated under; on a mismatch the load stops and names both fingerprints,
+rather than quietly handing the players a different sky. So the failure mode is a server that will
+not start, never a route that silently stops leading anywhere.
+
+**There is a way through, and it keeps what has been explored.** In order:
+
+1. Restore the previous `<galaxyGen>` and start the world (§1: in an existing world a template edit
+   reaches the live copy only through `resetPlanetsFromXML`, which resets itself after one load
+   unless `ResetOnlyOnce` is `false`).
+2. Run `/stellurgy universe upgrade confirm`. Every system anybody has already seen is frozen where
+   it stands, including the addresses on the memory crystals of players who are **online at that
+   moment**.
+3. Stop the server, install the new configuration, and start again. The stamp is accepted once, and
+   only if the configuration actually moved.
+
+The result is a seam at the frontier of the explored: charted space keeps exactly what it held,
+unexplored space is re-derived under the new parameters.
+
+**What the procedure cannot reach.** A crystal in a chest, in an unloaded chunk, or in the inventory
+of an offline player is not readable at step 2, so the addresses on it are not frozen. After the
+upgrade such an address still resolves — it is a lattice coordinate — but it names whatever the new
+universe puts in that cell, which is usually not what the player wrote down. Bring the crystals that
+matter to somebody online before running it.
+
+**Starting a new world is still the simpler answer** if nothing has been explored yet.
 
 ---
 
