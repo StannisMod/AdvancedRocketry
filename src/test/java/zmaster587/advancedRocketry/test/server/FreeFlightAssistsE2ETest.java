@@ -204,6 +204,14 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
     public void reEnablingFlightAssistCapturesTheCurrentVelocity() throws Exception {
         // Toggling FA back on mid-flight must NOT jerk the craft: the setpoint
         // initialises to the current velocity (Elite behaviour).
+        //
+        // AMENDED 2026-08-17. This test asserted the capture for a cruise ABOVE the assist's own
+        // ceiling, and that promise no longer exists: the acceleration law moved the ceiling ONTO the
+        // setpoint (FA_SETPOINT_MAX_SPEED), so re-engaging the assist above it deliberately decelerates
+        // the craft to it at the thrust budget rather than rewriting its velocity. The old assertion
+        // had been failing since that change landed and nobody read it — the cruise built here is 4.0
+        // against a ceiling of 3.0. The capture is still the contract; it is now tested where the
+        // contract holds, and the clamp is tested beside it as its own leg.
         int id = buildAndAssemble(4350, 64, 500);
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
@@ -223,12 +231,17 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
         // FA off, build a Newtonian cruise with direct thrust, then coast.
         ok(client().execute("artest rocket set-flight-assist " + id + " off"));
         ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
-        ok(client().execute("artest rocket free-flight-tick " + id + " 8"));
+        // Four ticks of thrust, not eight: 4 × 0.5 = 2.0 b/t, comfortably UNDER the assist ceiling,
+        // which is the regime where "capture the current velocity" is the promise.
+        ok(client().execute("artest rocket free-flight-tick " + id + " 4"));
         ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 2"));
         double mzBefore = parseDouble(ok(client().execute("artest rocket info " + id)),
                 Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
         assertTrue("precondition: must be coasting (+Z), got " + mzBefore, mzBefore > 0.2);
+        assertTrue("precondition: this leg tests the capture, so the cruise must be UNDER the assist "
+                        + "ceiling (" + mzBefore + " vs 3.0) — above it the contract is the clamp below",
+                mzBefore < 3.0);
 
         // FA back on -> setpoint captured -> cruise continues, no jerk.
         ok(client().execute("artest rocket set-flight-assist " + id + " on"));
@@ -237,6 +250,44 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
                 Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
         assertTrue("FA re-enable must keep the cruise (was " + mzBefore + ", now "
                 + mzAfter + ")", Math.abs(mzAfter - mzBefore) < 0.25);
+    }
+
+    /**
+     * The other side of the same toggle, and the behaviour that replaced the old promise: re-engaging
+     * the assist on a craft flying FASTER than the assist's ceiling pulls it down to that ceiling —
+     * by thrusting against its motion, which is why it is a deceleration and not a rewrite.
+     */
+    @Test
+    public void reEnablingFlightAssistAboveItsCeilingDeceleratesToTheCeiling() throws Exception {
+        int id = buildAndAssemble(4375, 64, 500);
+        ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
+        ok(client().execute("artest rocket start-free-flight " + id));
+
+        // Climb clear of the ground, then hover, exactly as the capture leg does.
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 1 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 60"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 1"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 30"));
+
+        // FA off, build a cruise well ABOVE the assist ceiling (8 × 0.5 = 4.0 against 3.0).
+        ok(client().execute("artest rocket set-flight-assist " + id + " off"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 8"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 2"));
+        double mzBefore = parseDouble(ok(client().execute("artest rocket info " + id)),
+                Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
+        assertTrue("precondition: the cruise must exceed the assist ceiling, got " + mzBefore,
+                mzBefore > 3.0);
+
+        ok(client().execute("artest rocket set-flight-assist " + id + " on"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
+        double mzAfter = parseDouble(ok(client().execute("artest rocket info " + id)),
+                Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
+        assertTrue("the assist must bring an overfast craft DOWN toward its ceiling (was " + mzBefore
+                + ", now " + mzAfter + ")", mzAfter < mzBefore);
+        assertTrue("and must not overshoot below it — it tracks the ceiling, it does not brake to a "
+                        + "halt (now " + mzAfter + ")", mzAfter > 2.0);
     }
 
     @Test

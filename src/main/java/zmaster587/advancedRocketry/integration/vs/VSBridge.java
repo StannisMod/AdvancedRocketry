@@ -833,6 +833,21 @@ final class VSBridge {
     }
 
     /**
+     * The IDENTITY of the ship that owns a SUBSPACE block position — its VS ship uuid as a string —
+     * or {@code null} when the position belongs to no loaded ship.
+     *
+     * <p>This is the inverse of {@link #nearestShipId}: it answers from the ship's chunk CLAIM, which
+     * contains the block or does not, rather than from a distance that is merely small. A caller
+     * holding a block of a ship (a seat, a controller, a hatch) uses this to say WHICH ship it is a
+     * block of, on a world where several ships exist and their subspace yards sit side by side.</p>
+     */
+    static String shipIdOwningBlock(World world, net.minecraft.util.math.BlockPos pos) {
+        return ValkyrienUtils.getPhysoManagingBlock(world, pos)
+                .map(physo -> physo.getShipData().getUuid().toString())
+                .orElse(null);
+    }
+
+    /**
      * State of the loaded ship with this uuid, in the same layout as {@link #nearestShipState}, or
      * {@code null} when the id names no ship that is loaded here (unloaded, deleted, another world,
      * or not a uuid at all). Position-independent: the ship may be anywhere.

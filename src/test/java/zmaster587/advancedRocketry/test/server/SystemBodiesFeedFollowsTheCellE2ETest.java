@@ -3,6 +3,8 @@ package zmaster587.advancedRocketry.test.server;
 import org.junit.After;
 import org.junit.Test;
 
+import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -39,12 +41,26 @@ import static org.junit.Assert.assertTrue;
 public class SystemBodiesFeedFollowsTheCellE2ETest extends AbstractSharedServerTest {
 
     /**
-     * Cells are chosen with a non-zero sector Y, which keeps them clear of the generated fallback stars
-     * (all at {@code sy=sz=0}) — so the body count of a cell is exactly what this test put in it. The two
-     * methods use different cells: the shared server runs both, and a cell is global state.
+     * Cells far enough out that nothing else claims them, so the body count of a cell is exactly what
+     * this test put in it. The two methods use different cells: the shared server runs both, and a
+     * cell is global state.
+     *
+     * <p><b>The distance that matters is {@code minSpacing/2}, not "away from sector zero".</b> These
+     * used to sit at {@code sy = 5000} on the reasoning that a non-zero sector Y kept them clear of the
+     * generated fallback stars at {@code sy=sz=0} — which guarded against the wrong neighbour and left
+     * both legs failing. A cell is attributed to a stored anchor by
+     * {@code UniverseRegistry.storedAnchorNear}, whose reach is HALF THE SUPER-CELL — about 2 501 180
+     * cells at the shipped spacing — so {@code sy = 5000} is 0.2 % of the way out and both cells were
+     * squarely inside the shipped solar system's own neighbourhood. The feed was answering correctly:
+     * it offered the sun, the overworld and a moon at 1.6·10¹¹ blocks (ledger #291).</p>
+     *
+     * <p>Stated as a multiple of the reach rather than as a literal, so the fixture cannot silently
+     * move back inside the neighbourhood the day the spacing is retuned.</p>
      */
-    private static final String CELL_NO_SHIP = "31 5000 2";
-    private static final String CELL_MID_JUMP = "32 5000 2";
+    private static final long CLEAR_OF_ANY_ANCHOR =
+            3L * (GalaxyGenConfig.DEFAULT_MIN_SPACING / 2L);
+    private static final String CELL_NO_SHIP = "31 " + CLEAR_OF_ANY_ANCHOR + " 2";
+    private static final String CELL_MID_JUMP = "32 " + CLEAR_OF_ANY_ANCHOR + " 2";
 
     /** A body a few thousand blocks out, i.e. the geometry a pilot has to fly at to descend. */
     private static final String BODY_LOCAL = "2900 0 -1200";

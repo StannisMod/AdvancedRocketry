@@ -176,7 +176,7 @@ public class MixinHookBehaviourPinsTest extends AbstractSharedServerTest {
      *
      * <p>Robust against the dedicated-server harness's idiosyncratic
      * tick scheduling, which doesn't reliably advance entity onUpdate
-     * during {@code /artest server wait} on a cold server.</p>
+     * within a bounded wait on a cold server.</p>
      */
     private double tickEntityAndReadMotionY(int dim, int id, int count) throws Exception {
         String resp = ok(client().execute(

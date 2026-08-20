@@ -117,8 +117,17 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
     private static final String SKY_CLASS =
             "zmaster587.advancedRocketry.client.render.planet.BoundarySky";
 
-    /** Cell the ship settles in. sy=5000 dodges the fallback stars (all at sy=sz=0). */
-    private static final String CELL = "0 5000 0";
+    /**
+     * Cell the ship settles in — FOUND at run time, never written down. See {@link #findEmptyCell()}.
+     *
+     * <p>It used to be the constant {@code "0 5000 0"}, with the note "dodges the fallback stars". That
+     * was true while a star's neighbourhood was a few hundred cells wide; once the star lattice became
+     * metric-true a system owns millions of cells around itself, the constant landed deep inside the
+     * home system's territory, and the arrangement below ("no body may be synced for the slot yet")
+     * became false with nothing wrong in production. A cell distance expressed as a bare number expires
+     * the next time the universe's scale moves — so this one is asked for instead.</p>
+     */
+    private String cell;
 
     /**
      * The cell's contents: {@code localX localY localZ kind dimId}. The ship settles at the cell CENTRE,
@@ -131,13 +140,23 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
      * feed carries both kinds and so must the subject.</p>
      */
     private static final String[][] SYSTEM = {
-            {"768", "-1072", "-2652", "MOON", "0"},           // ~2 961 - the nearest descend target
-            {"-23443", "11940", "10363", "MOON", "0"},        // ~28 275
-            {"-30108", "-13988", "11037", "MOON", "0"},       // ~34 985
-            {"7644", "34614", "-16382", "GAS_GIANT", "-1"},   // ~39 050 - not a descend target
-            {"-42912", "-23517", "-24475", "MOON", "0"},      // ~54 713
-            {"-39818", "28442", "-33418", "MOON", "0"},       // ~59 255
+            {"768", "-1072", "-2652", "MOON", "0", "0.27"},           // ~2 961 - the nearest descend target
+            {"-23443", "11940", "10363", "MOON", "0", "0.27"},        // ~28 275
+            {"-30108", "-13988", "11037", "MOON", "0", "0.27"},       // ~34 985
+            {"7644", "34614", "-16382", "GAS_GIANT", "-1", "11.0"},   // ~39 050 - not a descend target
+            {"-42912", "-23517", "-24475", "MOON", "0", "0.27"},      // ~54 713
+            {"-39818", "28442", "-33418", "MOON", "0", "0.27"},       // ~59 255
     };
+
+    /** A body's radius in Earth radii, as the fixture states it — the sixth column above. */
+    private static double radiusEarths(int index) {
+        return Double.parseDouble(SYSTEM[index][5]);
+    }
+
+    /** The same, in the chart blocks the feed sends and the renderer sizes with. */
+    private static double radiusBlocks(int index) {
+        return radiusEarths(index) * zmaster587.advancedRocketry.util.AstronomicalBodyHelper.EARTH_RADIUS_BLOCKS;
+    }
 
     /** The nearest descend target: the body a pilot has to find and fly at to descend at all. */
     private static final int NEAREST = 0;
@@ -265,7 +284,8 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
             // with it and the pilot is put into it.
             String setup = exec("artest space entry-setup 1");
             assertTrue("entry-setup must install the stack: " + setup, setup.contains("\"ok\":true"));
-            String settle = exec("artest space ledger-settle " + CELL + " 0");
+            cell = findEmptyCell();
+            String settle = exec("artest space ledger-settle " + cell + " 0");
             assertTrue("ledger-settle must succeed: " + settle, settle.contains("\"ok\":true"));
             Matcher boundM = BOUND_DIM.matcher(settle);
             assertTrue("the settle must report which slot the cell was bound to: " + settle, boundM.find());
@@ -308,8 +328,11 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
             emptyBefore = capture(slotDim, CELL_CAPTURE_Y, EMPTY_YAW, EMPTY_PITCH, "before_empty");
 
             for (String[] body : SYSTEM) {
-                String poi = exec("artest space add-poi " + CELL + " " + body[0] + " " + body[1] + " "
-                        + body[2] + " " + body[3] + " " + body[4] + " 7");
+                // The radius is stated, not implied: since 2026-08-16 the sky sizes a body by the
+                // ANGLE it subtends, so a fixture that named no radius would draw six identical
+                // markers and the size legs below would be measuring nothing.
+                String poi = exec("artest space add-poi " + cell + " " + body[0] + " " + body[1] + " "
+                        + body[2] + " " + body[3] + " " + body[4] + " 7 " + body[5]);
                 assertTrue("add-poi must register the body: " + poi, poi.contains("\"ok\":true"));
             }
 
@@ -452,6 +475,138 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                 descendTargets, boundariesWithBodies);
     }
 
+    /**
+     * A pilot in a cell near a molecular cloud sees the cloud.
+     *
+     * <p>A star cluster is invisible from outside it — it can be told apart only by counting its stars,
+     * which nobody will do — so the cloud wrapping it is the one landmark the universe layer has. This
+     * measures whether it reaches the screen at all.</p>
+     *
+     * <p><b>Counted, not photographed, and that is deliberate.</b> A nebula is haze whose alpha falls to
+     * zero at its rim; a pixel-difference test would be measuring the tuning of {@code NEBULA_MAX_ALPHA}
+     * as much as the feed, and would go red the first time the haze was made subtler. The renderer's own
+     * per-frame counter answers "did a cloud reach the rasterizer" exactly. It is read BESIDE
+     * {@code skyFramesDrawn}, because a zero means "no cloud was drawn" only if the sky renderer ran at
+     * all — the two are different questions and one counter cannot tell them apart.</p>
+     *
+     * <p><b>Where the cloud is comes from the SERVER, not from this test.</b> A cloud's position is a
+     * fact about the seed; a hard-coded cell would pin this test to one world's generation and would
+     * fail as an accusation against the renderer the first time the seed moved. The probe is asked where
+     * to stand.</p>
+     */
+    @Test
+    public void aPilotNearACloudSeesIt() throws Exception {
+        JsonObject rd = bot().setRenderDistance(SKY_RENDER_DISTANCE);
+        int previousRenderDistance = rd.get("previous").getAsInt();
+        assertTrue("the sky pass gate must be open, read back off the client's own field: " + rd,
+                rd.get("skyPassEnabled").getAsBoolean());
+        String health = exec("artest player health");
+        Matcher nameM = PLAYER_NAME.matcher(health);
+        assertTrue("player health must echo the player name: " + health, nameM.find());
+        botName = nameM.group(1);
+        try {
+            String setup = exec("artest space entry-setup 1");
+            assertTrue("entry-setup must install the stack: " + setup, setup.contains("\"ok\":true"));
+
+            // A universe with clusters in it. Without <galaxyGen> a world has no galaxies, hence no
+            // clusters, hence no gas — and an empty sky would be honest for the wrong reason.
+            String gen = exec("artest space gen-install 0.9 8");
+            assertTrue("the procedural generator must install: " + gen, gen.contains("\"ok\":true"));
+
+            String found = exec("artest space nebula-find 512 64");
+            assertTrue("the generator must be able to name a cell with a cloud in reach: " + found,
+                    found.contains("\"found\":true"));
+            Matcher sectorM = Pattern.compile("\"sectorX\":(-?\\d+)").matcher(found);
+            assertTrue("the find must report the cell it found: " + found, sectorM.find());
+            String cloudCell = sectorM.group(1) + " 0 0";
+
+            String settle = exec("artest space ledger-settle " + cloudCell + " 0");
+            assertTrue("ledger-settle must succeed: " + settle, settle.contains("\"ok\":true"));
+            Matcher boundM = BOUND_DIM.matcher(settle);
+            assertTrue("the settle must report which slot the cell was bound to: " + settle,
+                    boundM.find());
+            int slotDim = Integer.parseInt(boundM.group(1));
+
+            // The server's own answer for that cell, as the cross-side oracle: what it will send.
+            String feed = exec("artest space nebulae " + cloudCell);
+            Matcher drawnM = Pattern.compile("\"drawn\":(\\d+)").matcher(feed);
+            assertTrue("the probe must report the cell's sky: " + feed, drawnM.find());
+            int serverClouds = Integer.parseInt(drawnM.group(1));
+            assertTrue("the cell the finder chose must actually have a cloud in its sky: " + feed,
+                    serverClouds >= 1);
+
+            exec("time set 18000");
+            seat(slotDim, CELL_CAPTURE_Y);
+
+            // Gate on the FEED reaching the client, then on a frame being drawn after it did. Waiting
+            // a fixed number of ticks would make a slow broadcast read as a renderer that draws nothing.
+            int drawn = 0;
+            long frames = 0L;
+            for (int attempt = 0; attempt < 30 && drawn == 0; attempt++) {
+                bot().waitTicks(10);
+                frames = Long.parseLong(bot().readStaticField(SKY_CLASS, "skyFramesDrawn")
+                        .get("value").getAsString().trim());
+                drawn = skyCounter("nebulaeDrawnLastFrame");
+            }
+
+            assertTrue("HARNESS CONTROL: the sky renderer never ran, so nothing below could mean"
+                    + " anything (frames=" + frames + ")", frames > 0L);
+            assertTrue("the server had " + serverClouds + " cloud(s) in this cell's sky and the client"
+                    + " drew " + drawn + ": a landmark that reaches the feed and not the frame is a"
+                    + " landmark nobody can navigate by", drawn >= 1);
+        } finally {
+            try {
+                exec("artest space gen-reset");
+            } catch (Exception ignored) {
+                // the generator is a JVM global: a shared client run must not inherit this one
+            }
+            bot().setRenderDistance(previousRenderDistance);
+        }
+    }
+
+    /**
+     * A cell that belongs to no system, asked of the universe rather than assumed.
+     *
+     * <p>This test supplies the whole contents of its cell itself, so its arrangement needs a cell the
+     * generator has put NOTHING in — otherwise the "before" captures already hold somebody else's
+     * planets and every difference below is attributed to the wrong cause. Emptiness is read with the
+     * feed's own predicate: {@code skyBodiesAt} is the union of the owning system's bodies and the
+     * cell's own, which {@code cell-info} reports as {@code systemBodies} and {@code bodiesAt}, so both
+     * must be zero.</p>
+     *
+     * <p>The search DOUBLES its distance instead of stepping by a territory, and that is the point: a
+     * territory's width is a property of the active generator, and the moment this test writes it down
+     * it inherits an assumption that expires. Doubling reaches past any width there will ever be — it
+     * only has to stop before {@code Integer.MAX_VALUE}, because the probe parses a sector as an int
+     * and would SILENTLY answer about cell 0/0/0 for anything wider. Which is why the echoed
+     * {@code cellKey} is checked against the cell that was asked for.</p>
+     */
+    private String findEmptyCell() throws Exception {
+        StringBuilder tried = new StringBuilder();
+        for (long sy = 4096L; sy > 0L && sy <= Integer.MAX_VALUE; sy *= 2L) {
+            String info = exec("artest space cell-info 0 " + sy + " 0");
+            assertTrue("cell-info must answer about the very cell it was asked about, or the sector"
+                            + " overflowed the probe's int parse and it silently answered about the"
+                            + " origin: " + info,
+                    info.contains("\"cellKey\":\"0_" + sy + "_0\""));
+            int system = intField(info, "systemBodies");
+            int here = intField(info, "bodiesAt");
+            tried.append(" 0/").append(sy).append("/0=").append(system).append('+').append(here);
+            if (system == 0 && here == 0) {
+                return "0 " + sy + " 0";
+            }
+        }
+        throw new AssertionError("no cell within the probe's int-sized sector range is free of bodies,"
+                + " so this test has nowhere to arrange its own system; tried (systemBodies+bodiesAt):"
+                + tried);
+    }
+
+    private static int intField(String json, String name) {
+        Matcher m = Pattern.compile("\"" + name + "\":(\\d+)").matcher(json);
+        assertTrue("cell-info must report " + name + ": " + json, m.find());
+        return Integer.parseInt(m.group(1));
+    }
+
     /** How many body labels the client's last rendered frame wrote. */
     private int labelsDrawn() throws Exception {
         return skyCounter("labelsDrawnLastFrame");
@@ -519,7 +674,8 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
      * the client actually drew, so a build that drew nothing fails whatever the box is.
      */
     private static double discRadiusOf(int index) {
-        return Math.toDegrees(Math.atan(ApparentSize.halfSizeFor(distanceOf(index)) / 90.0)) / 70.0;
+        return Math.toDegrees(Math.atan(
+                ApparentSize.halfSizeFor(radiusBlocks(index), distanceOf(index)) / 90.0)) / 70.0;
     }
 
     /** How far the configured body {@code index} is from the settled ship, in blocks. */

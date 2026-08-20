@@ -378,6 +378,8 @@ public final class ShipTransitManager {
     private final LongSupplier clock;
     /** Offline-progress gate; {@code null} = always advance (state-machine unit tests). */
     private OfflineProgress offlineProgress;
+    /** Performs a jump short enough to skip hyperspace; {@code null} = none wired, see the branch. */
+    private DirectCrosser directCrosser;
     /** Arrival placement policy; {@code null} = arrive exactly on the aimed coordinate. */
     private ArrivalPlacement arrivalPlacement;
     /**
@@ -421,6 +423,39 @@ public final class ShipTransitManager {
         if (transits.containsKey(shipId)) {
             return false; // already in transit
         }
+        long speed = Math.max(1L, speedBlocksPerTick);
+        long now = clock.getAsLong();
+        // The flight is priced ONCE, here, through both cells' frames as they stand at departure.
+        // A jump is a commitment: the pilot saw a forecast at the console and the drive spent its
+        // burst against it, so re-pricing mid-flight because the destination kept orbiting would
+        // charge him for a decision he could not have made differently.
+        //
+        // It is also read BEFORE anything is allocated or cut, because the price is what chooses the
+        // mechanism: a leg short enough to be over before it presents itself is performed as one
+        // crossing instead (see DIRECT_CROSSING_MAX_TICKS). Everything the hyperspace path sets up —
+        // the lane, the crew capture, the floor snapshot — is work the direct path must not do.
+        double distance = (frames == null ? CellFrames.STATIC : frames)
+                .distanceBetween(origin, target, now);
+        if (isDirectCrossing(distance, speed)) {
+            if (directCrosser == null) {
+                // Nothing is wired to perform one, so the jump is flown the long way. Said out loud:
+                // a mechanism that silently does not exist is indistinguishable from one that was not
+                // chosen, and this branch is exactly where a wiring mistake would hide.
+                LOGGER.warn("[SPACE] jump for ship {} qualifies as a direct crossing ({} ticks) but no "
+                                + "direct crosser is wired - flying it through hyperspace instead",
+                        shipId, zmaster587.advancedRocketry.hyperdrive.JumpSpeed
+                                .transitTicks(distance, speed));
+            } else {
+                boolean crossed = directCrosser.crossDirect(shipId, origin, originSlotDim,
+                        originAnchor, target);
+                LOGGER.info("[SPACE] direct crossing {} for ship {} {} -> {} ({} blocks, {} ticks of "
+                                + "flight it does not need)",
+                        crossed ? "began" : "REFUSED", shipId, origin.cellKey(), target.cellKey(),
+                        (long) Math.ceil(distance), zmaster587.advancedRocketry.hyperdrive.JumpSpeed
+                                .transitTicks(distance, speed));
+                return crossed;
+            }
+        }
         HyperspaceTiles.Tile tile = tiles.allocate();
         // Capture the seated crew BEFORE the depart crossing cuts the seat blocks (a post-cut capture finds
         // nothing). captureCrew stashes the full crew inside the crosser (keyed by shipId) for the reseat at
@@ -455,14 +490,6 @@ public final class ShipTransitManager {
         }
         // Refcount handoff, half 1: the ship has left the origin cell.
         space.dematerialize(origin);
-        long speed = Math.max(1L, speedBlocksPerTick);
-        long now = clock.getAsLong();
-        // The flight is priced ONCE, here, through both cells' frames as they stand at departure.
-        // A jump is a commitment: the pilot saw a forecast at the console and the drive spent its
-        // burst against it, so re-pricing mid-flight because the destination kept orbiting would
-        // charge him for a decision he could not have made differently.
-        double distance = (frames == null ? CellFrames.STATIC : frames)
-                .distanceBetween(origin, target, now);
         long distanceBlocks = (long) Math.ceil(distance);
         // The ETA goes through the same law the console's forecast quotes, so the flight the pilot
         // was shown is the flight he gets.
@@ -909,6 +936,58 @@ public final class ShipTransitManager {
     /** How long a flight reads as "departing" / "arriving", in ticks of its own travel (tunable). */
     private static final long DEPARTING_TICKS = 60L;
     private static final long ARRIVING_TICKS = 100L;
+
+    /**
+     * At or below this many ticks a jump is not flown at all — it is performed as a single cell&rarr;cell
+     * crossing, with no hyperspace leg. <b>Derived, not chosen</b>: {@link #phaseOf} reads a flight as
+     * departing, then cruising, then arriving, so a flight shorter than the two windows together never
+     * reports {@code CRUISING} at all. It is leaving, then it is arriving, and there was no flight in
+     * between. That is the point at which the mechanism's own presentation degenerates, and it is
+     * therefore the point at which the mechanism should stop being used.
+     *
+     * <p>Because it is a sum of the two windows rather than a third number beside them, moving either
+     * window moves this with it. Written down separately, the three would drift.</p>
+     *
+     * <p>The crossing's own cost cannot invert the rule for any value: a hyperspace jump performs the
+     * crossing TWICE (depart and arrive) plus the spool and the flight, so the comparison is {@code C}
+     * against {@code spool + 2C + transitTicks} and {@code C} appears on both sides.</p>
+     */
+    public static final long DIRECT_CROSSING_MAX_TICKS = DEPARTING_TICKS + ARRIVING_TICKS;
+
+    /**
+     * Would a jump of {@code distanceBlocks} at {@code speedBlocksPerTick} be performed as a direct
+     * crossing rather than flown through hyperspace?
+     *
+     * <p><b>This is the only place that decides.</b> The pilot's forecast at the console and the
+     * departure itself both call it, because a jump that is quoted as one mechanism and executed as the
+     * other is a lie the pilot cannot check. The rule keys on the COMPUTED DURATION and deliberately
+     * not on the route: with a fast enough drive an interstellar leg is also over in a tick, and a
+     * route-shaped rule ("in-system is direct") would then be wrong in the interesting case.</p>
+     */
+    public static boolean isDirectCrossing(double distanceBlocks, long speedBlocksPerTick) {
+        return zmaster587.advancedRocketry.hyperdrive.JumpSpeed
+                .transitTicks(distanceBlocks, speedBlocksPerTick) <= DIRECT_CROSSING_MAX_TICKS;
+    }
+
+    /**
+     * Performs a jump short enough not to need hyperspace, as ONE cell&rarr;cell crossing. Kept behind
+     * a seam for the same reason {@link Crosser} is: the branch above must be decidable in a test with
+     * no world under it. Production is {@link CellCrossingController#requestDirectJump}.
+     */
+    public interface DirectCrosser {
+        /**
+         * Cut the ship named {@code shipId} out of {@code origin} (slot {@code originSlotDim}, anchor
+         * {@code originAnchor}) and paste it into {@code target}, settling the ledger straight there.
+         * {@code false} = the crossing did not start, and the caller reports a failed jump.
+         */
+        boolean crossDirect(String shipId, GalacticCoord origin, int originSlotDim,
+                            BlockPos originAnchor, GalacticCoord target);
+    }
+
+    /** Install the direct-crossing seam. {@code null} means short jumps fly through hyperspace and say so. */
+    public void setDirectCrosser(DirectCrosser crosser) {
+        this.directCrosser = crosser;
+    }
 
     /** Install the offline-progress gate (config mode + online check). {@code null} restores always-advance. */
     public void setOfflineProgress(OfflineProgress policy) {

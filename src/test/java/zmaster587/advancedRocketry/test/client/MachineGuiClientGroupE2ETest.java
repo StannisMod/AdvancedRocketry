@@ -100,6 +100,8 @@ public class MachineGuiClientGroupE2ETest extends AbstractSharedClientE2ETest {
     // Observatory region-scan probe fields.
     private static final Pattern TELESCOPE_ORIGIN = Pattern.compile("\"origin\":\"([^\"]*)\"");
     private static final Pattern TELESCOPE_AIM_DISTANCE = Pattern.compile("\"aimDistance\":(\\d+)");
+    /** What one step of the aim is worth in cells — the aim is counted in star territories. */
+    private static final Pattern TELESCOPE_STEP_CELLS = Pattern.compile("\"stepCells\":(\\d+)");
     private static final Pattern TELESCOPE_ADDRESSES = Pattern.compile("\"addresses\":(-?\\d+)");
 
     // Railgun probe fields.
@@ -504,9 +506,8 @@ public class MachineGuiClientGroupE2ETest extends AbstractSharedClientE2ETest {
         // is what this drives.
         exec("artest config set planetsMustBeDiscovered false");
         exec("artest config set telescopeScanBaseTicks 0");
-        exec("artest config set telescopeScanTicksPerSector 1");
-        exec("artest config set telescopeScanHalfWidthSectors 1");
-        exec("artest config set telescopeScanRangeSectors 24");
+        exec("artest config set telescopeLimitingMagnitude 30");
+        exec("artest config set telescopeConeHalfAngleDegrees 20");
         String crystal = exec("artest telescope crystal " + where);
         scenario().requireArranged("could not put a crystal in the observatory: " + crystal,
                 crystal.contains("\"ok\":true"));
@@ -535,9 +536,13 @@ public class MachineGuiClientGroupE2ETest extends AbstractSharedClientE2ETest {
         assertTrue("clicking the distance button twice must move the aim out from 1: " + aimed,
                 aimDistance > 1);
 
-        // Put a system exactly where the operator has it pointed — the default aim is +X, and the
-        // distance is whatever his clicks produced.
-        String system = exec("artest telescope system " + (Long.parseLong(home[0]) + aimDistance)
+        // Put a system where the operator has it pointed — the default aim is +X, and the distance is
+        // whatever his clicks produced. The aim is counted in STEPS of one star's territory, so the
+        // cell it lands on is that many strides out; the seat is offset inside the territory, since
+        // what a look must find is the system that OWNS the cell and not a star standing on it.
+        long stepCells = readInt(aimed, TELESCOPE_STEP_CELLS);
+        String system = exec("artest telescope system "
+                + (Long.parseLong(home[0]) + aimDistance * stepCells + 13L)
                 + " " + home[1] + " " + home[2]);
         scenario().requireArranged("could not place a system to be found: " + system,
                 system.contains("\"ok\":true"));

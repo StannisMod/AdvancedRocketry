@@ -62,9 +62,14 @@ public final class CellFrame {
 
     public void writeToNBT(NBTTagCompound nbt) {
         NBTTagCompound sub = new NBTTagCompound();
-        sub.setLong("bx", base.x());
-        sub.setLong("by", base.y());
-        sub.setLong("bz", base.z());
+        // The base is written as a sector triple plus an in-cell offset, for the same reason the type
+        // holds one: a single block absolute cannot express the coordinates the sector grid can name.
+        sub.setLong("bsx", base.sectorX());
+        sub.setLong("bsy", base.sectorY());
+        sub.setLong("bsz", base.sectorZ());
+        sub.setLong("blx", base.localX());
+        sub.setLong("bly", base.localY());
+        sub.setLong("blz", base.localZ());
         law.writeToNBT(sub); // nested sub-tag "ephemeris"
         nbt.setTag("frame", sub);
     }
@@ -79,7 +84,9 @@ public final class CellFrame {
             return staticAt(name);
         }
         NBTTagCompound sub = nbt.getCompoundTag("frame");
-        return new CellFrame(AbsolutePos.of(sub.getLong("bx"), sub.getLong("by"), sub.getLong("bz")),
+        return new CellFrame(AbsolutePos.ofSectorLocal(
+                sub.getLong("bsx"), sub.getLong("bsy"), sub.getLong("bsz"),
+                sub.getLong("blx"), sub.getLong("bly"), sub.getLong("blz")),
                 BodyEphemeris.readFromNBT(sub));
     }
 

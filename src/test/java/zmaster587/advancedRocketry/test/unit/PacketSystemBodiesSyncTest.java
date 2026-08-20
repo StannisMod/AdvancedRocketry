@@ -37,11 +37,12 @@ public class PacketSystemBodiesSyncTest {
         // A descend target carries a shell; the body beside it carries none. The two must survive
         // the wire as DIFFERENT numbers — a codec that dropped the field, or wrote one body's value
         // for every body, would still round-trip a payload where they all agreed.
-        dimA.add(new RenderBody(2, 100L, -200L, 300L, 41, true, 512L));
-        dimA.add(new RenderBody(0, -7L, 8L, -9L, 55, false, 0L));
+        dimA.add(new RenderBody(2, 100L, -200L, 300L, 41, true, 512L, 25_512L, RenderBody.NO_PARENT));
+        dimA.add(new RenderBody(0, -7L, 8L, -9L, 55, false, 0L, 0L, 0));
 
         List<RenderBody> dimB = new ArrayList<>();
-        dimB.add(new RenderBody(5, 1_000_000_000_000L, 0L, -1_000_000_000_000L, 7, false, 7_777L));
+        dimB.add(new RenderBody(5, 1_000_000_000_000L, 0L, -1_000_000_000_000L, 7, false, 7_777L,
+                2_800_000L, RenderBody.NO_PARENT));
 
         sent.put(11, dimA);
         sent.put(-4, dimB);
@@ -118,5 +119,10 @@ public class PacketSystemBodiesSyncTest {
         assertEquals("dimId", expected.dimId, actual.dimId);
         assertEquals("descendTarget", expected.descendTarget, actual.descendTarget);
         assertEquals("boundaryRadius", expected.boundaryRadius, actual.boundaryRadius);
+        // The body's OWN size, distinct from the shell around it: the sky cannot draw a giant as a
+        // giant if this is dropped, and dropping it looks exactly like the old distance-only sizing.
+        assertEquals("radiusBlocks", expected.radiusBlocks, actual.radiusBlocks);
+        // Whose moon it is. Dropped, a giant and its retinue arrive as unrelated dots.
+        assertEquals("parentIndex", expected.parentIndex, actual.parentIndex);
     }
 }

@@ -6,6 +6,7 @@ import org.junit.Test;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static zmaster587.advancedRocketry.test.AdvancedRocketryTestConstants.HYPERSPACE_JUMP_SPEED;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -50,7 +51,8 @@ public class VSShipTransitPersistE2ETest extends AbstractSharedServerTest {
 
         // Depart into hyperspace. We deliberately do NOT tick the transit yet: it stays parked in hyperspace
         // while we re-cut its snapshot (the save-point cut is of a PARKED ship).
-        String begin = exec("artest space transit-begin " + originDim + " " + ax + " " + ay + " " + az);
+        String begin = exec("artest space transit-begin " + originDim + " " + ax + " " + ay + " " + az
+                + " " + HYPERSPACE_JUMP_SPEED);
         assertTrue("transit did not begin (departure crossing failed): " + begin, begin.contains("\"began\":true"));
 
         // Re-cut the parked ship's block snapshot; retry while the async hyperspace assembly completes
@@ -91,7 +93,7 @@ public class VSShipTransitPersistE2ETest extends AbstractSharedServerTest {
         int targetDim = -1;
         String lastTick = "";
         for (int i = 0; i < 80; i++) {
-            lastTick = exec("artest space transit-tick");
+            lastTick = exec("artest space transit-tick 10");
             if (extractInt(lastTick, "inTransit") == 0) {
                 targetDim = extractInt(lastTick, "targetDim");
                 break;

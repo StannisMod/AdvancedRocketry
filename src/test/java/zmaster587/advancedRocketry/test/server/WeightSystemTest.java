@@ -29,7 +29,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class WeightSystemTest extends AbstractSharedServerTest {
 
-    private static final Pattern WEIGHT = Pattern.compile("\"weight\":(-?\\d+(?:\\.\\d+)?)");
+    private static final Pattern WEIGHT = Pattern.compile("\"weight\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
 
     private void reset() throws Exception {
         String r = String.join("\n", client().execute("artest weight reset"));

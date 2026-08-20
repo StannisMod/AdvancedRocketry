@@ -6,6 +6,7 @@ import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
+import zmaster587.advancedRocketry.test.ServerTicks;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,9 +30,9 @@ public class LowGravFallDamageTest {
 
     private static final int DIM_LOW_GRAV = 9701;
     private static final Pattern IS_PLANETARY = Pattern.compile("\"isPlanetaryProvider\":(true|false)");
-    private static final Pattern INPUT_DIST = Pattern.compile("\"inputDistance\":(-?\\d+(?:\\.\\d+)?)");
-    private static final Pattern RESULT_DIST = Pattern.compile("\"resultDistance\":(-?\\d+(?:\\.\\d+)?)");
-    private static final Pattern GRAVITY = Pattern.compile("\"gravityMultiplier\":(-?\\d+(?:\\.\\d+)?)");
+    private static final Pattern INPUT_DIST = Pattern.compile("\"inputDistance\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
+    private static final Pattern RESULT_DIST = Pattern.compile("\"resultDistance\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
+    private static final Pattern GRAVITY = Pattern.compile("\"gravityMultiplier\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
 
     private Path workDir;
     private RealDedicatedServerHarness harness;
@@ -83,9 +84,9 @@ public class LowGravFallDamageTest {
     private void stationFake(int dim) throws Exception {
         String fake = exec("artest player ensure-fake " + dim + " 8.5 120 8.5");
         assertTrue("ensure-fake must succeed: " + fake, fake.contains("\"ok\":true"));
-        // Off-thread settle (see AdvancementsTriggerTest: `artest server wait`
-        // blocks the server thread and must not be used to advance ticks).
-        Thread.sleep(1000L);
+        // Off-thread settle: the wait runs in the test jvm, because a command handler runs on the
+        // server thread and would block the clock it is waiting for.
+        ServerTicks.await(harness.client(), dim, 20);
     }
 
     /** Overworld: not an IPlanetaryProvider &rarr; distance untouched. */

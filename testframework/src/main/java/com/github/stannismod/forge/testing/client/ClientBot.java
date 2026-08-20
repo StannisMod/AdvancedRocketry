@@ -191,6 +191,11 @@ public final class ClientBot implements Closeable {
         assertOk(execute(command));
     }
 
+    /**
+     * The client's own view of itself: screen, GUI geometry, player position / health / held item,
+     * and — when a world is loaded — the {@code dimension} it renders and that world's
+     * {@code worldType} name, as the client learned it from the join/respawn packet.
+     */
     public JsonObject reportState() throws IOException {
         return assertOk(execute(command("report_state")));
     }

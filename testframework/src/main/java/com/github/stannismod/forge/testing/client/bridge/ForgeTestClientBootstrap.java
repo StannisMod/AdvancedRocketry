@@ -512,6 +512,16 @@ public final class ForgeTestClientBootstrap {
                         response.addProperty("guiXSize", intField(containerScreen, "xSize"));
                         response.addProperty("guiYSize", intField(containerScreen, "ySize"));
                     }
+                    if (mc.world != null) {
+                        // What the CLIENT believes about the world it is in. The world type arrives
+                        // in the join/respawn packet and is what client-side generator and terrain
+                        // code identifies the world by, so a mod publishing it per dimension is only
+                        // verifiable from here.
+                        response.addProperty("dimension", mc.world.provider.getDimension());
+                        response.addProperty("worldType",
+                                mc.world.getWorldInfo().getTerrainType() == null
+                                        ? "" : mc.world.getWorldInfo().getTerrainType().getName());
+                    }
                     if (mc.player != null) {
                         response.addProperty("selectedHotbar", mc.player.inventory.currentItem);
                         response.addProperty("playerX", mc.player.posX);

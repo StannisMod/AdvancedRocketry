@@ -1,297 +1,382 @@
-# Advanced Rocketry `planetDefs.xml` Reference
+# `planetDefs.xml` — the universe catalogue
 
-This document explains how `planetDefs.xml` is structured and which tags and attributes are supported.
-
-Place the file at:
-
-`config/advancedRocketry/planetDefs.xml`
-
-
-**Template** found here [`TEMPLATE_planetdefs.xml`](TEMPLATE_planetdefs.xml)
-
-
-This reference tries to document all fields that are loaded from planetdefs.
+Everything Advanced Rocketry lets a pack author say about stars, planets and the procedural galaxy.
+This file documents the format exhaustively: every element, every attribute, its unit, its default,
+what happens when it is missing or malformed, and — the part that costs people days — what happens
+when two of them are stated together.
 
 ---
 
-## 1. Purpose
+## 1. Where the file is, and when it is read and written
 
-`planetDefs.xml` lets you define stars, planets, moons, and planet-specific configuration manually.
+| | path |
+|---|---|
+| **template** (what a pack ships) | `config/advancedRocketry/planetDefs.xml` |
+| **live copy** (what the game reads) | `<save>/advRocketry/planetDefs.xml` |
 
-Place the file as:
+1. On world load the game looks for the **live copy**. If it is absent, the **template** is copied
+   there and that copy is loaded.
+2. The config option `resetPlanetsFromXML` (section `Planet` of `advancedRocketry.cfg`) forces the
+   copy to happen again, overwriting the live copy from the template. That is the only supported way
+   to push a template edit into an existing world. It **resets itself to `false` after one load**
+   unless `ResetOnlyOnce` is set to `false`, which is what a pack developer wants while iterating.
+3. **On every world save the live copy is REWRITTEN** from the in-memory model.
 
-`config/advancedRocketry/planetDefs.xml`
+Consequence of (3), and it surprises everyone exactly once:
 
-This document is intended as a reference-first replacement for the old XML readme.
+- **Comments are lost.** The writer builds a new document; nothing in the file survives that the
+  reader did not turn into model state.
+- **Unknown elements and attributes are lost**, because they were never read (see §2).
+- **`numPlanets` / `numGasGiants` are written back as `0`.** Random planets are generated once, at
+  first load, and become ordinary `<planet>` entries. They are not regenerated on later loads.
+- **A companion star loses its `name`.** The writer does not emit `name` for a nested `<star>`; it is
+  regenerated as `<primary name>-<n>`.
+
+So: edit the **template**, not the live copy, and keep the template under version control.
 
 ---
 
-## 2. Basic File Structure
+## 2. Parsing rules that apply everywhere
 
-### Root structure
+- **The root element must be `<galaxy>`.** No root, or unparseable XML → the world fails to load with
+  a crash report naming the file. That is deliberate: a silently half-loaded catalogue is worse.
+- **Anything unrecognised is ignored silently.** A misspelled element or attribute produces no
+  warning at all. Check your spelling; the game will not.
+- **A malformed `<planet>` is skipped, not fatal.** The rest of the catalogue loads and the reason is
+  printed to the log. The guard sits at the top-level planet, so a malformed MOON takes its parent
+  planet and that planet's other moons down with it — not the whole file.
+- **A malformed number inside a recognised element is warned about and the field keeps its default**,
+  unless stated otherwise below.
+- **Booleans are `true` / `false`**, case-insensitive. Anything else reads as `false`.
+- **Element ORDER never matters.** Attribute order never matters.
+- **Colours** accept either three comma-separated floats in `0..1` (`0.5,0.5,1.0`) or one
+  `0x`-prefixed hex triple (`0xRRGGBB`). Anything else warns and keeps the default.
 
-The root element is:
+---
+
+## 3. Units — read this before anything else
+
+| quantity | unit | notes |
+|---|---|---|
+| **orbital distance** | `100` = 1 AU | Same unit for a planet round its star and for a companion star round its primary. |
+| **orbital angle** | DEGREES | `orbitalTheta` on a planet and on a companion alike. |
+| **orbital inclination** | DEGREES | `orbitalPhi`. Tilts the orbit; it does not enlarge it. |
+| **star temperature** | `100` = Sol | Multiply by 58 for Kelvin. |
+| **star size** | solar radii | `1.0` = Sol. |
+| **planet mass** | Earth masses | |
+| **planet radius** | Earth radii | |
+| **surface gravity** | percent of Earth's | `100` = 1 g. Clamped to `0..400`. |
+| **atmosphere density** | `100` = 1 atm | Clamped to `0..1600`. |
+| **planet temperature** | KELVIN | Computed, not authored — see `avgTemperature` in §7. |
+| **rotational period** | ticks | `24000` = one Minecraft day. Must be `> 0`. |
+| **star map position** | arbitrary map units | `x` / `y` on `<star>`; affects the star-selector GUI only. |
+| **galactic anchor** | cell indices | `"sectorX,sectorY,sectorZ"`, GALAXY-LOCAL (see §5). One cell is 32 000 000 blocks. |
+
+**The chart scale.** One orbital-distance unit is **5 983 914 blocks**, i.e. one AU is
+149 597 870 700 m at 250 m per block. This is the one law that turns an orbit into a place, and it is
+the same for authored and procedural systems. Every derived number — insolation, equilibrium
+temperature, orbital period, flight time — comes from the orbital distance, so a body's stated
+distance and where a ship actually finds it are the same statement.
+
+---
+
+## 4. Document structure
 
 ```xml
 <galaxy>
-```
+  <galaxyGen …>            <!-- 0..1 — procedural galaxy; omit for an authored-only universe -->
+    <starType …/>          <!-- 0..n — replaces the built-in star archetypes when present -->
+    <galaxyType …/>        <!-- 0..n — replaces the built-in galaxy archetypes when present -->
+  </galaxyGen>
 
-A galaxy contains one or more `<star>` entries.
+  <planetType …>…</planetType>   <!-- 0..n — replaces the built-in type table when present -->
 
-A `<star>` can contain:
-- one or more `<planet>` entries
-- one or more nested `<star>` entries (sub-stars / multi-star systems)
-
-A `<planet>` can contain:
-- property tags such as `<atmosphereDensity>`, `<skyColor>`, etc.
-- nested `<planet>` entries, which are treated as moons / child bodies
-
-### 2.1 Basic examples
-
-```xml
-<galaxy>
-    <star name="Sol" temp="100" x="0" y="0" numPlanets="0" numGasGiants="0">
-        <planet name="Earth">
-        ...
-        </planet>
-    </star>
+  <star …>                 <!-- 0..n — one per authored system -->
+    <star …/>              <!-- 0..n — companions, nestable -->
+    <planet …>             <!-- 0..n -->
+      <planet …>…</planet> <!-- 0..n — moons -->
+    </planet>
+  </star>
 </galaxy>
 ```
-```xml
-<galaxy>
-    <star name="Sol" temp="100" x="0" y="0" numPlanets="0" numGasGiants="0">
-        <planet name="Earth">
-        ...
-        </planet>
-    </star>
-</galaxy>
-```
+
+Only `<star>`, `<galaxyGen>` and `<planetType>` are recognised directly under `<galaxy>`.
 
 ---
 
-## 3. Rules and Conventions
+## 5. `<galaxyGen>` — the procedural galaxy
 
-### 3.1 Nesting rules
+Present → procedural systems exist alongside the authored ones. Absent → the universe holds only what
+this file names.
 
-- A `<planet>` inside a `<star>` defines a planet orbiting that star.
-- A `<planet>` inside another `<planet>` defines a moon / child body.
-- A `<star>` inside another `<star>` defines a sub-star.
+| attribute | unit | default | meaning |
+|---|---|---|---|
+| `density` | 0..1 | `0.35` | Chance that a given cube of space holds a system **in a sun-like part of a galaxy's disc** — the profile is normalised there, so this number describes the sky you actually stand under. Nearer the centre it rises (and saturates); further out and off the plane it falls; outside every galaxy it is zero. Clamped; `NaN` reads as `0`. |
+| `minSpacing` | cells | `40018890` | Edge of the cube that holds **at most one** system, i.e. how far apart stars stand. The default is 4.23 light years. Floors at 1. |
+| `galaxySpacing` | cells | `709554785444` | Edge of the cube that holds **at most one galaxy**. The default is 75 000 light years — twenty-five galaxy diameters. Floors at 1. |
+| `galaxyDensity` | 0..1 | `0.5` | Fraction of those cubes that actually hold a galaxy. The rest is intergalactic void. Clamped; `NaN` reads as `0`. |
 
-### 3.2 Parser behavior
+### Where the stars are: galaxies, not a fog
 
-The loader is tolerant in some places and strict in others.
+Space is laid out twice over, by the same scheme at two scales. `galaxySpacing`-cubes hold **at most
+one galaxy each**, and a galaxy is a real object: a centre, a type, a radius, an orientation, a
+central bulge and — if its type has them — spiral arms. Inside it, `minSpacing`-cubes hold at most
+one system each, and whether a given cube holds one is `density` **scaled by the galaxy's own profile
+at that point**. So the star field thins outwards, thins away from the disc's plane, and stops at the
+galaxy's edge.
 
-Examples:
-- Some numeric fields are clamped
-- Some invalid values are ignored with warnings
-- Some fields use direct `Integer.parseInt(...)` without a `try/catch`; malformed values there may break loading
+A galaxy's **type decides its size**, never the other way round: dwarf spheroidals and dwarf
+irregulars outnumber spirals and ellipticals by roughly two orders, so finding a spiral is an event.
+The archetype table is `<galaxyType>` below.
 
-### 3.3 Scope of this document
+**Clusters, one level down.** Inside a star cluster the lattice is finer by an integer factor, so a
+cluster really is denser than the field around it rather than merely looking that way. Every galaxy
+also has a nucleus at its own centre — the richest cluster of all, and not a special case. A
+consequence worth knowing: **the 10 000 AU separation floor is a property of the lattice level, not a
+global constant.** Inside a cluster stars stand closer than a wide binary, and a system there keeps
+fewer outer bodies, by the same rule that applies everywhere else.
 
-This document intentionally excludes fields that are only exported/written but not meaningfully loaded from XML.
+**Nebulae come with the clusters, not separately.** A molecular cloud, the young cluster condensing
+out of it and the ancient cluster that has blown it away are one object at three ages — so a cloud is
+derived from its cluster and how much gas that cluster's age has left, and its look (dark, emitting,
+reflecting) is that same sequence rather than three separate options. A cloud with no stars in it yet
+is a cluster type that refines nothing. Ancient globulars correctly have no cloud at all.
 
-Example:
-- `avgTemperature` is written by XML export code, but it is not a meaningful author-controlled XML input because temperature is recomputed after load
+A nebula is **diffuse matter, not a body**: it has no cell name, it is not a destination, and it may
+freely overlap whatever it lies across — the same rule as a system's comet cloud, where attribution
+reads names rather than matter. **It has no effect on anything yet**: what a cloud does to a ship that
+flies into it is a separate decision and none of its numbers has been settled.
 
----
+### Where authored content goes — `galaxy` and `galacticCoord`
 
-## 4. Star Reference
+A `<star>`'s `galacticCoord` is **galaxy-local**: an offset in cells from the DECLARATION ORIGIN of the
+galaxy named by its `galaxy` attribute.
 
-### 4.1 `<star>` overview
+| attribute | default | meaning |
+|---|---|---|
+| `galaxy` | `home` | `home`, or a lattice index `"gx,gy,gz"`. **Naming a galaxy forces that cell to hold one**, on every seed. |
+| `galacticCoord` | *(absent → a deterministic fallback cell)* | `"sx,sy,sz"` — the offset from that galaxy's declaration origin. |
 
-Defines a star system entry.
+For `home` the declaration origin is the **universe origin**, so a coordinate written before galaxies
+existed means exactly what it always did. For any other galaxy it is that galaxy's centre.
 
-A top-level `<star>` may contain:
-- planets
-- sub-stars
+**The home galaxy always exists, and the origin sits out in its disc.** A galaxy fills about three
+thousandths of a percent of its own lattice cell, so an absolute declaration would land in
+intergalactic space with probability 99.997 %. The home galaxy is therefore seated *around* the origin
+— not *on* it, because a galaxy's centre is its nucleus and that is the last address a shipped solar
+system should have. The origin lands at a sun-like galactic radius, in the plane.
 
-A nested `<star>` is treated as a sub-star.
+**Anything within about 400 light years of the origin is valid on every seed.** That is what the
+guaranteed minimum radius leaves once the origin has been moved off centre. Beyond it your system is
+inside its galaxy on some seeds and in the void on others; you get a loud error in the log naming the
+star, never a silent clamp.
 
-### 4.2 `<star>` attributes
+### `<galaxyType>` — the galaxy archetype table
 
-#### `name`
-Display name of the star.
+Zero `<galaxyType>` children → the built-in table stands. One or more → they **replace** it entirely.
+Every attribute defaults to the stock spiral's value, so changing only how flat a disc is takes one
+attribute.
 
-```xml
-<star name="Sol" ...>
-```
+| attribute | unit | default | meaning |
+|---|---|---|---|
+| `name` | text | `Galaxy` | Shown in a galaxy's designation. |
+| `profile` | `DISC` / `SPHEROID` | `DISC` | The shape stars are distributed in. A `SPHEROID` has no plane, so no arms. |
+| `minRadius` / `maxRadius` | light years | `900` / `2200` | Radius band. A galaxy's radius is drawn INSIDE ITS TYPE'S band — size and type are one fact, not two. |
+| `thickness` | fraction of the radius | `0.02` | Scale height: how flat it is. `0.02` is a real thin disc (a 30-light-year scale height at the stock radius); raise it to make leaving the disc a manoeuvre rather than a step. On a `SPHEROID` it is the flattening of the pole. |
+| `arms` | count | `2` | Spiral arms, or `0` for a type that has none. |
+| `rotationSpeed` | km/s | `220` | The rotation curve's asymptotic speed. |
+| `coreFraction` | fraction of the radius | `0.08` | Where the rotation curve turns over. Near `1` the galaxy turns almost as a solid body; near `0` its curve is flat almost everywhere and it shears strongly. |
+| `weight` | relative | `1` | Draw weight. |
 
-#### `temp`
-Star temperature integer.
+The stock table is roughly the real abundance ordering — dwarf spheroidals and dwarf irregulars
+outnumber spirals and ellipticals by about two orders — so a spiral is something you find.
 
-```xml
-<star temp="100" ...>
-```
+### `<starType>` — the archetype table
 
-Notes:
-- Parsed as an integer
-- If malformed, the loader falls back to `100` for sub-star parsing
+Zero `<starType>` children → the built-in table stands. One or more → they **replace** it entirely.
 
-#### `x`
-Galaxy map X position.
+| attribute | unit | default | meaning |
+|---|---|---|---|
+| `temp` | `100` = Sol | `100` | Temperature, and therefore colour. |
+| `minSize` / `maxSize` | solar radii | `0.8` / `1.2` | Size range. `minSize` floors at `0.1`; `maxSize` is raised to `minSize` if smaller. |
+| `weight` | relative | `1` | Draw weight. Floors at `1`. Weights are summed in 64-bit, so extreme values do not collapse the distribution. |
 
-```xml
-<star x="0" ...>
-```
+### What `minSpacing` does and does not do
 
-#### `y`
-Galaxy map Y position.
+**It moves the STARS apart and nothing else.** It does not decide how large a system is: a system's
+extent follows its outermost orbit. Raising it does not inflate a single planet's orbit; lowering it
+does not squash one.
 
-```xml
-<star y="0" ...>
-```
+What it does bound is **how much room a system has**. Every system is guaranteed a clear space of
+**10 000 AU** around its star — no two stars ever stand closer than that — and its named bodies
+(planets, moons, belts) stay inside **5 000 AU**, half of that clear space, which is what keeps two
+systems' neighbourhoods from overlapping.
 
-Notes:
-- Internally this is used as the star's Z/map Y position
+**A system that does not fit loses BODIES, never scale.** A world drawn past its system's room is
+dropped; the worlds that remain stand exactly where their own orbits say. This is not a corner
+anybody meets at the shipped numbers: the widest zone any built-in star archetype can draw is 569 AU
+against 5 000 AU of room, a factor of nearly nine. It becomes reachable only if `minSpacing` is cut by
+more than two orders of magnitude — below roughly 170 000 cells systems start losing outer worlds,
+and below about 8 cells only the star survives.
 
-#### `size`
-Star size multiplier.
+### Changing a `<galaxyGen>` parameter mid-save is a PROCEDURE, not an edit
 
-```xml
-<star size="1.0" ...>
-```
+`density`, `minSpacing`, `galaxySpacing` and `galaxyDensity` are inputs to a **derived** universe:
+nothing about a procedural system is stored, so changing any of them relocates every star, every
+planet and every generated name that nobody has looked at yet.
 
-Notes:
-- Parsed as float
+**The world refuses to open under a changed configuration.** The save carries a fingerprint of the
+`<galaxyGen>` it was generated under; on a mismatch the load stops and names both fingerprints,
+rather than quietly handing the players a different sky. So the failure mode is a server that will
+not start, never a route that silently stops leading anywhere.
 
-#### `numPlanets`
-Maximum number of randomly generated planets for the star.
+**There is a way through, and it keeps what has been explored.** In order:
 
-```xml
-<star numPlanets="6" ...>
-```
+1. Restore the previous `<galaxyGen>` and start the world (§1: in an existing world a template edit
+   reaches the live copy only through `resetPlanetsFromXML`, which resets itself after one load
+   unless `ResetOnlyOnce` is `false`).
+2. Run `/stellurgy universe upgrade confirm`. Every system anybody has already seen is frozen where
+   it stands, including the addresses on the memory crystals of players who are **online at that
+   moment**.
+3. Stop the server, install the new configuration, and start again. The stamp is accepted once, and
+   only if the configuration actually moved.
 
-#### `numGasGiants`
-Maximum number of randomly generated gas giants for the star.
+The result is a seam at the frontier of the explored: charted space keeps exactly what it held,
+unexplored space is re-derived under the new parameters.
 
-```xml
-<star numGasGiants="1" ...>
-```
+**What the procedure cannot reach.** A crystal in a chest, in an unloaded chunk, or in the inventory
+of an offline player is not readable at step 2, so the addresses on it are not frozen. After the
+upgrade such an address still resolves — it is a lattice coordinate — but it names whatever the new
+universe puts in that cell, which is usually not what the player wrote down. Bring the crystals that
+matter to somebody online before running it.
 
-Notes:
-- These values apply to random planet generation for the star
-- Manually defined `<planet>` entries can still be added regardless
-- For a fully manual system with no extra random planets, use `numPlanets="0"` and `numGasGiants="0"`
-
-#### `blackHole`
-Marks the star as a black hole.
-
-```xml
-<star blackHole="true" ...>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-#### `diskAngle`
-Black hole disk angle / star disk angle.
-
-```xml
-<star diskAngle="45.0" ...>
-```
-
-Notes:
-- Parsed as float
-
-#### `separation`
-Only meaningful on nested `<star>` entries.
-
-```xml
-<star name="Companion" separation="20.0" ... />
-```
-
-Notes:
-- Parsed as float
-- Used for sub-star separation in multi-star systems
-
-### 4.3 Star examples
-
-#### Single star
-
-```xml
-<star name="Sol" temp="100" x="0" y="0" numPlanets="0" numGasGiants="0">
-    ...
-</star>
-```
-
-#### Binary star
-
-```xml
-<star name="Alpha" temp="120" x="0" y="0" numPlanets="0" numGasGiants="0">
-    <star name="Beta" temp="90" size="0.8" separation="30" />
-    ...
-</star>
-```
-
-#### Black hole
-
-```xml
-<star name="Cygnus X" temp="100" x="200" y="-100" blackHole="true" diskAngle="35">
-    ...
-</star>
-```
+**Starting a new world is still the simpler answer** if nothing has been explored yet.
 
 ---
 
-## 5 Planet Reference
+## 6. `<planetType>` — the type table for procedural worlds
 
-### 5.1 `<planet>` overview
-
-Defines a planet or moon.
-
-- A `<planet>` directly inside a `<star>` is a planet.
-- A `<planet>` inside another `<planet>` is a moon / child body.
-- A `<planet>` could also be defined as `<GasGiant>`
-  - GasGiants:
-    - Has no surface to land on
-    - Intended for Gas Collection or cosmetics
-
-### 5.2 `<planet>` attributes
-
-#### `name`
-Planet name.
+Present → **replaces** the built-in preset table wholesale. Absent → the built-in table stands.
+Types are what a procedurally derived world is classified as, after its physics is computed; they are
+never applied to an authored `<planet>`.
 
 ```xml
-<planet name="Earth">
+<planetType name="ice" weight="20" allowsOxygen="false">
+  <pressure    min="0"  max="80"/>
+  <temperature min="0"  max="175"/>
+  <gravity     min="10" max="140"/>
+  <terrain>
+    <gen source="MOD_WORLDTYPE" worldType="RTG"       options="" weight="3"/>
+    <gen source="NATIVE"        genType="0"                      weight="2"/>
+    <gen source="TEMPLATE"      path="frozen_ruins"              weight="1"/>
+  </terrain>
+  <biomeIds>advancedrocketry:moondark;10,minecraft:ice_flats;30</biomeIds>
+  <seaLevel>0</seaLevel>
+  <oceanBlock>minecraft:water</oceanBlock>
+  <oreGen>…</oreGen>
+</planetType>
 ```
 
-#### `DIMID`
-Explicit dimension ID.
+| attribute on `<planetType>` | default | meaning |
+|---|---|---|
+| `name` | `""` | Identifier, shown in scans. |
+| `weight` | `10` | Draw weight among the types that ADMIT a given world. |
+| `gasGiant` | `false` | This type has no surface. |
+| `allowsOxygen` | `false` | Worlds of this type may roll breathable air. Only ~18 % of those that may, do. |
+| `tidallyLockable` | `true` | Worlds of this type can keep one face to their star. |
 
-```xml
-<planet name="Earth" DIMID="99">
-```
-Note:
-- Case sensitive, canonical "DIMID"
-#### `dimMapping`
-Makes a planet out of a non-native dimension.
+| child | attributes | default range | meaning |
+|---|---|---|---|
+| `<pressure>` | `min`, `max` | `0..1600` | Atmosphere density band this type admits. |
+| `<temperature>` | `min`, `max` | `0..5000` | Kelvin band. |
+| `<gravity>` | `min`, `max` | `0..400` | Percent-of-Earth band. |
+| `<terrain>` | — | — | Container for `<gen>` options; one is drawn by weight. |
+| `<biomeIds>` | — | — | Biome palette, same format as a planet's (§7). |
+| `<seaLevel>` | — | unset | Sea level for worlds of this type. |
+| `<oceanBlock>` | — | unset | Registry name of the liquid. |
+| `<oreGen>` | — | — | Ore table, same format as a planet's (§8). |
 
-```xml
-<planet name="Twilight" DIMID="7" dimMapping="">
-```
-The presence of the attribute is what matters.
+A world must satisfy **all three** ranges to be admitted by a type. Every attribute has a default, so
+`<planetType name="x"/>` is valid and matches nearly everything — which makes it a very greedy entry.
 
-Notes:
-- This should be paired with a correct `DIMID`
-- AR will not enforce weather non-native dimension (2.2.3+)
-- As with note above not all entries might apply to other mods dimensions.
+### `<gen>` — one terrain option
 
-#### 5.3 `customIcon`
-Planet icon basename.
+| attribute | applies to | meaning |
+|---|---|---|
+| `source` | all | `NATIVE`, `MOD_WORLDTYPE` or `TEMPLATE`. Unknown names fall back to `NATIVE`. |
+| `worldType` | `MOD_WORLDTYPE` | The world-type name another mod registered. |
+| `path` | `TEMPLATE` | Template identifier. |
+| `genType` | `NATIVE` | Built-in generator variant. |
+| `options` | `MOD_WORLDTYPE` | Generator settings string, passed through verbatim — **not trimmed**, because whitespace can be significant to the receiving generator. |
+| `weight` | all | Draw weight among this type's options. Default `1`. |
 
-```xml
-<planet name="Oceanus" customIcon="waterworld">
-```
+**A `MOD_WORLDTYPE` option whose mod is not installed is dropped BEFORE the draw**, and its weight is
+redistributed among the remaining options. A type all of whose options are unavailable falls back to
+`NATIVE`. This is why a type should always carry at least one `NATIVE` option.
 
+---
 
-## Built-in `customIcon` values
+## 7. `<star>` and `<planet>`
+
+### `<star>` attributes
+
+| attribute | unit | required | meaning |
+|---|---|---|---|
+| `name` | — | no | Display name. |
+| `temp` | `100` = Sol | no (default `100`) | Temperature; drives colour and luminosity. A malformed value warns and falls back to `100`. |
+| `size` | solar radii | no (default `1.0`) | Radius. |
+| `x`, `y` | map units | no | Position on the star-selector map. `y` is the map's Z. |
+| `galacticCoord` | `"sx,sy,sz"` | no | Explicit anchor, GALAXY-LOCAL — an offset from the declaration origin of the galaxy in `galaxy` (see §5). Malformed → warns and uses the origin. Absent → a deterministic fallback cell is assigned. |
+| `galaxy` | `home` or `"gx,gy,gz"` | no | Which galaxy `galacticCoord` is measured from. Default `home`, whose declaration origin IS the universe origin. Naming any other forces that lattice cell to hold a galaxy. |
+| `numPlanets` | count | **yes** | How many random planets to generate for this star at FIRST load. Missing → warning and none. |
+| `numGasGiants` | count | **yes** | The same for gas giants. |
+| `blackHole` | boolean | no | This star is a black hole: a quarter of the light its size and temperature would otherwise give. |
+| `diskAngle` | degrees | no (default `70`) | Accretion-disc tilt, render only. |
+
+`numPlanets` / `numGasGiants` fire **once**, at the first load of a world. They are written back as
+`0`, so the generated planets become ordinary entries and are not regenerated. Hand-written
+`<planet>` children are additional to them, not instead of them.
+
+### A nested `<star>` is a COMPANION
+
+| attribute | unit | default | meaning |
+|---|---|---|---|
+| `name` | — | `<primary>-<n>` | Display name. **Not written back** on save. |
+| `temp` | `100` = Sol | `100` | |
+| `size` | solar radii | `1.0` | |
+| `orbitalDistance` | `100` = 1 AU | `5` (0.05 AU) | How far this star orbits its primary. |
+| `orbitalTheta` | degrees | spread automatically | Its angle on that orbit. Companions with no stated angle are spread apart rather than stacked. |
+| `blackHole`, `diskAngle` | — | — | As above. |
+
+Companions nest: a companion may itself carry companions, and the geometry composes. Consequences
+that are easy to miss:
+
+- **A companion is a star with its own identity.** It gets its own star id, so a `<planet>` can be
+  bound to it and a world can orbit the companion rather than the primary.
+- **Every star of a system lights every world in it.** Illumination is the sum of the flux each star
+  delivers at its own distance, so a close pair nearly doubles a world's light and a companion 20 AU
+  out adds only a little. This feeds temperature, solar panels and every derived climate number.
+- **A companion's apparent place in the sky follows from its distance**, not from a fixed tilt: a
+  close pair reads as two suns almost together, a wide one puts its companion elsewhere in the sky.
+- `orbitalDistance` on a companion is the SAME unit as on a planet. It used to be an angle called
+  `separation`; that attribute no longer exists and is ignored if present.
+
+### `<planet>` attributes
+
+| attribute | meaning |
+|---|---|
+| `name` | Display name. |
+| `DIMID` | Explicit dimension id. Absent → the next free id is assigned. Malformed → **the whole planet is skipped**. |
+| `dimMapping` | Presence alone (any value, including empty) marks this as a dimension another mod owns; Advanced Rocketry decorates it instead of creating it. |
+| `customIcon` | Basename of the planet-selector texture. See the catalogue below. |
+
+### Built-in `customIcon` values
 
 Built-in planet icon basenames:
 
 `src/main/resources/assets/advancedrocketry/textures/planets/`
 
-### Standard icons
+#### Standard icons
 
 <table>
   <tr>
@@ -358,7 +443,7 @@ Built-in planet icon basenames:
   </tr>
 </table>
 
-### Additional normal-only textures
+#### Additional normal-only textures
 
 <table>
   <tr>
@@ -381,11 +466,11 @@ Built-in planet icon basenames:
   </tr>
 </table>
 
-### Special case
+#### Special case
 
 - `customIcon="void"` is handled specially in the system map and renders the body at size `0`.
 
-### 5.3.1 Adding your own `customIcon`
+#### Adding your own `customIcon`
 
 Resource pack should provide:
 
@@ -404,1218 +489,301 @@ Notes:
 - The value is lowercased during lookup
 - Custom icons are loaded as `<name>.png` for the normal planet texture and `<name>leo.jpg` for the LEO/orbit texture.
 - The LEO texture is used for orbit views
-- Built-in examples can be found in the mod resources under:
-  https://github.com/kaduvill/AdvancedRocketry/tree/1.12/src/main/resources/assets/advancedrocketry/textures/planets
+- Every built-in texture lives in this repository under
+  [`src/main/resources/assets/advancedrocketry/textures/planets/`](../src/main/resources/assets/advancedrocketry/textures/planets/).
 
+A `<planet>` nested inside a `<planet>` is a **moon** of it. Moons nest arbitrarily deep. A moon's
+`orbitalDistance` is measured from its PARENT, not from the star.
 
----
+### `<planet>` child elements
 
-## 6. Planet Property Tags
+Physical:
 
-### 6.1 Visual and sky settings
+| element | unit | notes |
+|---|---|---|
+| `orbitalDistance` | `100` = 1 AU | Clamped to `1 .. Integer.MAX_VALUE`. |
+| `orbitalTheta` | degrees | Angle at time zero. Fractional degrees are kept. |
+| `orbitalPhi` | degrees | Inclination. Taken modulo 360. |
+| `retrograde` | boolean | Orbits the other way. |
+| `rotationalPeriod` | ticks | Must be `> 0`; a non-positive value warns and is ignored. |
+| `tidallyLocked` | boolean | Keeps one face to its star; overrides `rotationalPeriod` in effect. |
+| `mass` | Earth masses | See the precedence rule below. |
+| `radius` | Earth radii | See the precedence rule below. |
+| `gravitationalMultiplier` | percent of Earth | Clamped to `0..400`. See below. |
+| `atmosphereDensity` | `100` = 1 atm | Clamped to `0..1600`. |
+| `hasOxygen` | boolean | Default `true`. Only `false` is written back. |
+| `metallicity` | relative to Sol | Feeds ore richness. `1.0` is not written back. |
+| `avgTemperature` | Kelvin | **Written, never read.** The temperature is recomputed at load from the star, the orbital distance and the atmosphere. Editing it does nothing. |
 
-#### `<fogColor>`
-Planet fog color.
+Appearance:
 
-Accepted formats:
-- comma-separated floats: `r,g,b`
-- hex prefixed with `0x`
+| element | notes |
+|---|---|
+| `fogColor`, `skyColor`, `ringColor` | Colour, see §2. |
+| `hasRings` | boolean. |
+| `ringAngle` | degrees. |
+| `hasShading` | boolean; whether the world is decorated with shading. |
+| `hasColorOverride` | boolean. |
+| `skyRenderOverride` | boolean. |
+| `customIcon` | attribute, not element — see above. |
 
-Examples:
+World generation:
 
-```xml
-<fogColor>0.5,0.2,1</fogColor>
-or
-<fogColor>0x87FFFF</fogColor>
-```
+| element | notes |
+|---|---|
+| `genType` | Built-in generator variant. Only written when non-zero. |
+| `terrainSource` | `NATIVE`, `MOD_WORLDTYPE` or `TEMPLATE`. Unknown → `NATIVE`. Only written when not `NATIVE`. |
+| `terrainWorldType` | Name of another mod's world type. |
+| `terrainTemplate` | Template identifier. |
+| `terrainGeneratorOptions` | Passed through verbatim, **not trimmed**. |
+| `seaLevel` | Block height. |
+| `orbitHeight` | Block height at which a rocket leaves this world. Only written when overridden. |
+| `oceanBlock` | Registry name. An unknown block warns and yields air. |
+| `fillerBlock` | `mod:block` or `mod:block:meta`. Fewer than two parts warns and is ignored. |
+| `forceRiverGeneration` | boolean. |
+| `biomeIds` | See the format below. |
+| `craterBiomeWeights` | See the format below. |
+| `generateCraters`, `generateCaves`, `generateVolcanos`, `generateStructures`, `generateGeodes` | boolean. An empty value leaves the default. **Each is also a global config switch, and the global `false` wins.** |
+| `craterFrequencyMultiplier`, `volcanoFrequencyMultiplier`, `geodeFrequencyMultiplier` | float. Only written when not `1` and when the matching feature is enabled. |
+| `oreGen` | See §8. |
+| `laserDrillOres` | See the format below. **Ignored entirely on a gas giant.** |
+| `geodeOres`, `craterOres` | Comma-separated ore-dictionary names. Unknown names are dropped silently. |
 
-Notes:
-- RGB float components are expected in the range `0` to `1`
-- Hex is parsed as an integer after removing the `0x` prefix
+Content and progression:
 
-#### `<skyColor>`
-Planet sky color.
+| element | notes |
+|---|---|
+| `GasGiant` | boolean, spelled with capitals. A gas giant has **no surface**: it cannot be landed on and is not offered as a descent target. |
+| `gas` | Fluid name; a harvestable gas. Repeatable. Read on any planet but written back only for a gas giant, so a `<gas>` on a rocky world is lost at the first save. Unknown fluid warns and is skipped. |
+| `isKnown` | boolean. **Writes into a GLOBAL list**, not into the planet: it marks this dimension as known to every player from the start. |
+| `artifact` | An item stack required to unlock travel here. Repeatable. |
+| `spawnable` | An entity that spawns here. See below. |
 
-Accepted formats:
-- comma-separated floats: `r,g,b`
-- hex prefixed with `0x`
+Weather:
 
-Examples:
+| element | unit | notes |
+|---|---|---|
+| `rainStartLength`, `rainProlongationLength` | ticks | A malformed value throws and skips the whole planet — these are the only numeric fields without a `try`. |
+| `thunderStartLength`, `thunderProlongationLength` | ticks | Same. |
+| `rainMarker`, `thunderMarker` | ticks | Same. |
+| `acidicRain` | boolean | Rain damages an unprotected player. |
 
-```xml
-<skyColor>0.3,0.6,1</skyColor>
-or
-<skyColor>0x4C99FF</skyColor>
-```
-
-#### `<hasColorOverride>`
-Controls color override behavior for sky/fog rendering.
-
-```xml
-<hasColorOverride>true</hasColorOverride>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- Used by world provider sky/fog color calculation
-
-#### `<skyRenderOverride>`
-Overrides AR's custom sky renderer for that world.
-
-```xml
-<skyRenderOverride>true</skyRenderOverride>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- This tag only disables AR's custom planet sky for this planet
-- Also affected by the global client config option `planetSkyOverride`
-  - If `planetSkyOverride=false` in the config, AR's custom planet sky is already disabled globally and this tag has no additional effect
-
-#### `<hasShading>`
-Controls planet decoration rendering override.
-
-```xml
-<hasShading>false</hasShading>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- Overrides whether decorators such as shadows / atmosphere-style planet rendering details should be shown
-
-### 6.2 Atmosphere, gravity, orbit, and rotation
-
-#### `<atmosphereDensity>`
-
-Atmosphere density / pressure value.
-
-Example:
-
-    <atmosphereDensity>100</atmosphereDensity>
-
-Meaning:
-- `100` is Earthlike.
-- Clamped to `[0 - 1600]`
-- Atmosphere pressure category is selected with strict `>` thresholds:
-  - `0–25`: no atmosphere / vacuum
-  - `26–75`: low atmosphere / low oxygen pressure
-  - `76–200`: normal pressure (Breathable)
-  - `201–800`: high pressure
-  - `801–1600`: super-high pressure
-- Temperature can still override the result into hot or superheated atmosphere types.
-
-Notes:
-- World provider uses atmosphere density for rain/snow/ice behavior and cloud rendering.
-
-#### `<hasOxygen>`
-
-Used to disable `breathable` for normal pressure planets
-
-Example:
-
-    <hasOxygen>true</hasOxygen>
-
-Accepted values:
-- `true`
-- `false`
-
-Default:
-- `true` if omitted.
-
-Meaning:
-- This tag is mainly useful for disabling oxygen on breathable planets.
-- If the planet has no atmosphere, this tag has no practical breathing effect.
-
-#### `<gravitationalMultiplier>`
-Gravity value, using `100 = Earthlike`.
+### `<spawnable>` — mob spawns
 
 ```xml
-<gravitationalMultiplier>100</gravitationalMultiplier>
+<spawnable weight="10" groupMin="2" groupMax="4" nbt="{Health:20}">minecraft:zombie</spawnable>
 ```
 
-Meaning:
-- `100` = `1.0`
-- `50` = `0.5`
-- `150` = `1.5`
+The text content is a registry name (`minecraft:zombie`) or, failing that, a fully-qualified entity
+class name. Neither resolving → a warning, and the entry is skipped.
 
-Loader clamp:
-- Min XML value: `0`
-- Max XML value: `400`
+| attribute | default | notes |
+|---|---|---|
+| `weight` | `100` | Spawn weight. Floors at 1. |
+| `groupMin` | `1` | Floors at 1. |
+| `groupMax` | `1` | Floors at 1; raised to `groupMin` if smaller. |
+| `nbt` | — | JSON NBT applied to the spawned entity. Invalid JSON or NBT logs a loud configuration error and the entity spawns without it. |
 
-Internal conversion:
-- Stored as `value / 100f`
+### Biome list formats
 
-Notes:
-- World provider uses this value directly for planetary gravity queries
-
-#### `<orbitalDistance>`
-Distance from the parent body.
+`biomeIds` — comma-separated `biome` or `biome;weight`:
 
 ```xml
-<orbitalDistance>100</orbitalDistance>
+<biomeIds>minecraft:desert;40,advancedrocketry:moondark;10</biomeIds>
 ```
 
-Meaning:
-- For planets, this is distance from the star
-- For moons, this is distance from the parent planet
+- `biome` is a registry name (preferred) or a raw numeric id (legacy, and dependent on the installed
+  mod set).
+- `weight` defaults to `30`. A weight of `0` warns and reverts to `30`.
+- A malformed entry warns and is skipped; the rest of the list still applies.
+- **An empty or absent list is not an empty palette**: a planet with no biomes is given every biome
+  its climate admits.
 
-Loader clamp:
-- Min: `1`
-- Max: `2147483647`
+`craterBiomeWeights` — the same shape, but the weight is a crater frequency and defaults to `100`,
+and a missing `;weight` term warns. Numeric ids are **not** accepted here; only registry names.
 
-Notes:
-- For planets orbiting stars, this affects temperature
-- For moons, code uses parent-star distance for solar temperature
+### `laserDrillOres` format
 
-#### `<orbitalTheta>`
-Starting angular displacement in degrees.
+Comma-separated entries, each `oreName` or `oreName;count` or `itemName;count;meta`:
 
 ```xml
-<orbitalTheta>180</orbitalTheta>
+<laserDrillOres>oreIron;2,oreGold;1,minecraft:diamond;1;0</laserDrillOres>
 ```
 
-Notes:
-- Parsed as integer degrees
-- Converted internally to radians
-- The parser stores the value modulo `360`
-
-#### `<orbitalPhi>`
-Orbital plane angle in degrees.
-
-```xml
-<orbitalPhi>90</orbitalPhi>
-```
-
-Notes:
-- Parsed as integer
-- Stored modulo `360`
-
-#### `<retrograde>`
-Whether the body orbits in retrograde.
-
-```xml
-<retrograde>true</retrograde>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-#### `<rotationalPeriod>`
-Length of the day/night cycle in ticks.
-
-```xml
-<rotationalPeriod>24000</rotationalPeriod>
-```
-
-Meaning:
-- `24000` ticks = 20 minutes
-
-Loader rule:
-- Must be greater than `0`
-
-Notes:
-- Used by `WorldProviderPlanet.calculateCelestialAngle()`
-
-#### `<seaLevel>`
-Sea level value.
-
-```xml
-<seaLevel>63</seaLevel>
-```
-
-Notes:
-- Runtime setter clamps to `0..255`
-
-
-#### `<forceRiverGeneration>`
-Controls the `hasRivers` flag.
-
-```xml
-<forceRiverGeneration>true</forceRiverGeneration>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- This sets `properties.hasRivers`
-- The final `hasRivers()` runtime behavior may also depend on atmosphere and temperature if this is not explicitly forced
-
-### 7.3 Rings and gas giants
-
-#### `<hasRings>`
-Whether the body has rings.
-
-```xml
-<hasRings>true</hasRings>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-#### `<ringAngle>`
-Ring angle integer.
-
-```xml
-<ringAngle>70</ringAngle>
-```
-
-Notes:
-- XML loader uses direct `Integer.parseInt(...)` here
-- Use a valid integer
-
-#### `<ringColor>`
-Ring color.
-
-Accepted formats:
-- comma-separated floats: `r,g,b`
-- hex prefixed with `0x`
-
-```xml
-<ringColor>0.4,0.4,0.7</ringColor>
-```
-
-#### `<GasGiant>`
-Marks the body as a gas giant.
-
-```xml
-<GasGiant>true</GasGiant>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- Intended for use with gas giants and gas missions
-- Canonically saved/exported as `GasGiant`
-
-#### `<gas>`
-Adds a harvestable gas/fluid name.
-
-```xml
-<gas>hydrogen</gas>
-<gas>helium</gas>
-```
-
-Notes:
-- The value must resolve through the fluid registry
-- Intended for use with gas giants and gas missions
-
-### 6.4 Biomes
-
-#### `<biomeIds>`
-Biome list for the planet. Overrides the automatic biome-selection
-
-Accepted entry formats:
-- numeric biome ID
-- biome resource location
-- weighted biome entry using `biome;weight`
-
-Examples:
-
-```xml
-<biomeIds>0,12</biomeIds>
-<biomeIds>minecraft:plains,minecraft:forest</biomeIds>
-<biomeIds>minecraft:plains;30,biomesoplenty:alps;15</biomeIds>
-```
-
-Notes:
-- If a weight is omitted or `0`, default weight is `30`
-- Resource locations are preferred over old numeric IDs
-- If `<biomeIds>` is omitted, the planet falls back to automatic biome selection
-  - Automatic biome selection is affected by global biome-related config and biome lists, including logic such as blacklist handling and `maxBiomesPerPlanet`
-- If `<biomeIds>` is provided, the loader uses that explicit biome list instead of automatic biome selection
-
-#### `<craterBiomeWeights>`
-Controls which biomes can be used as crater origin biomes, and how likely craters are to generate in each biome.
-
-Accepted format:
-- Comma-separated entries
-- Each entry uses `biome;weight`
-- 
-
-Example:
-
-```xml
-<craterBiomeWeights>minecraft:desert;100,minecraft:mesa;60</craterBiomeWeights>
-```
-
-  Behavior:
-
-- If `<craterBiomeWeights>` is omitted or empty, craters may originate in any biome.
-- If present, only listed biomes are valid crater origin biomes.
-- The weight is a percentage-like chance from `0` to `100`.
-  - `100` = crater origins in this biome are always allowed when the generator attempts one.
-  - `50` = about half of crater origin attempts in this biome are allowed.
-  - `1` = very rare crater origin attempts in this biome.
-  - `0` = effectively disables crater origins in this biome.
-- The biome check is done at the crater origin chunk, not every block touched by the crater.
-  - Large craters may still extend into neighboring biomes.
-- If frequency is omitted, the loader warns and defaults that biome weight to `100`.
-- Invalid biome resource locations are ignored with a warning.
-
-Notes:
-
-- The loader expects biome resource locations such as `minecraft:desert` or `biomesoplenty:volcanic_island`.
-- This setting controls where craters may originate; it does not change crater shape, size, block palette, or crater ores.
-- Crater generation must still be enabled by both `<generateCraters>true</generateCraters>` and the global `generateCraters` config option.
-- Actual crater generation also depends on atmosphere conditions.
-
-### 6.5 Generation type and worldgen switches
-
-#### `<genType>`
-Generation type integer.
-
-```xml
-<genType>1</genType>
-```
-
-- `0` or omitted:
-    - normal planet generation
-- `1`:
-    - cave planet generation (based on vanilla nether)
-    
-- `2`:
-    - Asteroid-belt world
-
-#### `<generateCraters>`
-Enable/disable crater generation.
-
-```xml
-<generateCraters>true</generateCraters>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-
-Notes:
-- This flag is also gated by the global config option `generateCraters`
-  - If the global config is `false`, crater generation is disabled globally regardless of this XML value
-  - If the global config is `true`, this tag can still disable craters for an individual planet
-- Actual crater generation also depends on atmospheric conditions
-
-#### `<generateGeodes>`
-Enable/disable geode generation.
-
-```xml
-<generateGeodes>true</generateGeodes>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- This flag is also gated by the global config option `generateGeodes`
-  - If the global config is `false`, geode generation is disabled globally regardless of this XML value
-  - If the global config is `true`, this tag can still disable geodes for an individual planet
-
-#### `<generateVolcanos>`
-Enable/disable volcano generation.
-
-```xml
-<generateVolcanos>true</generateVolcanos>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- Canonical spelling is `generateVolcanos`
-- This flag is also gated by the global config option `generateVolcanos`
-  - If the global config is `false`, volcano generation is disabled globally regardless of this XML value
-  - If the global config is `true`, this tag can still disable volcanos for an individual planet
-
-#### `<generateStructures>`
-Enable/disable structure generation.
-
-```xml
-<generateStructures>true</generateStructures>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- This flag is also gated by the global config option `generateVanillaStructures`
-  - If the global config is `false`, vanilla/map-feature structures are disabled on all planets regardless of this XML value
-  - If the global config is `true`, this tag can still disable structures for an individual planet
-- Structure generation also requires the planet to be habitable/breathable
-#### `<generateCaves>`
-Enable/disable cave generation.
-
-```xml
-<generateCaves>true</generateCaves>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-#### `<craterFrequencyMultiplier>`
-Crater frequency multiplier.
-
-```xml
-<craterFrequencyMultiplier>1.5</craterFrequencyMultiplier>
-```
-
-Behavior:
-
-- `1.0` = default
-- `2.0` = double
-- `0.5` = half
-- Values are clamped to `0.01` - `10.0`
-
-#### `<volcanoFrequencyMultiplier>`
-Volcano frequency multiplier.
-
-```xml
-<volcanoFrequencyMultiplier>0.5</volcanoFrequencyMultiplier>
-```
-
-Behavior:
-
-- `1.0` = default
-- `2.0` = double
-- `0.5` = half
-- Values are clamped to `0.01` - `10.0`
-
-#### `<geodefrequencyMultiplier>`
-Geode frequency multiplier.
-
-```xml
-<geodefrequencyMultiplier>2.0</geodefrequencyMultiplier>
-```
-
-Behavior:
-
-- `1.0` = default
-- `2.0` = double
-- `0.5` = half
-- Values are clamped to `0.01` - `10.0`
-
-### 6.6 Blocks, ores, and loot
-
-#### `<oreGen>`
-Per-planet custom ore generation.
-
-Example:
-
-```xml
-<oreGen>
-  <ore block="minecraft:iron_ore" minHeight="1" maxHeight="64" clumpSize="8" chancePerChunk="20" />
-  <ore block="minecraft:gold_ore" minHeight="1" maxHeight="32" clumpSize="6" chancePerChunk="8" />
-</oreGen>
-```
-
-Important:
-- The loader reads ore data from `<ore>` attributes
-- Do not use nested child tags inside `<ore>`
-- Per-planet `<oreGen>` overrides the fallback ore mapping from `oreConfig.xml`
-
-Behavior:
-- A non-empty per-planet `<oreGen>` gives that planet custom AR ore properties
-  - `oreConfig.xml` is only used if the planet does not define its own `<oreGen>`
-- If a planet has ore properties from either per-planet `<oreGen>` or matching `oreConfig.xml`, AR denies these `OreGenEvent.GenerateMinable` types on that planet:
-  - `COAL`  - `DIAMOND`  - `EMERALD`  - `GOLD`  - `IRON`  - `LAPIS`  - `QUARTZ`  - `REDSTONE`  - `CUSTOM`
-- Because AR’s own config-driven ore generator (`Copper`, `Tin`, `Rutile`, `Aluminum`, `Iridium`, `Dilithium`) uses `CUSTOM`, those ores are also suppressed on such planets
-- In practice, this means per-planet ore properties replace AR’s normal config ore generation on that planet rather than adding to it
-- An empty `<oreGen>` does not count; at least one valid `<ore>` entry is required for this behavior
-- Mods that generate ores through other paths may still bypass this
-
-Precedence:
-- Per-planet `<oreGen>` in `planetDefs.xml` has highest priority
-- If `<oreGen>` is absent on that planet, AR falls back to matching entries from `oreConfig.xml`
-- If either of those supplies ore properties for the planet, AR’s normal config-driven ore generation is suppressed on that planet
-- If neither per-planet `<oreGen>` nor `oreConfig.xml` provides ore properties, AR falls back to its normal global config-driven ore generation
-- `<fillerblock>` also has a way of disabling normal oregen
-
-
-##### `block`
-Block registry name. Required.
-
-```xml
-block="minecraft:iron_ore"
-```
-
-##### `meta`
-Block metadata. Optional.
-
-```xml
-meta="0"
-```
-
-##### `minHeight`
-Minimum generation height. Required.
-
-```xml
-minHeight="1"
-```
-
-##### `maxHeight`
-Maximum generation height. Required.
-
-```xml
-maxHeight="64"
-```
-
-##### `clumpSize`
-Vein size. Required.
-
-```xml
-clumpSize="8"
-```
-
-##### `chancePerChunk`
-Attempts per chunk. Required.
-
-```xml
-chancePerChunk="20"
-```
-
-Notes:
-- Invalid ore entries are skipped with warnings
-- `block` must resolve through `Block.getBlockFromName(...)`
-
-#### `<fillerBlock>`
-Base terrain block override.
-
-Accepted formats:
-- `modid:block`
-- `modid:block:meta`
-
-Examples:
-
-```xml
-<fillerBlock>minecraft:stone</fillerBlock>
-or
-<fillerBlock>minecraft:stone:3</fillerBlock>
-```
-
-Notes:
-- Only one filler block is stored; if multiple are present, the last valid one wins
-- If omitted, terrain defaults to `minecraft:stone`
-- If set, the planet’s solid terrain mass uses this block instead of stone
-- Natural `minecraft:stone` variants preserve more normal biome-style behavior
-- Non-stone filler blocks can suppress normal biome/ore generation
-- `<fillerBlock>` does not disable AR custom ore generation from `<oreGen>`
-
-#### `<laserDrillOres>`
-Laser drill ore list.
-
-Accepted entry formats:
-- OreDictionary name, optionally with count
-- item registry name, optionally with count and damage
-
-Examples:
-
-```xml
-<laserDrillOres>oreIron;3,oreGold;1</laserDrillOres>
-or
-<laserDrillOres>minecraft:diamond;1;0,minecraft:redstone;8;0</laserDrillOres>
-```
-
-Rules:
-- Entries are comma-separated
-- Each entry uses semicolon-separated parts
-
-For OreDictionary entries:
-- `oreName`
-- `oreName;count`
-
-For item entries:
-- `modid:item`
-- `modid:item;count`
-- `modid:item;count;damage`
-
-Notes:
-- Invalid ore names or item ids are ignored with warnings
-- The raw string is preserved internally as `laserDrillOresRaw`
-- This is not tested vs JEI-integration
-
-#### `<geodeOres>`
-Geode ore whitelist.
-
-```xml
-<geodeOres>oreDiamond,oreEmerald</geodeOres>
-```
-
-Notes:
-- Comma-separated
-- Entries must exist in OreDictionary
-- Invalid names are filtered out
-
-#### `<craterOres>`
-Crater ore whitelist.
-
-```xml
-<craterOres>oreIron,oreGold</craterOres>
-```
-
-Notes:
-- Comma-separated
-- Entries must exist in OreDictionary
-- Invalid names are filtered out
-
-#### `<oceanBlock>`
-Ocean block override. (sea block)
-
-```xml
-<oceanBlock>minecraft:water</oceanBlock>
-```
-
-Notes:
-- Value is a block resource location
-- No metadata is supported here in the XML loader
-
-
-This setting is a full terrain base-material override, not a decorative or secondary filler
-#### `<artifact>`
-Required artifact entry.
-
-Accepted format:
-- `item_or_block meta count`
-
-Examples:
-
-```xml
-<artifact>minecraft:diamond 0 1</artifact>
-<artifact>minecraft:stone 3 16</artifact>
-```
-
-Notes:
-- The first token is resolved first as block, then as item
-- `meta` defaults to `0`
-- `count` defaults to `1`
-
-### 7.7 Spawn entries
-
-#### `<spawnable>`
-Custom spawn entry.
-
-Example:
-
-```xml
-<spawnable weight="100" groupMin="1">minecraft:zombie</spawnable>
-```
-
-Loader behavior:
-
-- element text content:
-    - entity registry name, e.g. `minecraft:zombie`
-- supported attributes:
-    - `weight`
-    - `groupMin`
-    - `nbt`
-
-##### `weight`
-Spawn weight.
-
-```xml
-weight="100"
-```
-
-##### `groupMin`
-Minimum group size.
-
-```xml
-groupMin="1"
-```
-
-##### `nbt`
-NBT string passed to the spawn entry.
-
-```xml
-nbt="{CustomName:\"Bob\"}"
-```
-
-Important parser note:
-- The current loader has a bug:
-    - it reads `groupMin` correctly
-    - but it also mistakenly reads `groupMax` from the `groupMin` attribute
-- As a result, `groupMax` is not actually loaded correctly by the current parser
-- For current-code documentation purposes, `groupMax` should not be treated as a reliable working XML input
-
-Notes:
-- If `groupMax` ends up below `groupMin`, it is corrected upward
-- Entity lookup first tries registry name, then tries class name
-- Invalid NBT can produce fatal configuration errors
-
-### 7.8 Discovery and progression
-
-#### `<isKnown>`
-Marks the planet as initially known.
-
-```xml
-<isKnown>true</isKnown>
-```
-
-Accepted values:
-- `true`
-- `false`
-
-Notes:
-- If true, the planet ID is added to `ARConfiguration.getCurrentConfig().initiallyKnownPlanets`
-
-### 7.9 Custom weather
-
-These are used by `WorldProviderPlanet.updateWeather()` when the planet is using custom world info.
-
-#### `<rainStartLength>`
-Base interval for starting rain.
-
-```xml
-<rainStartLength>168000</rainStartLength>
-```
-
-#### `<thunderStartLength>`
-Base interval for starting thunder.
-
-```xml
-<thunderStartLength>168000</thunderStartLength>
-```
-
-#### `<rainProlongationLength>`
-Extension interval while rain is active.
-
-```xml
-<rainProlongationLength>12000</rainProlongationLength>
-```
-
-#### `<thunderProlongationLength>`
-Extension interval while thunder is active.
-
-```xml
-<thunderProlongationLength>12000</thunderProlongationLength>
-```
-
-#### `<rainMarker>`
-Rain mode control.
-
-```xml
-<rainMarker>0</rainMarker>
-```
-
-Meaningful values:
-- `-1` = never rain
-- `0` = normal cycle
-- `1` = always rain
-
-#### `<thunderMarker>`
-Thunder mode control.
-
-```xml
-<thunderMarker>0</thunderMarker>
-```
-
-Meaningful values:
-- `-1` = never thunder
-- `0` = normal cycle
-- `1` = always thunder
-
-Important notes for all weather fields:
-- The XML loader uses direct integer parsing here
-- Use valid integers
-- At runtime, world weather code treats non-positive intervals defensively, but the XML parser itself is not forgiving of malformed values
-
----
-
-## 7. Value Formats
-
-### 7.1 Color formats
-
-Supported by:
-- `<fogColor>`
-- `<skyColor>`
-- `<ringColor>`
-
-Accepted forms:
-
-#### RGB floats
-```xml
-0.5,1,1
-```
-
-#### Hex with `0x`
-```xml
-0x87FFFF
-```
-
-Notes:
-- RGB float input is expected as three comma-separated components
-- Hex is parsed after removing `0x`
-
-### 8.2 Boolean values
-
-Use:
-
-```xml
-true
-false
-```
-
-Tags using boolean-style values include:
-- `<hasOxygen>`
-- `<hasColorOverride>`
-- `<skyRenderOverride>`
-- `<hasShading>`
-- `<forceRiverGeneration>`
-- `<hasRings>`
-- `<GasGiant>`
-- `<retrograde>`
-- `<isKnown>`
-- all `generate...` tags
-
-### 7.3 Resource-location-like values
-
-Examples:
-- blocks: `minecraft:stone`
-- items: `minecraft:diamond`
-- biomes: `minecraft:plains`
-- entities: `minecraft:zombie`
-
-Fluids for `<gas>` use fluid registry names, such as:
-- `hydrogen`
-- `oxygen`
-
-### 7.4 Numeric conventions
-
-- `100` atmosphere density = Earthlike atmosphere scale
-- `100` gravitational multiplier = Earthlike gravity scale
-- angles are provided in degrees in XML
-- rotational period uses ticks
-- sea level uses block Y coordinates
-
----
-
-## 8. Special Syntax Reference
-
-### 8.1 `biomeIds` syntax
-
-Allowed forms:
-- `0`
-- `minecraft:plains`
-- `minecraft:plains;30`
-
-Combined example:
-
-```xml
-<biomeIds>minecraft:plains;30,minecraft:forest;20,12</biomeIds>
-```
-
-### 8.2 `craterBiomeWeights` syntax
-
-Allowed form:
-- `biome;frequency`
-
-Example:
-
-```xml
-<craterBiomeWeights>minecraft:desert;100,minecraft:mesa;60</craterBiomeWeights>
-```
-
-### 8.3 `artifact` syntax
-
-Format:
-
-`item_or_block meta count`
-
-Example:
+An ore-dictionary name that exists but has no registered items — the providing mod is not installed —
+warns and is skipped. A name that is neither an ore-dictionary entry nor an item id warns and is
+skipped. The raw string is stored and written back verbatim, so entries for absent mods survive a
+round-trip.
+
+### `artifact` syntax
+
+An item stack a player must hold to be allowed to travel here. Format `item_or_block meta count`,
+space separated:
 
 ```xml
 <artifact>minecraft:diamond 0 1</artifact>
 ```
 
-Defaults:
-- meta: `0`
-- count: `1`
+`meta` defaults to `0` and `count` to `1`. Repeat the element for several artifacts; an unresolvable
+item yields an empty stack and is skipped.
 
-### 8.4 `fillerBlock` syntax
+---
 
-Accepted forms:
-
-```xml
-<fillerBlock>minecraft:stone</fillerBlock>
-or
-<fillerBlock>minecraft:stone:3</fillerBlock>
-```
-
-### 8.5 `spawnable` syntax
-
-Current reliable format:
-
-```xml
-<spawnable weight="100" groupMin="1">minecraft:zombie</spawnable>
-```
-
-With NBT:
-
-```xml
-<spawnable weight="20" groupMin="1" nbt="{CustomName:\"Watcher\"}">minecraft:skeleton</spawnable>
-```
-
-Current parser caveat:
-- `groupMax` is not reliably read due to a loader bug
-
-### 8.6 `oreGen` syntax
-
-Use attribute-based `<ore />` entries:
+## 8. `<oreGen>` — ore generation
 
 ```xml
 <oreGen>
-    <ore block="minecraft:iron_ore" minHeight="1" maxHeight="64" clumpSize="8" chancePerChunk="20" />
+  <ore block="minecraft:iron_ore" meta="0" minHeight="4" maxHeight="64" clumpSize="8" chancePerChunk="20"/>
 </oreGen>
 ```
 
-Do not rely on nested child tags inside `<ore>` for loading behavior.
+Only `<ore>` children are read; anything else under `<oreGen>` is ignored.
 
+| attribute | required | clamp | meaning |
+|---|---|---|---|
+| `block` | **yes** | — | Registry name. Missing → the entry is skipped with a warning. |
+| `meta` | no (default `0`) | — | Block metadata. Malformed → the entry is skipped. |
+| `minHeight` | **yes** | floors at 1 | Missing or malformed → the entry is skipped. |
+| `maxHeight` | **yes** | `minHeight..255` | Missing or malformed → the entry is skipped. |
+| `clumpSize` | **yes** | `1..255` | Blocks per vein. Missing or malformed → the entry is skipped. |
+| `chancePerChunk` | **yes** | `1..255` | Veins attempted per chunk. Missing or malformed → the entry is skipped. |
 
-
-## 9. Practical Examples
-
-### 9.1 Basic terrestrial planet
-
-```xml
-<planet name="Earth">
-    <fogColor>0.7,0.8,1</fogColor>
-    <skyColor>0.4,0.6,1</skyColor>
-    <atmosphereDensity>100</atmosphereDensity>
-    <hasOxygen>true</hasOxygen>
-    <gravitationalMultiplier>100</gravitationalMultiplier>
-    <orbitalDistance>100</orbitalDistance>
-    <orbitalTheta>0</orbitalTheta>
-    <rotationalPeriod>24000</rotationalPeriod>
-</planet>
-```
-
-### 9.2 Planet with a moon
-
-```xml
-<planet name="Earth">
-    <atmosphereDensity>100</atmosphereDensity>
-    <gravitationalMultiplier>100</gravitationalMultiplier>
-    <orbitalDistance>100</orbitalDistance>
-    <orbitalTheta>0</orbitalTheta>
-    <rotationalPeriod>24000</rotationalPeriod>
-
-    <planet name="Luna">
-        <atmosphereDensity>0</atmosphereDensity>
-        <hasOxygen>false</hasOxygen>
-        <gravitationalMultiplier>16</gravitationalMultiplier>
-        <orbitalDistance>150</orbitalDistance>
-        <orbitalTheta>180</orbitalTheta>
-        <rotationalPeriod>24000</rotationalPeriod>
-    </planet>
-</planet>
-```
-
-### 9.3 Gas giant with harvestable gases
-
-```xml
-<planet name="Zephyrus">
-    <GasGiant>true</GasGiant>
-    <gravitationalMultiplier>180</gravitationalMultiplier>
-    <orbitalDistance>220</orbitalDistance>
-    <orbitalTheta>90</orbitalTheta>
-    <rotationalPeriod>18000</rotationalPeriod>
-    <gas>hydrogen</gas>
-</planet>
-```
-
-### 9.4 Binary star system
-
-```xml
-<star name="Alpha" temp="120" x="0" y="0" numPlanets="0" numGasGiants="0">
-    <star name="Beta" temp="90" size="0.8" separation="30" />
-    <planet name="World A">
-        <atmosphereDensity>100</atmosphereDensity>
-        <gravitationalMultiplier>100</gravitationalMultiplier>
-        <orbitalDistance>100</orbitalDistance>
-        <orbitalTheta>0</orbitalTheta>
-        <rotationalPeriod>24000</rotationalPeriod>
-    </planet>
-</star>
-```
-
-### 9.5 External dimension mapping
-
-```xml
-<planet name="Twilight" DIMID="7" dimMapping="">
-    <atmosphereDensity>100</atmosphereDensity>
-    <gravitationalMultiplier>100</gravitationalMultiplier>
-    <orbitalDistance>140</orbitalDistance>
-    <orbitalTheta>45</orbitalTheta>
-    <rotationalPeriod>24000</rotationalPeriod>
-</planet>
-```
-
-### 9.6 Planet with custom icon
-
-```xml
-<planet name="Oceanus" customIcon="waterworld">
-    <atmosphereDensity>120</atmosphereDensity>
-    <gravitationalMultiplier>95</gravitationalMultiplier>
-    <orbitalDistance>110</orbitalDistance>
-    <orbitalTheta>270</orbitalTheta>
-    <rotationalPeriod>22000</rotationalPeriod>
-</planet>
-```
-
-### 9.7 Planet with custom ore generation
-
-```xml
-<planet name="Mineralia">
-    <atmosphereDensity>30</atmosphereDensity>
-    <gravitationalMultiplier>90</gravitationalMultiplier>
-    <orbitalDistance>80</orbitalDistance>
-    <orbitalTheta>120</orbitalTheta>
-    <rotationalPeriod>24000</rotationalPeriod>
-
-    <oreGen>
-        <ore block="minecraft:iron_ore" minHeight="1" maxHeight="64" clumpSize="8" chancePerChunk="20" />
-        <ore block="minecraft:gold_ore" minHeight="1" maxHeight="32" clumpSize="6" chancePerChunk="8" />
-    </oreGen>
-</planet>
-```
-
-### 9.8 Planet with custom weather
-
-```xml
-<planet name="Stormhold">
-    <atmosphereDensity>130</atmosphereDensity>
-    <gravitationalMultiplier>100</gravitationalMultiplier>
-    <orbitalDistance>95</orbitalDistance>
-    <orbitalTheta>60</orbitalTheta>
-    <rotationalPeriod>24000</rotationalPeriod>
-
-    <rainStartLength>6000</rainStartLength>
-    <rainProlongationLength>12000</rainProlongationLength>
-    <thunderStartLength>9000</thunderStartLength>
-    <thunderProlongationLength>6000</thunderProlongationLength>
-    <rainMarker>0</rainMarker>
-    <thunderMarker>0</thunderMarker>
-</planet>
-```
-
-### 9.9 Planet with custom spawn entries
-
-```xml
-<planet name="Infested">
-    <atmosphereDensity>80</atmosphereDensity>
-    <gravitationalMultiplier>100</gravitationalMultiplier>
-    <orbitalDistance>130</orbitalDistance>
-    <orbitalTheta>180</orbitalTheta>
-    <rotationalPeriod>24000</rotationalPeriod>
-
-    <spawnable weight="100" groupMin="2">minecraft:zombie</spawnable>
-    <spawnable weight="40" groupMin="1">minecraft:skeleton</spawnable>
-</planet>
-```
+Every clamp is silent. A `clumpSize` of `1000` becomes `255` with no warning.
 
 ---
 
-## 10. Common Pitfalls
+## 9. Combinations — what wins when two fields disagree
 
-### 10.1 `numPlanets`, not `numPlanet`
-Attribute name is:
+**Gravity versus bulk.** A planet may state `gravitationalMultiplier`, or `mass` **and** `radius`, or
+all three.
 
-```xml
-numPlanets="..."
-```
+| stated | result |
+|---|---|
+| `gravitationalMultiplier` only | That gravity. No mass or radius; anything needing bulk falls back to gravity. |
+| `mass` + `radius` only | Gravity is **derived**: `g = M / R²`, clamped to `0.05 .. 4.0` g. |
+| all three | **The authored gravity wins.** Mass and radius are still stored and still used for orbital periods and for anything that needs a real bulk. |
 
-### 10.2 `groupMax` is currently not reliable
-Current parser bug:
-- `groupMax` is not read correctly
-- `groupMin` is mistakenly used for both min and max group size
+The last row is the important one: adding `mass` and `radius` to a planet that already states a
+gravity cannot change how that planet plays. It only gives the model the numbers it was missing.
 
+**Mass and radius are order-independent** but each is applied against the other's current value, so
+stating only one of them leaves the other at zero — and a zero radius means no bulk properties at all.
+State both or neither.
 
-### 10.3 Some author-facing fields from old exports are not real XML inputs
-Do not treat exported values such as `avgTemperature` as reliable author-controlled XML settings unless separately confirmed in code.
+**Gas giant versus surface.** `<GasGiant>true</GasGiant>` makes the world surfaceless. It is then not
+a landing target however else it is configured, `laserDrillOres` on it is ignored, and only `<gas>`
+entries can be harvested from it.
+
+**Tidal locking versus rotation.** `tidallyLocked` makes the world's rotation equal its orbit. A
+`rotationalPeriod` stated alongside it is stored but has no visible effect.
+
+**`orbitalDistance` versus everything derived.** Insolation, equilibrium temperature, orbital period,
+climate and the physical distance a ship flies all come from this one number. `avgTemperature` is
+recomputed from it at every load — you cannot author a temperature that contradicts an orbit.
+
+**Star temperature and size versus planet climate.** Changing a star's `temp` or `size` re-derives the
+climate of every world around it on the next load, because temperature is computed and not stored.
+
+**`DIMID` versus automatic ids.** Stating `DIMID` on some planets and not others is supported; the
+automatic allocator skips ids already taken. Two planets stating the SAME `DIMID` is not detected —
+the second silently replaces the first.
+
+**`dimMapping` versus everything physical.** A mapped dimension is generated by whoever owns it.
+Terrain elements on it are ignored; climate, gravity and atmosphere still apply.
+
+**Global config switches versus per-planet flags.** `generateCraters`, `generateGeodes`,
+`generateVolcanos` and `generateStructures` exist both here and in the mod config. **The global
+`false` overrides a per-planet `true`.** The reverse is not true: a global `true` does not force a
+planet that declined.
+
+**`<planetType>` versus `<planet>`.** Types classify PROCEDURAL worlds only. They never modify an
+authored `<planet>`, however well its numbers match a type's ranges.
+
+**`<galaxyGen>` versus authored stars.** They coexist. An authored star occupies its anchor cell and
+owns that whole neighbourhood; the procedural generator fills what is left. Two authored anchors in
+one neighbourhood is a configuration error and is reported.
 
 ---
 
-## 11. Fields Intentionally Not Documented Here
+## 10. Worked minimal examples
 
-This document intentionally excludes fields that were not confirmed as meaningful current XML inputs.
-
-Examples:
-- fields only written by export code
-- fields not meaningfully loaded back
-- fields whose behavior was not confirmed when writing this document
-
----
-
-## 12. Full Example
+A single authored system, no procedural galaxy:
 
 ```xml
 <galaxy>
-    <star name="Sol" temp="100" x="0" y="0" numPlanets="0" numGasGiants="0">
-        <planet name="Earth" customIcon="earthlike">
-            <fogColor>0.7,0.8,1</fogColor>
-            <skyColor>0.4,0.6,1</skyColor>
-            <atmosphereDensity>100</atmosphereDensity>
-            <hasOxygen>true</hasOxygen>
-            <gravitationalMultiplier>100</gravitationalMultiplier>
-            <orbitalDistance>100</orbitalDistance>
-            <orbitalTheta>0</orbitalTheta>
-            <orbitalPhi>0</orbitalPhi>
-            <rotationalPeriod>24000</rotationalPeriod>
-            <seaLevel>63</seaLevel>
-            <biomeIds>minecraft:plains;30,minecraft:forest;20</biomeIds>
-            <forceRiverGeneration>true</forceRiverGeneration>
-            <generateStructures>true</generateStructures>
-            <generateCaves>true</generateCaves>
-            <isKnown>true</isKnown>
+  <star name="Sol" temp="100" size="1.0" numPlanets="0" numGasGiants="0" galacticCoord="0,0,0">
+    <planet name="Earth" DIMID="0">
+      <orbitalDistance>100</orbitalDistance>
+      <orbitalTheta>0</orbitalTheta>
+      <gravitationalMultiplier>100</gravitationalMultiplier>
+      <atmosphereDensity>100</atmosphereDensity>
+      <hasOxygen>true</hasOxygen>
+      <planet name="Luna" DIMID="1">
+        <orbitalDistance>30</orbitalDistance>
+        <gravitationalMultiplier>16</gravitationalMultiplier>
+        <atmosphereDensity>0</atmosphereDensity>
+        <hasOxygen>false</hasOxygen>
+      </planet>
+    </planet>
+  </star>
+</galaxy>
+```
 
-            <planet name="Luna" customIcon="moon">
-                <fogColor>0.9,0.9,0.9</fogColor>
-                <skyColor>0.1,0.1,0.1</skyColor>
-                <atmosphereDensity>0</atmosphereDensity>
-                <hasOxygen>false</hasOxygen>
-                <gravitationalMultiplier>16</gravitationalMultiplier>
-                <orbitalDistance>150</orbitalDistance>
-                <orbitalTheta>180</orbitalTheta>
-                <rotationalPeriod>24000</rotationalPeriod>
-                <generateCraters>true</generateCraters>
-            </planet>
-        </planet>
+A wide binary whose companion carries a world of its own:
 
-        <planet name="Zephyrus" customIcon="gasgiantblue">
-            <GasGiant>true</GasGiant>
-            <gravitationalMultiplier>180</gravitationalMultiplier>
-            <orbitalDistance>220</orbitalDistance>
-            <orbitalTheta>90</orbitalTheta>
-            <rotationalPeriod>18000</rotationalPeriod>
-            <gas>hydrogen</gas>
-            <gas>oxygen</gas>
-            <hasRings>true</hasRings>
-            <ringAngle>70</ringAngle>
-            <ringColor>0.6,0.5,0.7</ringColor>
-        </planet>
-    </star>
+```xml
+<star name="Alpha" temp="110" size="1.1" numPlanets="0" numGasGiants="0">
+  <star name="Beta" temp="90" size="0.9" orbitalDistance="2300" orbitalTheta="45"/>
+  <planet name="Alpha I">
+    <orbitalDistance>120</orbitalDistance>
+    <mass>1.0</mass>
+    <radius>1.0</radius>
+  </planet>
+</star>
+```
+
+`Alpha I` is lit by both stars, with `Beta`'s contribution falling off over its own 23 AU.
+
+A procedural galaxy with two archetypes and one type:
+
+```xml
+<galaxy>
+  <galaxyGen density="0.4" minSpacing="40018890" galaxySpacing="709554785444" galaxyDensity="0.5">
+    <starType temp="40"  minSize="0.6" maxSize="1.0" weight="40"/>
+    <starType temp="220" minSize="1.4" maxSize="2.6" weight="5"/>
+  </galaxyGen>
+
+  <planetType name="rock" weight="20">
+    <pressure    min="0"  max="120"/>
+    <temperature min="150" max="400"/>
+    <gravity     min="20" max="200"/>
+    <terrain>
+      <gen source="NATIVE" genType="0" weight="1"/>
+    </terrain>
+  </planetType>
 </galaxy>
 ```
 
 ---
 
-## 13. Resources
-App to help build universe. https://github.com/DaIsimsiz/planetDefs-Builder/releases
+## 11. Pitfalls
 
-)
+- **`numPlanets`, not `numPlanet`.** An unrecognised attribute is ignored silently, and the star then
+  generates nothing — with a warning about a missing entry rather than about a misspelling.
+- **Editing the live copy.** It is rewritten on the next save. Edit the template and use
+  `resetPlanetsFromXML`.
+- **`avgTemperature` looks authorable and is not.** It is written by the exporter and recomputed on
+  load. The same goes for anything else that appears in an exported file but is absent from §7 here:
+  if the reader has no branch for it, writing it does nothing.
+- **Two planets with the same `DIMID`.** Not detected; the second silently replaces the first.
+- **A weight of `0`** in `biomeIds` warns and reverts to the default, because a zero-weight entry
+  would silently never be drawn.
+
+---
+
+## 12. External tools
+
+A community editor for building a catalogue visually:
+<https://github.com/DaIsimsiz/planetDefs-Builder/releases>. It predates the fields introduced by the
+3.0.0 line — `mass`, `radius`, `metallicity`, `terrainSource`, `<galaxyGen>` and `<planetType>` — so
+check its output against §7 before shipping it.

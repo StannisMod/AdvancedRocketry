@@ -315,6 +315,14 @@ def configureHeadlessTest = { Test t, String packageGlob ->
     })
     // Test-only flag gating /artest probe commands and other test-only behaviour.
     t.systemProperty 'advancedrocketry.tests', 'true'
+    // Forward the golden-corpus rewrite flag into the forked test JVM. Regenerating the universe
+    // fixture is a deliberate act (it means a new schema version is being released), so it is opt-in
+    // per invocation rather than a property with a default:
+    //   ./gradlew testUnit --rerun -Dadvancedrocketry.universe.corpus.write=true
+    if (System.getProperty('advancedrocketry.universe.corpus.write') != null) {
+        t.systemProperty 'advancedrocketry.universe.corpus.write',
+                System.getProperty('advancedrocketry.universe.corpus.write')
+    }
     t.testLogging {
         events 'failed', 'skipped', 'passed'
         exceptionFormat = 'full'

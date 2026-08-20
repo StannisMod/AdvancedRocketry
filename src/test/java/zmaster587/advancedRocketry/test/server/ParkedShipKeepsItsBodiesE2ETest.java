@@ -74,7 +74,6 @@ public class ParkedShipKeepsItsBodiesE2ETest extends AbstractSharedServerTest {
                 before.contains("\"dim\":" + WATCHED_DIM + ",\"kind\""));
 
         String frameBefore = exec("artest space frame " + cellArgs);
-        long originBefore = jsonLong(frameBefore, "originX");
         long clockBefore = jsonLong(frameBefore, "clock");
 
         String after;
@@ -106,15 +105,19 @@ public class ParkedShipKeepsItsBodiesE2ETest extends AbstractSharedServerTest {
             exec("artest space set-clock " + clockBefore);
         }
 
-        // THE CONTROL.
-        long originAfter = jsonLong(frameAfter, "originX");
+        // THE CONTROL. The frame's origin is reported as a SECTOR triple plus an in-cell offset, so the
+        // move has to be reassembled from both: the probe never emitted a flat "originX", and reading
+        // one asserted nothing while looking like it asserted everything — this leg failed with "no
+        // numeric originX" rather than with anything about the universe, and had done so silently.
+        long movedX = frameMoveX(frameBefore, frameAfter);
         assertNotEquals("the cell's FRAME must have moved over " + AGE_TICKS + " ticks, or the"
                 + " invariance below is a statement about a universe that stands still; before="
-                + frameBefore + " after=" + frameAfter, originBefore, originAfter);
-        assertTrue("...and moved FAR — a cell is 4,000,000 blocks wide, so a smaller move would not"
-                        + " even have left the cell under the old derivation; moved="
-                        + Math.abs(originAfter - originBefore),
-                Math.abs(originAfter - originBefore) > 4_000_000L);
+                + frameBefore + " after=" + frameAfter, 0L, movedX);
+        assertTrue("...and moved FAR — further than a whole cell ("
+                        + zmaster587.advancedRocketry.space.GalacticCoord.CELL
+                        + " blocks), so the frame cannot be said to have merely drifted inside one;"
+                        + " moved=" + Math.abs(movedX),
+                Math.abs(movedX) > zmaster587.advancedRocketry.space.GalacticCoord.CELL);
 
         // THE CLAUSE. Same cell key, same occupants, same count.
         assertEquals("a body's own cell may not change because time passed (ledger #143): " + after,
@@ -135,6 +138,29 @@ public class ParkedShipKeepsItsBodiesE2ETest extends AbstractSharedServerTest {
     }
 
     // --- helpers ---------------------------------------------------------------------------------
+
+    /**
+     * How far the cell frame's origin moved along X between two {@code space frame} replies, in
+     * blocks. The reply carries {@code originSector} and {@code originOffset}, and the answer needs
+     * both — a frame that crossed a cell face has a small offset delta and a whole cell of real
+     * movement hiding in the sector.
+     */
+    private static long frameMoveX(String before, String after) {
+        long sectorDelta = jsonArrayElement(after, "originSector", 0)
+                - jsonArrayElement(before, "originSector", 0);
+        long offsetDelta = jsonArrayElement(after, "originOffset", 0)
+                - jsonArrayElement(before, "originOffset", 0);
+        return sectorDelta * zmaster587.advancedRocketry.space.GalacticCoord.CELL + offsetDelta;
+    }
+
+    /** Element {@code index} of a numeric JSON array field. */
+    private static long jsonArrayElement(String json, String field, int index) {
+        Matcher m = Pattern.compile("\"" + Pattern.quote(field) + "\":\\[([^\\]]*)\\]").matcher(json);
+        assertTrue("probe response carries no \"" + field + "\" array: " + json, m.find());
+        String[] parts = m.group(1).split(",");
+        assertTrue("\"" + field + "\" has no element " + index + ": " + json, parts.length > index);
+        return Long.parseLong(parts[index].trim());
+    }
 
     private static String dimCell(String json) {
         Matcher m = Pattern.compile("\"dimCell\":\"([^\"]+)\"").matcher(json);

@@ -28,7 +28,9 @@ import static org.junit.Assert.assertTrue;
  *  - Climb gate: full vertical climbs iff thrustMag &gt; gravity.
  *  - Yaw/pitch rotate at MAX_*_RATE; pitch clamps to PITCH_MAX.
  *  - canThrust=false &rarr; no thrust applied; gravity + rotation still act.
- *  - Brake attenuates motion; hard speed cap clamps to MAX_SPEED.
+ *  - Brake attenuates motion; NOTHING caps speed — the bound is on acceleration, so
+ *    burning for n ticks buys exactly n x MAX_THRUST_ACCEL and first cosmic velocity
+ *    is reachable.
  *  - Translation is body-relative: forward along the nose, strafe along the
  *    horizontal right axis, vertical along the nose's up axis (tilts with pitch).
  *  - Null input is tolerated (treated as zero).
@@ -159,14 +161,69 @@ public class FreeFlightPhysicsTest {
         assertTrue("brake must shrink motionX magnitude", Math.abs(s.motionX) < startX);
     }
 
+    /**
+     * With the assist off the law bounds ACCELERATION and nothing else: keep burning and you keep
+     * gaining speed, without limit.
+     *
+     * <p>The per-tick gain is asserted alongside the total, and that pairing is the test: a build that
+     * removed the acceleration ceiling too would pass a "goes very fast" assertion, and a build that
+     * kept a speed cap anywhere would fail the total however small the cap was. The craft coasts
+     * unaccelerated for the last stretch as a control — a cap would bite there too.</p>
+     */
     @Test
-    public void hardSpeedCapClampsMagnitudeToMaxSpeed() {
-        Step s = FreeFlightPhysics.step(10, 0, 0, 0f, 0f, FreeFlightInput.zero(),
-                THRUST, 0.0, true);
+    public void newtonianFlightBoundsAccelerationAndNotSpeed() {
+        int burnTicks = 1000;
+        double previousSpeed = 0.0;
+        Step s = new Step(0, 0, 0, 0f, 0f, false);
+        for (int tick = 0; tick < burnTicks; tick++) {
+            s = FreeFlightPhysics.step(s.motionX, s.motionY, s.motionZ, 0f, 0f,
+                    new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
+                    FreeFlightPhysics.MAX_THRUST_ACCEL, 0.0, true);
+            double speed = Math.sqrt(s.motionX * s.motionX
+                    + s.motionY * s.motionY + s.motionZ * s.motionZ);
+            assertTrue("no tick may add more speed than the thrust ceiling; tick " + tick
+                            + " added " + (speed - previousSpeed),
+                    speed - previousSpeed <= FreeFlightPhysics.MAX_THRUST_ACCEL + DELTA);
+            previousSpeed = speed;
+        }
+        double expected = burnTicks * FreeFlightPhysics.MAX_THRUST_ACCEL;
+        assertEquals("burning for " + burnTicks + " ticks must buy every bit of the speed it paid for",
+                expected, previousSpeed, DELTA);
+
+        // Control: release the throttle and the craft neither gains nor loses. A surviving cap
+        // anywhere in the law would show up here as a silent haircut.
+        Step coast = FreeFlightPhysics.step(s.motionX, s.motionY, s.motionZ, 0f, 0f,
+                FreeFlightInput.zero(), THRUST, 0.0, true);
+        double coastSpeed = Math.sqrt(coast.motionX * coast.motionX
+                + coast.motionY * coast.motionY + coast.motionZ * coast.motionZ);
+        assertEquals("coasting must preserve the speed exactly", expected, coastSpeed, DELTA);
+    }
+
+    /**
+     * The number this law exists for: first cosmic velocity is 7.9 km/s, which in a metre-per-block
+     * world is <b>395 blocks/tick</b>. Under the cap this file used to pin (3 blocks/tick) a rocket
+     * was short of orbital speed by a factor of ~130 — by its own numbers it could not reach orbit.
+     *
+     * <p>Flown at 0.1 blocks/tick², an ordinary rocket at thrust-to-weight 2, in vacuum.</p>
+     */
+    @Test
+    public void aRocketAtOrdinaryThrustReachesFirstCosmicVelocity() {
+        double firstCosmicBlocksPerTick = 395.0;
+        double ordinaryAccel = 0.1;
+        int ticks = (int) Math.ceil(firstCosmicBlocksPerTick / ordinaryAccel);
+
+        Step s = new Step(0, 0, 0, 0f, 0f, false);
+        for (int tick = 0; tick < ticks; tick++) {
+            s = FreeFlightPhysics.step(s.motionX, s.motionY, s.motionZ, 0f, 0f,
+                    new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
+                    ordinaryAccel, 0.0, true);
+        }
         double speed = Math.sqrt(s.motionX * s.motionX
                 + s.motionY * s.motionY + s.motionZ * s.motionZ);
-        assertTrue("hard cap: speed must not exceed MAX_SPEED, got " + speed,
-                speed <= FreeFlightPhysics.MAX_SPEED + DELTA);
+        assertTrue("a rocket accelerating at " + ordinaryAccel + " b/t2 must reach first cosmic"
+                        + " velocity (" + firstCosmicBlocksPerTick + " b/t) after " + ticks
+                        + " ticks of burn, got " + speed,
+                speed >= firstCosmicBlocksPerTick);
     }
 
     @Test

@@ -69,7 +69,8 @@ public abstract class MixinWorldServer {
      */
     private void ar$tellSleepersWhenDawnIs(WorldServer self) {
         int rotationalPeriod = self.provider instanceof IPlanetaryProvider
-                ? ((IPlanetaryProvider) self.provider).getRotationalPeriod(null) : 24000;
+                ? ((IPlanetaryProvider) self.provider).getRotationalPeriod(null)
+                : zmaster587.advancedRocketry.dimension.DimensionProperties.DEFAULT_ROTATIONAL_PERIOD;
         long ticksToDawn = ARDimensionWorldInfo.computeSleepWakeTime(self.getWorldTime(), rotationalPeriod)
                 - self.getWorldTime();
         // Real minutes, rounded up and never zero: "in 0 minutes" reads as a bug, and the player
