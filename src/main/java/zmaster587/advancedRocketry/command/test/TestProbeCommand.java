@@ -1332,6 +1332,27 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"error\":\"missing damage subcommand\"}");
             return;
         }
+        if ("guard".equalsIgnoreCase(args[0])) {
+            // guard <dim> <x> <y> <z> <true|false> — stand in for a claim mod: an ordinary
+            // BreakEvent subscriber that refuses this position, so a test can drive the refusal
+            // path weapon fire takes with every protection system it will ever meet.
+            if (args.length < 6) {
+                send(sender, "{\"error\":\"usage: damage guard <dim> <x> <y> <z> <true|false>\"}");
+                return;
+            }
+            int dim = parseIntOr(args[1], 0);
+            net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                    parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            boolean guarded = Boolean.parseBoolean(args[5]);
+            int now = WeaponFireVetoProbe.guard(dim, pos, guarded);
+            send(sender, "{\"ok\":true,\"guarded\":" + guarded + ",\"count\":" + now + "}");
+            return;
+        }
+        if ("unguard-all".equalsIgnoreCase(args[0])) {
+            WeaponFireVetoProbe.clear();
+            send(sender, "{\"ok\":true,\"cleared\":true}");
+            return;
+        }
         if ("clear-impacts".equalsIgnoreCase(args[0])) {
             // The dedup memory outlives a scenario on a shared server; this is its reset.
             int before = zmaster587.advancedRocketry.damage.ShipDamageService.rememberedImpactCount();
@@ -12202,6 +12223,9 @@ public class TestProbeCommand extends CommandBase {
                     // off to pin that a valid rocket still assembles (no fuel-adequacy
                     // gate) — the regression the weight-system merge introduced.
                     "rocketRequireFuel",
+                    // enableProjectileSubstrate: the off switch has to END what is in the air,
+                    // not suspend it, and only a test that flips it at runtime can see that.
+                    "enableProjectileSubstrate",
                     // The telescope's reach and what a look costs in time, all read at scan START,
                     // so flipping them at runtime is enough to exercise a short scan in a test
                     // without waiting out a production-length observation.

@@ -24,5 +24,12 @@ public enum ShotEndReason {
     STRUCTURE_IMPACT,
 
     /** Its world went away underneath it. */
-    WORLD_UNLOADED
+    WORLD_UNLOADED,
+
+    /**
+     * The substrate was switched off under it. Off has to mean gone rather than paused: a round left
+     * in the registry is written back into the save on every tick that follows, and switching the
+     * flag on again months later would resume a shot into a world that has moved on.
+     */
+    SUBSTRATE_DISABLED
 }

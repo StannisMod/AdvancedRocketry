@@ -1,7 +1,16 @@
 package zmaster587.advancedRocketry.damage;
 
+import com.mojang.authlib.GameProfile;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Blocks;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.WorldServer;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.util.FakePlayerFactory;
+import net.minecraftforge.event.world.BlockEvent;
+
+import java.util.UUID;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -366,6 +375,15 @@ public final class StructureDamageEngine {
         }
 
         if (stage >= maxStage) {
+            if (!mayRemove(world, pos, state)) {
+                // Something guards this block. It keeps the hit — the energy was spent and the
+                // damage is real — but it is not removed, and it stops one stage short of gone so
+                // that the next round asks again rather than finding a destroyed block standing.
+                DamageState.setStage(world, pos, Math.max(stageBefore, maxStage - 1));
+                result.blocksStaged++;
+                result.touched.add(new Touched(pos, stageBefore, maxStage - 1, maxStage, spent, null));
+                return spent;
+            }
             BlockDamageSavedData.get(world).recordDestroyed(pos, state.getBlock(),
                     state.getBlock().getMetaFromState(state));
             DamageState.setStage(world, pos, stage);
@@ -575,4 +593,43 @@ public final class StructureDamageEngine {
         public Vec3d entryPoint;
         public Vec3d exitPoint;
     }
+
+    /**
+     * Ask the world whether this block may actually be removed, and let anything that guards it say
+     * no.
+     *
+     * <h3>Why a weapon has to ask at all</h3>
+     * <p>Every protection system on this version — claims, regions, spawn protection, an admin's
+     * own listener — works by watching or cancelling a block-break event. A weapon that took blocks
+     * out with a bare {@code setBlockState} was invisible to all of them: not exempted by a decision
+     * anybody made, just never seen. On a server where players can build turrets that is the
+     * difference between a weapon and a way around the claim system, and the first person to find
+     * out is whoever loses a base.</p>
+     *
+     * <p>The break is attributed to a stable synthetic player rather than to the gun's owner, who is
+     * usually offline and may not exist: a protection mod needs something it can allow or deny by
+     * name, and one identity for all weapon fire is what makes that possible. A refusal is honoured
+     * exactly as it reads — the block stays.</p>
+     */
+    private static boolean mayRemove(World world, BlockPos pos, IBlockState state) {
+        if (!(world instanceof WorldServer)) {
+            return true;
+        }
+        EntityPlayer breaker = FakePlayerFactory.get((WorldServer) world, WEAPON_FIRE);
+        MinecraftServer server = world.getMinecraftServer();
+        if (server != null && server.isBlockProtected(world, pos, breaker)) {
+            // Vanilla's own spawn protection, asked directly. It is not implemented as a listener,
+            // so a build that only posted the event would honour every third-party claim and none
+            // of the protection the game ships with.
+            return false;
+        }
+        return !MinecraftForge.EVENT_BUS.post(new BlockEvent.BreakEvent(world, pos, state, breaker));
+    }
+
+    /**
+     * Who weapon fire breaks blocks AS. A fixed name and a fixed id, because a protection mod's
+     * whitelist is written against them and a generated id would be a different player every boot.
+     */
+    private static final GameProfile WEAPON_FIRE = new GameProfile(
+            UUID.fromString("b6ab6a37-2b1a-4b0a-9d9f-6e2f2f5f0a11"), "[weapon-fire]");
 }
