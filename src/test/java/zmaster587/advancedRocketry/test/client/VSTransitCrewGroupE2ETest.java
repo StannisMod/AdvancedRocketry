@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.test.client;
 import com.google.gson.JsonObject;
 import org.junit.Assume;
 import org.junit.FixMethodOrder;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
 
@@ -148,6 +149,134 @@ private static final long PARK_SPEED = HYPERSPACE_JUMP_SPEED;
 
 
     // ---- migrated: VSShipTransitCrewE2ETest ----
+
+    /** How far a released craft may drift vertically in a cell and still count as not falling. */
+    private static final double CELL_STILL_TOLERANCE = 2.0;
+
+    /** The push that proves the craft is being simulated at all, in blocks per second. */
+    private static final double CELL_PUSH_VZ = 4.0;
+
+    /** How far it must travel under that push before the stillness reading means anything. */
+    private static final double CELL_PUSH_MIN_TRAVEL = 3.0;
+
+    /** One sampling window for both legs of the cell-gravity scenario. */
+    private static final int CELL_SAMPLE_TICKS = 40;
+
+    /**
+     * <b>A cell has no gravity, so a craft released in one keeps its altitude.</b> The third and last
+     * case of the per-world gravity field: a registered body scales the configured vector by its own
+     * multiplier (witnessed on the server tier by a craft that falls a quarter as far over a
+     * quarter-gravity body), a foreign world gets that vector unchanged, and a space cell gets ZERO —
+     * which nothing watched until this.
+     *
+     * <h2>Why it lives in THIS group, which is otherwise about transit with crew</h2>
+     *
+     * <p>It shares the group's arrangement and not its subject: {@code transit-setup-piloted} is the
+     * only fixture that puts a ship in a real pool cell, and a client boot costs 25-35x a scenario.
+     * Grouping is a boot decision; the subject is stated here so the class name does not mislead.</p>
+     *
+     * <h2>Why it could not be a server test</h2>
+     *
+     * <p>It was written as one first, and is kept there {@code @Ignore}d for its arrangement: a
+     * Valkyrien Skies ship on a headless server never becomes loaded, so a push moved it 0.0 blocks
+     * through three arrangements. The bot standing in the cell is what makes the craft real — VS's own
+     * proximity mechanism, the same one the re-seat scenario below leans on.</p>
+     *
+     * <h2>Why stillness needs a control, here more than anywhere</h2>
+     *
+     * <p>On a planet a craft that does not fall is doing something: holding. In a cell there is nothing
+     * to hold against, and a weightless craft is indistinguishable from one nobody is simulating —
+     * both sit exactly still, both report zero velocity. The second state is not hypothetical: physics
+     * used to be switched on only after a craft had been flown once, so a newly built ship hung in the
+     * air and read as station-keeping. So the craft is PUSHED and required to move before its stillness
+     * is believed, and that control is asserted FIRST — a build where the ship is inert then fails on
+     * the leg that says so, instead of passing the subject for a reason unrelated to gravity.</p>
+     */
+    @Ignore("Landed unverified, on purpose. This group is red on the merged tree (6 of 8 before this "
+            + "scenario existed, 8/8 green on the commit before the merge), so neither a green nor a "
+            + "red here would be about cell gravity - the transit itself does not complete. The merge "
+            + "was accepted knowing this: 1.12 has test-stability work coming and the group is "
+            + "expected to settle with it. Un-ignore when it does, and read this scenario's CONTROL "
+            + "leg first: it is the one that says whether the craft is simulated at all.")
+    @Test
+    public void aCraftReleasedInACellKeepsItsAltitudeAndIsStillSimulated() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies (run with -PwithVS)", serverHasVs());
+
+        exec("artest vs permaload true");
+
+        String setup = execEnvelope("artest space transit-setup-piloted");
+        assertTrue("piloted transit setup must succeed: " + setup, readBool(setup, "ok"));
+        int originDim = readInt(setup, "originDim");
+        String shipId = setupShipId(setup);
+        assertTrue("the setup must name the ship it built, or nothing below addresses one craft: " + setup,
+                shipId != null && !shipId.isEmpty());
+        assertTrue("the origin ship never assembled in the pool cell (dim " + originDim + ")",
+                waitForRegisteredShip(originDim));
+
+        String health = execEnvelope("artest player health");
+        Matcher nameM = PLAYER_NAME.matcher(health);
+        assertTrue("player health must echo the player name: " + health, nameM.find());
+
+        // The bot goes into the cell FIRST, and that is what makes the craft simulated: VS loads a ship
+        // for a real player's proximity. Nothing here force-loads anything, which is the whole reason
+        // this scenario is at the client tier at all.
+        String enter = execEnvelope("artest space enter " + nameM.group(1) + " " + originDim + " 1 64 1");
+        assertTrue("space enter into the origin cell must succeed: " + enter, readBool(enter, "ok"));
+        bot().waitTicks(20);
+        assertEquals("the client must have followed into the origin cell",
+                originDim, bot().reportWeather().get("dim").getAsInt());
+
+        // Wait until the craft answers about itself WITH the bot beside it, for the same reason the
+        // re-seat scenario retries: the world position resolves a tick or two after the transfer.
+        String info = "";
+        for (int i = 0; i < 40 && !hasKey(info, "posY"); i++) {
+            info = execEnvelope("artest vs ship-info " + originDim + " id " + shipId);
+            if (!hasKey(info, "posY")) {
+                bot().waitTicks(5);
+            }
+        }
+        assertTrue("ARRANGEMENT: the craft must report its own pose with the bot beside it: " + info,
+                hasKey(info, "posY"));
+
+        // Release it. Flight Assist off is what hands an unpiloted craft to the field, whatever that
+        // field turns out to be; over a planet it is exactly what makes the craft fall.
+        assertTrue("could not reach the flight computer to release the craft",
+                readBool(execEnvelope("artest vs fa-by-id " + originDim + " " + shipId + " false"),
+                        "afcResolved"));
+
+        // --- the subject: released, over nothing, it keeps its altitude ----------------------------
+        double beforeY = readDouble(execEnvelope("artest vs ship-info " + originDim + " id " + shipId),
+                "posY");
+        bot().waitTicks(CELL_SAMPLE_TICKS);
+        double afterY = readDouble(execEnvelope("artest vs ship-info " + originDim + " id " + shipId),
+                "posY");
+        double sank = beforeY - afterY;
+
+        // --- the control, measured AFTER the subject so the push cannot disturb what it vouches for
+        double beforeZ = readDouble(execEnvelope("artest vs ship-info " + originDim + " id " + shipId),
+                "posZ");
+        assertTrue("could not push the craft: the control leg cannot run",
+                readBool(execEnvelope("artest vs push-ship-by-id " + originDim + " " + shipId
+                        + " 0 0 " + CELL_PUSH_VZ), "pushed"));
+        bot().waitTicks(CELL_SAMPLE_TICKS);
+        double travelled = Math.abs(
+                readDouble(execEnvelope("artest vs ship-info " + originDim + " id " + shipId), "posZ")
+                        - beforeZ);
+
+        assertTrue("ARRANGEMENT/CONTROL: the craft must be under the solver's hand for its stillness to"
+                        + " mean anything. Pushed at " + CELL_PUSH_VZ + " blocks/s it moved " + travelled
+                        + " blocks, which is not motion. A craft nobody simulates sits exactly as still"
+                        + " as a weightless one, so the reading below would be true for a reason that"
+                        + " has nothing to do with gravity.",
+                travelled >= CELL_PUSH_MIN_TRAVEL);
+
+        assertTrue("a released craft in a space cell must keep its altitude: there is nothing for it to"
+                        + " fall towards, and the field a cell supplies is zero. This one moved " + sank
+                        + " blocks vertically in " + CELL_SAMPLE_TICKS + " ticks (from " + beforeY
+                        + " to " + afterY + "). A sink of tens of blocks is what the configured field"
+                        + " would produce - i.e. the cell being handed a planet's gravity.",
+                Math.abs(sank) <= CELL_STILL_TOLERANCE);
+    }
 
     @Test
     public void aSeatedCrewMemberSurvivesAHyperspaceTransitStillRiding() throws Exception {
