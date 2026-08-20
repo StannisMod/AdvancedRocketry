@@ -201,13 +201,13 @@ public final class ShotSubstrate {
             double reach = speed * timeLeft;
             Vec3d segmentEnd = position.add(velocity.scale(timeLeft));
 
-            double fieldDistance = ShieldStrikeService.nearestShellCrossing(world, position, direction,
-                    reach);
-            // Only on the first crossing of a tick that began inside material: there the answer is
-            // known to be that hull, and once the round has deflected or come out it is an ordinary
-            // body again and asks everything.
-            StructureCrossing.Hit structure = StructureCrossing.firstAlong(world, position, segmentEnd,
-                    crossing == 0 ? boringHull : null, bodyRadius(shot));
+            // Only on the first crossing of a tick that began inside material is the hull narrowed:
+            // there the answer is known to be that hull, and once the round has deflected or come out
+            // it is an ordinary body again and asks everything.
+            LayerCrossing.First first = LayerCrossing.along(world, position, segmentEnd,
+                    bodyRadius(shot), crossing == 0 ? boringHull : null);
+            StructureCrossing.Hit structure = first.structure;
+            double fieldDistance = first.isField() ? first.distance : -1.0D;
             double structureDistance = structure == null ? -1.0D : structure.distance;
 
             if (ShotCrossingTrace.enabled()) {
@@ -222,9 +222,8 @@ public final class ShotSubstrate {
                                 + world.getBlockState(structure.block).getBlock().getRegistryName());
             }
 
-            boolean fieldFirst = fieldDistance >= 0.0D
-                    && (structureDistance < 0.0D || fieldDistance <= structureDistance);
-            boolean structureFirst = structureDistance >= 0.0D && !fieldFirst;
+            boolean fieldFirst = first.isField();
+            boolean structureFirst = first.isStructure();
 
             if (structureFirst) {
                 shot.setPosition(structure.point);

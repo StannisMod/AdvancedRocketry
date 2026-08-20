@@ -144,9 +144,37 @@ public final class TurretFireControl {
      */
     public static long fire(World world, BlockPos mountPos, String shipId, Vec3d localAim, GunSpec spec,
                             int reach, UUID owner, String faction, Random random) {
+        Muzzle muzzle = muzzleOf(world, mountPos, shipId, localAim, spec, reach, random);
+        if (muzzle == null) {
+            return -1L;
+        }
+        Vec3d velocity = muzzle.direction.scale(spec.getMuzzleSpeed()).add(muzzle.carried);
+        ShotSpec shot = new ShotSpec(muzzle.point, velocity, spec.getProjectileRadius(),
+                spec.getProjectileMass(), spec.getLifetimeTicks(), spec.getImpactEnergy(),
+                spec.getKind(), owner, faction, environmentOf(world), null);
+        return ShotSubstrate.launch(world, shot);
+    }
+
+    /**
+     * Where a body actually leaves this gun, along what, and what motion it inherits — or {@code null}
+     * when this gun may not fire at all.
+     *
+     * <h3>Every weapon family asks this, and it must have ONE answer</h3>
+     * <p>A round and a held beam leave the same gun from the same place. The standoff below is not a
+     * detail of the projectile substrate: a body born inside the barrel resolves a structure crossing
+     * against the gun's own blocks, and the weapon takes itself apart. That is not hypothetical — a
+     * beam written without this did exactly that, on its first run, and the symptom was a probe
+     * answering "no turret there".</p>
+     *
+     * <p>So is the line-of-fire refusal: a gun recessed into a hull, or one whose arc crosses its own
+     * superstructure, HOLDS rather than demolishing it. A build that cannot fire safely is a problem
+     * the player can see; a gun that shells its own deck is a mystery.</p>
+     */
+    public static Muzzle muzzleOf(World world, BlockPos mountPos, String shipId, Vec3d localAim,
+                                  GunSpec spec, int reach, Random random) {
         if (world == null || world.isRemote || mountPos == null || localAim == null || spec == null
                 || !spec.isOperable() || localAim.lengthVector() < 1.0E-9D) {
-            return -1L;
+            return null;
         }
 
         if (shipId == null && VSIntegration.isBlockInShipyard(mountPos)) {
@@ -155,7 +183,7 @@ public final class TurretFireControl {
             // this method is callable from anywhere, and the failure it prevents is severe out of all
             // proportion to the check — treating a shipyard address as world coordinates puts a live
             // round in the middle of the region every parked hull in the world sits in.
-            return -1L;
+            return null;
         }
 
         Vec3d direction = spread(localAim.normalize(), spec.getSpreadDegrees(), random);
@@ -176,7 +204,7 @@ public final class TurretFireControl {
             double[] dir = VSIntegration.rotateToWorldFrameFor(world, shipId, direction.x, direction.y,
                     direction.z);
             if (point == null || dir == null) {
-                return -1L;
+                return null;
             }
             worldMuzzle = new Vec3d(point[0], point[1], point[2]);
             worldDirection = new Vec3d(dir[0], dir[1], dir[2]).normalize();
@@ -193,14 +221,23 @@ public final class TurretFireControl {
             // superstructure its arc crosses, the wall a ground battery was mounted behind. The gun
             // holds rather than demolishing it: a build that cannot fire safely is a problem the
             // player can see, and a gun that shells its own deck is a mystery.
-            return -1L;
+            return null;
         }
 
-        Vec3d velocity = worldDirection.scale(spec.getMuzzleSpeed()).add(carried);
-        ShotSpec shot = new ShotSpec(worldMuzzle, velocity, spec.getProjectileRadius(),
-                spec.getProjectileMass(), spec.getLifetimeTicks(), spec.getImpactEnergy(),
-                spec.getKind(), owner, faction, environmentOf(world), null);
-        return ShotSubstrate.launch(world, shot);
+        return new Muzzle(worldMuzzle, worldDirection, carried);
+    }
+
+    /** Where a body leaves a gun, in WORLD terms, and the motion the gun's own hull lends it. */
+    public static final class Muzzle {
+        public final Vec3d point;
+        public final Vec3d direction;
+        public final Vec3d carried;
+
+        Muzzle(Vec3d point, Vec3d direction, Vec3d carried) {
+            this.point = point;
+            this.direction = direction;
+            this.carried = carried;
+        }
     }
 
     /**
