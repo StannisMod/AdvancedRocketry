@@ -2,6 +2,7 @@ package zmaster587.advancedRocketry.block;
 
 import net.minecraft.block.material.Material;
 import net.minecraft.init.Blocks;
+import zmaster587.advancedRocketry.damage.StructureDamageEngine;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.damage.Contact;
@@ -74,7 +75,11 @@ public class BlockReactivePlating extends BlockPlating {
      */
     private void detonate(World world, BlockPos pos) {
         if (world != null && !world.isRemote && pos != null) {
-            world.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
+            // Through the weapon-fire removal, not around it: a charge going off is weapon fire
+            // taking a block, and a claim that refuses that keeps its plate — spent, absorbing and
+            // standing. Removing it directly made the new armour the one content in the mod a
+            // protection system could not cover.
+            StructureDamageEngine.removeIfAllowed(world, pos);
         }
     }
 

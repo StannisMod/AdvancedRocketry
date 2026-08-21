@@ -244,24 +244,53 @@ public class TileWeaponConsole extends TileEntity implements ITickable, ISubsyst
     }
 
     public String getNetworkStatusText() {
+        return readoutText(networkStatusKey());
+    }
+
+    /**
+     * The same status as a stable machine token ({@code balanced}, {@code powerLimited}, ...).
+     *
+     * <p>Derived from the lang key rather than declared beside it, so there is one vocabulary and
+     * not two. A probe or a log wants an identifier that survives translation; a player wants a
+     * sentence in his own language. These are different needs and this is the first of them.</p>
+     */
+    public String getNetworkStatusToken() {
+        String key = networkStatusKey();
+        return key.substring(key.lastIndexOf('.') + 1);
+    }
+
+    private String networkStatusKey() {
         WeaponNetworkState state = network();
         if (state == null) {
-            return "no network";
+            return "msg.weaponConsole.status.noNetwork";
         }
         switch (state.getStatus()) {
             case SubsystemNetworkStatus.DISCONNECTED:
-                return "disconnected";
+                return "msg.weaponConsole.status.disconnected";
             case SubsystemNetworkStatus.SOURCE_LIMITED:
-                return "power limited";
+                return "msg.weaponConsole.status.powerLimited";
             case SubsystemNetworkStatus.SINK_LIMITED:
-                return "idle";
+                return "msg.weaponConsole.status.idle";
             case SubsystemNetworkStatus.CABLE_LIMITED:
-                return "cable limited";
+                return "msg.weaponConsole.status.cableLimited";
             case SubsystemNetworkStatus.BALANCED:
-                return "balanced";
+                return "msg.weaponConsole.status.balanced";
             default:
-                return "unknown";
+                return "msg.weaponConsole.status.unknown";
         }
+    }
+
+    /**
+     * One readout line, translated where a translation exists.
+     *
+     * <p>A whole sentence per key with its placeholders in it, never a label concatenated with a
+     * value: word order is not the same in every language, and a line assembled from fragments can
+     * only ever come out in English order. {@code getModules} runs on both sides — the client proxy
+     * translates and the common one hands the key straight back, which then formats to itself
+     * because a key carries no format specifiers.</p>
+     */
+    private static String readoutText(String key, Object... args) {
+        return String.format(LibVulpes.proxy.getLocalizedString(key), args);
     }
 
     // ---- linker: the way a player names a target without typing coordinates
@@ -304,30 +333,34 @@ public class TileWeaponConsole extends TileEntity implements ITickable, ISubsyst
     }
 
     private String statusLine() {
-        return "Network: " + getNetworkStatusText() + (isHoldFire() ? " (holding fire)" : "");
+        String status = readoutText(networkStatusKey());
+        return isHoldFire() ? readoutText("msg.weaponConsole.line.networkHolding", status)
+                : readoutText("msg.weaponConsole.line.network", status);
     }
 
     private String gunLine() {
         int[] mounts = getMountTelemetry();
-        return "Guns: " + getGunCount() + "  on target: " + mounts[0]
-                + (mounts[1] > 0 ? "  out of arc: " + mounts[1] : "");
+        return mounts[1] > 0
+                ? readoutText("msg.weaponConsole.line.gunsOutOfArc", getGunCount(), mounts[0], mounts[1])
+                : readoutText("msg.weaponConsole.line.guns", getGunCount(), mounts[0]);
     }
 
     private String targetLine() {
         Vec3d target = getTarget();
-        return target == null ? "Target: none"
-                : String.format("Target: %.0f, %.0f, %.0f", target.x, target.y, target.z);
+        return target == null ? readoutText("msg.weaponConsole.line.targetNone")
+                : readoutText("msg.weaponConsole.line.target", target.x, target.y, target.z);
     }
 
     private String sensorLine() {
         TargetTrack acquired = getAcquiredTrack();
         if (acquired == null) {
-            return "Sensor: no contact";
+            return readoutText("msg.weaponConsole.line.sensorNone");
         }
         boolean locked = acquired.isLocked(ARConfiguration.getCurrentConfig()
                 .fireControlSensorLockQualityToFire);
-        return String.format("Sensor: contact at %.0fm, lock %.2f%s", acquired.getDistance(),
-                acquired.getQuality(), locked ? "" : " (too poor to fire)");
+        return readoutText(locked ? "msg.weaponConsole.line.sensor"
+                        : "msg.weaponConsole.line.sensorTooPoor",
+                acquired.getDistance(), acquired.getQuality());
     }
 
     @Override

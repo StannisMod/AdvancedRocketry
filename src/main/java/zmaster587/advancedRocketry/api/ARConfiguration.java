@@ -139,6 +139,7 @@ public class ARConfiguration {
     public int dilithiumPerChunk;
     @ConfigProperty
     public int dilithiumPerChunkMoon;
+    @ConfigProperty
     public int aluminumPerChunk;
     @ConfigProperty
     public int aluminumClumpSize;
@@ -426,12 +427,28 @@ public class ARConfiguration {
     @ConfigProperty(needsSync = true)
     public int repairWelderCapacity = 100000;
     /**
-     * Whether shots exist as tracked records at all. With this off nothing is admitted to a world's
-     * registry and nothing already there is stepped, so a weapon built on the substrate fires and
-     * nothing travels — which is the whole of the mechanic gone, not half of it.
+     * Whether the war exists: whether a weapon fires, a sensor acquires, and weapon fire damages
+     * anything.
+     *
+     * <h3>One key, because a pack asks one question</h3>
+     * <p>What a server owner wants to decide is "is there combat here", and the answer has to cover
+     * every weapon family at once. The key this replaced gated the shot registry alone, which left a
+     * held beam burning hulls with the war "off" — a switch that covers half a mechanic is worse than
+     * none, because it reads as a promise.</p>
+     *
+     * <h3>OFF is reversible, and that bounds what it may do</h3>
+     * <p>It is meant to be thrown on a world that has already been fought over, and thrown back later
+     * on the same save. So OFF destroys nothing a later ON would need: guns keep their builds,
+     * buffers and targets, damage records stay on the blocks that carry them, repair keeps working,
+     * and shields — which defend against more than weapons — are untouched. The one thing it ends is
+     * flights, because a round left in the registry is written back into the save forever and would
+     * resume months later into a world that has moved on.</p>
+     *
+     * <p>A gun that is off SAYS so rather than falling silent: "the war is off" is a distinct answer
+     * beside "holding fire" and "nothing left to fire with".</p>
      */
     @ConfigProperty(needsSync = true)
-    public boolean enableProjectileSubstrate = true;
+    public boolean enableWeapons = true;
     /**
      * Below this speed, in blocks per tick, a shot mirrored off a shield is ended at the shell rather
      * than left alive. A body deflected to nearly nothing has to be somewhere if it is an entity; a
@@ -440,6 +457,7 @@ public class ARConfiguration {
      */
     @ConfigProperty(needsSync = true)
     public double shotReflectionSpeedFloor = 0.05;
+    @ConfigProperty(needsSync = true)
     public double shotPenetrationSpeedFloor = 0.05;
     /**
      * The widest a shot's body may be treated as, in blocks, however wide it was declared. A body
@@ -815,7 +833,7 @@ public class ARConfiguration {
         arConfig.weightMaterialScale = config.get(ROCKET, "weightMaterialScale", 1.0, "Global multiplier applied to material-derived and fallback block weights (does not affect explicit overrides or rocket component parts). Raise to make hulls/structure mass matter more").getDouble();
         arConfig.fuelMassScale = config.get(ROCKET, "fuelMassScale", 1.0, "Global multiplier applied to the mass of fuel/oxidizer carried by a rocket. Raise to make full tanks weigh more relative to thrust").getDouble();
         arConfig.minLaunchTWR = config.get(ROCKET, "minLaunchTWR", 1.05, "Minimum thrust-to-weight ratio (thrust / wet weight) a rocket needs before it is allowed to launch. 1.0 means it can barely lift itself; values above 1.0 add a safety margin").getDouble();
-        arConfig.wearThrustPenaltyMax = config.get(ROCKET, "wearThrustPenaltyMax", 0.5, "Fraction of thrust a fully-worn rocket motor loses (partsWearSystem). 0.5 means a motor at max wear produces half thrust; 0 disables the thrust penalty (wear then only affects explosion chance)").getDouble();
+        arConfig.wearThrustPenaltyMax = config.get(ROCKET, "wearThrustPenaltyMax", 0.5, "Fraction of thrust a fully-worn rocket motor loses. 0.5 means a motor at max wear produces half thrust; 0 disables the thrust penalty entirely (condition then only affects the failure roll). Independent of partsWearSystem, which gates only whether wear ACCRUES").getDouble();
         arConfig.wearWarnProbability = config.get(ROCKET, "wearWarnProbability", 0.05, "Failure probability (0..1) at or above which the pilot is warned before launch that the rocket is worn. Also the threshold that blocks launch when wearCriticalBlocksLaunch is true").getDouble();
         arConfig.wearCriticalBlocksLaunch = config.get(ROCKET, "wearCriticalBlocksLaunch", false, "If true, a rocket whose failure probability is at/above wearWarnProbability is refused launch (no explosion). If false, the pilot is warned but may still launch and risk the stochastic explosion").getBoolean();
         arConfig.serviceStationStandaloneRepairMultiplier = config.get(ROCKET, "serviceStationStandaloneRepairMultiplier", 3.0, "Resource cost multiplier when the service station repairs a worn part WITHOUT a linked PrecisionAssembler (consumes the repair recipe's non-part ingredients times this factor). The assembler-backed path stays at 1x").getDouble();
@@ -825,7 +843,7 @@ public class ARConfiguration {
         arConfig.wearTankLeakChanceMax = config.get(ROCKET, "wearTankLeakChanceMax", 0.5, "Chance (0..1) that a fully-worn fuel tank carrying fuel/oxidizer leaks at launch. Scaled by the tank's wear stage. A leak both bleeds fuel and adds to the launch failure (explosion) probability").getDouble();
         arConfig.wearTankLeakFuelLoss = config.get(ROCKET, "wearTankLeakFuelLoss", 0.25, "Fraction of a fuel type's loaded fuel lost when a worn tank of that type leaks at launch").getDouble();
         arConfig.wearSeatBlockStageFraction = config.get(ROCKET, "wearSeatBlockStageFraction", 0.7, "Wear fraction (0..1 of max stage) at or above which a worn seat blocks a CREWED launch. Uncrewed/automated rockets ignore seat wear").getDouble();
-        arConfig.enableProjectileSubstrate = config.get(WEAPONS, "enableProjectileSubstrate", true, "Track fired shots as server-side records that fly across loaded and unloaded space alike. Turn off to disable long-range fire entirely: nothing is admitted and nothing in flight is stepped").getBoolean();
+        arConfig.enableWeapons = config.get(WEAPONS, "enableWeapons", true, "Whether combat exists on this server: whether guns fire (thrown rounds and held beams alike), whether sensors acquire targets, and whether weapon fire damages anything. Safe to switch off and back on again on a live world - guns keep their builds, buffers and targets, damage already done stays on the blocks that carry it, repair keeps working, and shields are unaffected. The only thing ending is the rounds still in the air, which would otherwise sit in the save waiting to resume. A gun with combat off reports itself disabled rather than silently doing nothing").getBoolean();
         arConfig.shotReflectionSpeedFloor = config.get(WEAPONS, "shotReflectionSpeedFloor", 0.05, "Speed in blocks per tick below which a shot deflected by a shield is ended at the shell instead of continuing. Prevents near-motionless rounds loitering against a shield", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.shotPenetrationSpeedFloor = config.get(WEAPONS, "shotPenetrationSpeedFloor", 0.05, "Speed in blocks per tick below which a round boring through a hull is treated as having come to rest inside it. Penetration costs a round its speed, and without a floor a spent one creeps forward forever", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.shotBodyRadiusCap = config.get(WEAPONS, "shotBodyRadiusCap", 2.0, "The widest a shot's body is treated as when it sweeps its way through blocks, in blocks. A body sweeps a cylinder rather than a line and the work one step does grows with the square of its width, so this bounds what an absurd calibre can cost the server. The declared cross-section still prices the shot; only the geometry is capped", 0.0, 8.0).getDouble();
@@ -845,7 +863,7 @@ public class ARConfiguration {
         arConfig.fireControlSensorAcquireHostilesOnly = config.get(WEAPONS, "fireControlSensorAcquireHostilesOnly", true, "Whether acquisition is limited to hostile mobs and players. Off, a battery engages whatever wanders into range").getBoolean();
         arConfig.turretDerateDamageFraction = config.get(WEAPONS, "turretDerateDamageFraction", 0.25, "How far gone a turret's own block must be, 0..1, before its traverse slows down. The order of the rungs is the mechanic; where they sit is balance", 0.0, 1.0).getDouble();
         arConfig.turretJamDamageFraction = config.get(WEAPONS, "turretJamDamageFraction", 0.75, "How far gone a turret's own block must be, 0..1, before its traverse seizes entirely. A seized mount still fires down the bearing it stopped at", 0.0, 1.0).getDouble();
-        arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enable rocket part wear and exploding chance.").getBoolean();
+        arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Whether rocket parts ACCRUE wear: whether a launch advances a seat, tank or motor towards its next stage. It does not gate what a worn part then DOES - a rocket shot up on the pad has to fly like a rocket shot up on the pad whatever this says, because battle damage and a long career put stages on the same axis. Off means a save stops getting worse, not that the damage already on it stops mattering: the launch warning, the critical-wear refusal, the failure roll and the tank leaks all still apply").getBoolean();
         arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Chance for each part to gain wear on launch.").getDouble();
 
         //Ore configuration

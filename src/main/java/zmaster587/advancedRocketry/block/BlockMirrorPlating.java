@@ -2,6 +2,7 @@ package zmaster587.advancedRocketry.block;
 
 import net.minecraft.block.material.Material;
 import net.minecraft.init.Blocks;
+import zmaster587.advancedRocketry.damage.StructureDamageEngine;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -107,7 +108,9 @@ public class BlockMirrorPlating extends BlockPlating {
      */
     private void burnOut(World world, BlockPos pos) {
         if (world != null && !world.isRemote && pos != null) {
-            world.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
+            // Same road as every other block weapon fire takes: ask, and honour a refusal. A film
+            // burning out is still a destruction, and a protected one stays.
+            StructureDamageEngine.removeIfAllowed(world, pos);
         }
     }
 

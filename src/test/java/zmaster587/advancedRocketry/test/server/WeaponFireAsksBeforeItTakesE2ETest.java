@@ -70,7 +70,7 @@ public class WeaponFireAsksBeforeItTakesE2ETest extends AbstractSharedServerTest
             assertTrue("the round was not in the air a tick after it was fired: " + inAir,
                     inAir.contains("\"present\":true"));
 
-            exec("artest config set enableProjectileSubstrate false");
+            exec("artest config set enableWeapons false");
             Thread.sleep(1_000L);
 
             String after = exec("artest shot read " + DIM + " " + id);
@@ -81,7 +81,7 @@ public class WeaponFireAsksBeforeItTakesE2ETest extends AbstractSharedServerTest
             assertTrue("the round ended, but for the wrong reason - it should say the substrate was"
                     + " switched off under it: " + after, after.contains("SUBSTRATE_DISABLED"));
         } finally {
-            exec("artest config set enableProjectileSubstrate true");
+            exec("artest config set enableWeapons true");
         }
     }
 

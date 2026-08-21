@@ -874,9 +874,11 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     public void damageParts() {
-        // Single gate for wear ACCRUAL. When the parts-wear system is disabled no
-        // part ever advances a wear stage, so a worn save loaded with the system
-        // off neither grows nor (combined with the gated consequences) bites.
+        // Single gate for wear ACCRUAL, and ONLY accrual. When the parts-wear system is
+        // disabled no part advances a stage from use, so a save stops getting worse — but
+        // the stages already on it keep every consequence they had. Wear and battle damage
+        // share one stage axis and nothing here can tell a long career from a shell, so
+        // gating the consequences would make a shot-up hull fly like a new one.
         if (!ARConfiguration.getCurrentConfig().partsWearSystem) {
             return;
         }

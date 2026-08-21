@@ -5,6 +5,7 @@ import com.github.stannismod.affs.world.shield.ShieldStrikeResult;
 import com.github.stannismod.affs.world.shield.ShieldStrikeService;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.damage.ImpactKind;
 import zmaster587.advancedRocketry.api.damage.TravellingBody;
 import zmaster587.advancedRocketry.damage.ImpactKindMapping;
@@ -74,7 +75,12 @@ public final class HeldBeam {
     public static Emission emit(World world, Vec3d muzzle, Vec3d direction, double reach,
                                 int powerThisTick, ImpactKind kind, double radius, String hullId) {
         if (world == null || world.isRemote || muzzle == null || direction == null
-                || powerThisTick <= 0 || reach <= 0.0D) {
+                || powerThisTick <= 0 || reach <= 0.0D
+                || !ARConfiguration.getCurrentConfig().enableWeapons) {
+            // The war switch is asked HERE and not only where a round is admitted. A held beam has no
+            // record and never passes through the registry, so a gate on the registry alone let a
+            // beam turret keep burning hulls on a server that had switched combat off — a switch
+            // covering half a mechanic, which reads as a promise and is worse than none.
             return new Emission(muzzle, 0.0D, false, false, Math.max(0, powerThisTick));
         }
         double length = direction.lengthVector();
@@ -99,14 +105,27 @@ public final class HeldBeam {
             ShieldStrike strike = new ShieldStrike(muzzle, unit, reach, powerThisTick,
                     ImpactKindMapping.toShieldKind(kind), false, null);
             ShieldStrikeResult result = ShieldStrikeService.resolve(world, strike);
-            if (result.isIntercepted()) {
+            if (result.isFullyAbsorbed()) {
                 Vec3d at = result.getHitPoint() == null ? contact : result.getHitPoint();
                 return new Emission(at, first.distance, true, false, 0);
             }
-            // The shell was crossed and paid nothing — it went down between the two questions. The
-            // beam carries on to whatever is behind it rather than stopping in mid-air.
+            // Either the shell paid nothing (it went down between the two questions) or it paid what
+            // it could and that was not enough. Both mean the same thing to a beam: what the shell
+            // could not buy carries on into whatever is behind it.
+            //
+            // ASKING THE WRONG QUESTION HERE INVERTED THE WHOLE LASER LINE. `isIntercepted` is true
+            // on an UNDERPAY as well as on a full stop, so a beam that overpowered a shell died at it
+            // — the exact opposite of the reason this weapon family exists: a beam whose power the
+            // shell cannot pay for is supposed to get through. `isFullyAbsorbed` is the question that
+            // means "the shell bought all of it".
+            int throughShell = Math.max(0, result.isIntercepted()
+                    ? result.getResidualImpactEnergy() : powerThisTick);
+            if (throughShell <= 0) {
+                Vec3d at = result.getHitPoint() == null ? contact : result.getHitPoint();
+                return new Emission(at, first.distance, true, false, 0);
+            }
             return emit(world, contact.add(unit.scale(CROSSING_EPSILON)), unit,
-                    reach - first.distance - CROSSING_EPSILON, powerThisTick, kind, radius, hullId);
+                    reach - first.distance - CROSSING_EPSILON, throughShell, kind, radius, hullId);
         }
 
         // Structure. The identity comes from the world's own counter, exactly as a shot's does: a beam

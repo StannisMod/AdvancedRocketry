@@ -119,7 +119,11 @@ public class TileFireControlSensor extends TileEntity implements ITickable, ISub
             // would be measured from the wrong point. Waiting is the only correct behaviour.
             return;
         }
-        if (!ARConfiguration.getCurrentConfig().enableFireControlSensor) {
+        if (!ARConfiguration.getCurrentConfig().enableWeapons
+                || !ARConfiguration.getCurrentConfig().enableFireControlSensor) {
+            // Two gates, one behaviour. The master says whether there is a war at all; the narrower
+            // one says whether batteries find their own targets in it. A pack may want the second
+            // without the first being in question, which is why both survive.
             // Switched off means OFF: no acquisition, nothing published, no power drawn and not even
             // a place in the network — a disabled sensor is not a node that quietly keeps its buffer
             // topped up. Anything it had already published expires on its own.
@@ -443,21 +447,40 @@ public class TileFireControlSensor extends TileEntity implements ITickable, ISub
         return modules;
     }
 
+    /**
+     * One readout line, translated where a translation exists.
+     *
+     * <p>A whole sentence per key with its placeholders in it, never a label concatenated with a
+     * value: word order is not the same in every language, and a line assembled from fragments can
+     * only ever come out in English order. {@code getModules} runs on both sides — the client proxy
+     * translates and the common one hands the key straight back, which then formats to itself
+     * because a key carries no format specifiers.</p>
+     */
+    private static String readoutText(String key, Object... args) {
+        return String.format(LibVulpes.proxy.getLocalizedString(key), args);
+    }
+
     private String modeLine() {
-        return "Mode: " + effectiveMode().name().toLowerCase(java.util.Locale.ROOT)
-                + (isUnderpowered() ? " (no power to illuminate)" : "");
+        // Two literal keys rather than one assembled from the enum name: a key built by
+        // concatenation is invisible to the lang cross-reference scan, which is the only thing that
+        // would notice it going missing from a catalogue.
+        String mode = readoutText(effectiveMode() == SensorMode.ACTIVE
+                ? "msg.fireControlSensor.mode.active" : "msg.fireControlSensor.mode.passive");
+        return isUnderpowered() ? readoutText("msg.fireControlSensor.line.modeUnderpowered", mode)
+                : readoutText("msg.fireControlSensor.line.mode", mode);
     }
 
     private String contactLine() {
-        return "Contacts: " + getContactCount();
+        return readoutText("msg.fireControlSensor.line.contacts", getContactCount());
     }
 
     private String lockLine() {
         if (getContactCount() <= 0) {
-            return "Lock: none";
+            return readoutText("msg.fireControlSensor.line.lockNone");
         }
-        return String.format("Lock: %.2f at %.0fm%s", getBestQuality(), getBestDistance(),
-                isBestLocked() ? "" : " (too poor to fire)");
+        return readoutText(isBestLocked() ? "msg.fireControlSensor.line.lock"
+                        : "msg.fireControlSensor.line.lockTooPoor",
+                getBestQuality(), getBestDistance());
     }
 
     @Override

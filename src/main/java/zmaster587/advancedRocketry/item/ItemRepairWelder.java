@@ -85,13 +85,25 @@ public class ItemRepairWelder extends Item {
         if (stage <= 0) {
             return Outcome.UNDAMAGED;
         }
+        boolean free = player.capabilities.isCreativeMode;
+        if (free) {
+            // Creative repairs anything, including a block that nothing crafts. The price of a
+            // repair is a fraction of the block's own recipe, so a block with no recipe has no
+            // price — and the shield and armour families have no recipes yet, which would otherwise
+            // make a shot-up shield generator permanently damaged with no path back even in
+            // creative. Charging nothing for nothing is the one reading of that which is not a
+            // refusal.
+            DamageState.setStage(world, pos, stage - 1);
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            return Outcome.REPAIRED;
+        }
+
         List<ItemStack> cost = RepairCost.perStage(world, pos);
         if (cost == null) {
             return Outcome.NO_RECIPE;
         }
-        boolean free = player.capabilities.isCreativeMode;
         int energyCost = ARConfiguration.getCurrentConfig().repairWelderEnergyPerStage;
-        if (!free && storedEnergy(tool) < energyCost) {
+        if (storedEnergy(tool) < energyCost) {
             return Outcome.NO_CHARGE;
         }
         if (!RepairCost.consume(player, cost, true)) {
@@ -99,9 +111,7 @@ public class ItemRepairWelder extends Item {
         }
 
         RepairCost.consume(player, cost, false);
-        if (!free) {
-            setStoredEnergy(tool, storedEnergy(tool) - energyCost);
-        }
+        setStoredEnergy(tool, storedEnergy(tool) - energyCost);
         DamageState.setStage(world, pos, stage - 1);
         world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
         return Outcome.REPAIRED;

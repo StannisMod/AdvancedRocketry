@@ -69,7 +69,7 @@ public final class ShotSubstrate {
      */
     public static long launch(World world, ShotSpec spec) {
         if (world == null || world.isRemote || spec == null
-                || !ARConfiguration.getCurrentConfig().enableProjectileSubstrate) {
+                || !ARConfiguration.getCurrentConfig().enableWeapons) {
             return -1L;
         }
         long id = ShotRegistry.get(world).add(spec, ARConfiguration.getCurrentConfig().maxShotsPerWorld);
@@ -139,7 +139,7 @@ public final class ShotSubstrate {
         if (world == null || world.isRemote) {
             return;
         }
-        if (!ARConfiguration.getCurrentConfig().enableProjectileSubstrate) {
+        if (!ARConfiguration.getCurrentConfig().enableWeapons) {
             endWhatWasStillInTheAir(world);
             return;
         }

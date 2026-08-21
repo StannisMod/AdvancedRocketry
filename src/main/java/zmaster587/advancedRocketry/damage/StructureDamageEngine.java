@@ -611,6 +611,30 @@ public final class StructureDamageEngine {
      * name, and one identity for all weapon fire is what makes that possible. A refusal is honoured
      * exactly as it reads — the block stays.</p>
      */
+    /**
+     * Remove a block as WEAPON FIRE, asking first — the entry point for anything that destroys a
+     * block outside the budget walk.
+     *
+     * <p>Armour that consumes itself is the case this exists for: a reactive charge going off and a
+     * mirror film burning out are both weapon fire taking a block, and both did it with a bare
+     * {@code setBlockState}, which meant the new armour was the one content in the mod a claim mod
+     * could not protect. A destruction is a destruction whoever performs it.</p>
+     *
+     * @return whether the block was actually removed; {@code false} means something refused, and the
+     *         block is still standing
+     */
+    public static boolean removeIfAllowed(World world, BlockPos pos) {
+        if (world == null || pos == null || world.isRemote) {
+            return false;
+        }
+        IBlockState state = world.getBlockState(pos);
+        if (!mayRemove(world, pos, state)) {
+            return false;
+        }
+        world.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
+        return true;
+    }
+
     private static boolean mayRemove(World world, BlockPos pos, IBlockState state) {
         if (!(world instanceof WorldServer)) {
             return true;

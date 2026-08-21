@@ -251,7 +251,10 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
      */
     private boolean burnOneTick(boolean wantsToFire, String shipId) {
         int perTick = spec.getBeamPowerPerTick();
-        if (!wantsToFire || perTick <= 0) {
+        if (!wantsToFire || perTick <= 0 || !ARConfiguration.getCurrentConfig().enableWeapons) {
+            // Asked here as well as under the muzzle: the emission itself refuses with the war off,
+            // but a gun that called it anyway would still pay the tick's energy and heat for a beam
+            // that never existed.
             return false;
         }
         if (heat >= spec.getHeatCapacity()) {
@@ -317,6 +320,17 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
      * beam is: there is no register of live beams to look one up in.
      */
     private final BeamReplication.Channel beamChannel = new BeamReplication.Channel();
+
+    /**
+     * Is this gun mute because the server has combat switched off?
+     *
+     * <p>A distinct answer beside "holding fire" and "nothing left to fire with", for the same
+     * reason those two are distinct: a gun that is disabled and a gun that is broken look identical
+     * from outside, and the old switch made every gun on the server look broken.</p>
+     */
+    public boolean isDisabledByConfig() {
+        return !ARConfiguration.getCurrentConfig().enableWeapons;
+    }
 
     /** Is this gun burning right now? */
     public boolean isBeamLit() {
@@ -394,7 +408,8 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
 
     /** Everything that must be true before a round leaves, other than pointing the right way. */
     private boolean canFireNow() {
-        return !targetIsFriendly()
+        return ARConfiguration.getCurrentConfig().enableWeapons
+                && !targetIsFriendly()
                 && isLockedWellEnoughToFire()
                 && spec.isOperable()
                 && mechanism.getDriveState().permitsFiring()
@@ -670,7 +685,20 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         markDirty();
     }
 
-    /** Whose side it is on. Travels with every round it fires so an impact can be attributed. */
+    /**
+     * Whose side it is on. Travels with every round it fires so an impact can be attributed.
+     *
+     * <p><b>Nothing calls this yet, and nothing calls {@link #setOwner}.</b> Both fields persist and
+     * both are stamped onto every round, but with no writer {@code owner} is always null and
+     * {@code faction} always falls back to the network's access code — which is therefore what
+     * actually marks a round as ours today. They are the seam a future attribution or permission
+     * layer would use; until one exists, saying so here is more honest than a field that looks
+     * wired.</p>
+     *
+     * <p>Commanding a gun is likewise unguarded on purpose: the console takes no player and asks
+     * nothing, the same as most machines in this game. Keeping strangers away from a battery is a
+     * protection mod's job, and one is already consulted before any block is taken.</p>
+     */
     public void setFaction(String faction) {
         this.faction = faction;
         markDirty();
@@ -680,6 +708,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         return faction;
     }
 
+    /** Who built it. Unwired in the same way {@link #setFaction} is — see its note. */
     public void setOwner(UUID owner) {
         this.owner = owner;
         markDirty();

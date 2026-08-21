@@ -378,7 +378,9 @@ public enum WeightEngine {
 
             toughnessIndividual = readMap(gson, root, "toughnessIndividual", mapType);
             ablationIndividual = readMap(gson, root, "ablationIndividual", mapType);
-            ablationByRegex = readMap(gson, root, "ablationByRegex", mapType);
+            // linkedType, like every other regex column: matchRegex is first-match-wins, so the
+            // order the pack wrote its patterns in IS the precedence between overlapping patterns.
+            ablationByRegex = readMap(gson, root, "ablationByRegex", linkedType);
             toughnessByRegex = readMap(gson, root, "toughnessByRegex", linkedType);
             if (toughnessByRegex.isEmpty()) {
                 toughnessByRegex = defaultToughnessByRegex();
@@ -418,6 +420,12 @@ public enum WeightEngine {
         toughnessByRegex = defaultToughnessByRegex();
         toughnessMaterials = defaultToughnessMaterials();
         toughnessFallback = 2.0;
+        // The ablation columns default to EMPTY rather than to a table: a block with no row here
+        // has its figure derived from its toughness. Empty is still a value that has to be
+        // written, though — leaving these alone would let a previous load's rows survive both a
+        // reset and the fallback taken when a config file cannot be read.
+        ablationIndividual = new HashMap<>();
+        ablationByRegex = new LinkedHashMap<>();
     }
 
     // ---- Runtime / test mutation hooks --------------------------------------
@@ -473,6 +481,11 @@ public enum WeightEngine {
             json.addProperty("fluidFallback", fluidFallback);
             json.add("toughnessIndividual", gson.toJsonTree(toughnessIndividual));
             json.add("toughnessByRegex", gson.toJsonTree(toughnessByRegex));
+            // Every key load() reads is written back. Omitting one does not mean "keep the file's
+            // value": save() rewrites the whole file, so a column that is loaded and not saved is a
+            // column the pack loses the first time anything calls save().
+            json.add("ablationIndividual", gson.toJsonTree(ablationIndividual));
+            json.add("ablationByRegex", gson.toJsonTree(ablationByRegex));
             json.add("toughnessMaterials", gson.toJsonTree(toughnessMaterials));
             json.addProperty("toughnessFallback", toughnessFallback);
             w.write(gson.toJson(json));
