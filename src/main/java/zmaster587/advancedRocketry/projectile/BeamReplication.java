@@ -2,6 +2,10 @@ package zmaster587.advancedRocketry.projectile;
 
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.network.PacketBeamState;
@@ -59,8 +63,7 @@ public final class BeamReplication {
 
         /** Whether the last thing said was "it is burning". */
         private boolean announcedLit;
-        private Vec3d announcedFrom;
-        private Vec3d announcedTo;
+        private List<Vec3d> announcedPath = Collections.emptyList();
 
         /**
          * Say what the beam is doing this tick, if it is worth saying.
@@ -68,15 +71,13 @@ public final class BeamReplication {
          * <p>Cheap to call every tick for a gun that has no beam at all: a dark gun already
          * announced dark costs one boolean test.</p>
          */
-        public void update(World world, final BlockPos gun, final Vec3d from, final Vec3d to,
-                           boolean lit) {
+        public void update(World world, final BlockPos gun, final List<Vec3d> path, boolean lit) {
             if (world == null || world.isRemote || gun == null) {
                 return;
             }
-            final boolean burning = lit && from != null && to != null;
-            Vec3d lastFrom = announcedFrom;
-            Vec3d lastTo = announcedTo;
-            if (!offer(world.getTotalWorldTime(), phaseOf(gun), burning, from, to)) {
+            final boolean burning = lit && path != null && path.size() >= 2;
+            List<Vec3d> lastPath = announcedPath;
+            if (!offer(world.getTotalWorldTime(), phaseOf(gun), burning, path)) {
                 // The common case by a wide margin — an idle gun, or a steady beam between
                 // heartbeats — so nothing above this line may allocate.
                 return;
@@ -84,14 +85,15 @@ public final class BeamReplication {
             // Announced along the line it occupies NOW, or — going out — along the line it last
             // occupied: those are the players holding a drawing of it, and nobody else has anything
             // to correct. A gun that never lit falls back to its own block.
-            Vec3d near = burning ? from : firstNonNull(lastFrom, centre(gun));
-            Vec3d far = burning ? to : firstNonNull(lastTo, centre(gun));
+            final List<Vec3d> announce = burning ? path : lastPath;
+            Vec3d near = announce.isEmpty() ? centre(gun) : announce.get(0);
+            Vec3d far = announce.isEmpty() ? centre(gun) : announce.get(announce.size() - 1);
             ProximityBroadcast.sendNearSegment(world, near, far,
                     ARConfiguration.getCurrentConfig().shotVisibilityRadius,
                     new Supplier<PacketBeamState>() {
                         @Override
                         public PacketBeamState get() {
-                            return PacketBeamState.of(gun, from, to, burning);
+                            return PacketBeamState.of(gun, path, burning);
                         }
                     });
         }
@@ -108,17 +110,17 @@ public final class BeamReplication {
          * @param time  the world tick, which the heartbeat is counted against
          * @param phase this gun's heartbeat offset, so that guns do not beat in unison
          */
-        public boolean offer(long time, int phase, boolean lit, Vec3d from, Vec3d to) {
-            boolean send = decide(time, phase, lit, from, to);
+        public boolean offer(long time, int phase, boolean lit, List<Vec3d> path) {
+            boolean send = decide(time, phase, lit, path);
             if (send) {
                 announcedLit = lit;
-                announcedFrom = lit ? from : null;
-                announcedTo = lit ? to : null;
+                announcedPath = lit && path != null
+                        ? new ArrayList<Vec3d>(path) : Collections.<Vec3d>emptyList();
             }
             return send;
         }
 
-        private boolean decide(long time, int phase, boolean lit, Vec3d from, Vec3d to) {
+        private boolean decide(long time, int phase, boolean lit, List<Vec3d> path) {
             if (!lit) {
                 // Nothing to say about a beam that was already dark last time anybody was told.
                 return announcedLit;
@@ -126,8 +128,16 @@ public final class BeamReplication {
             if (!announcedLit) {
                 return true;
             }
-            if (moved(announcedFrom, from) || moved(announcedTo, to)) {
+            // The whole path, not only its ends: a beam turned by a mirror can keep both ends while
+            // its corner walks along the plating, and a client told only about the ends would draw a
+            // straight line through it.
+            if (path == null || path.size() != announcedPath.size()) {
                 return true;
+            }
+            for (int i = 0; i < path.size(); i++) {
+                if (moved(announcedPath.get(i), path.get(i))) {
+                    return true;
+                }
             }
             return Math.floorMod(time + phase, (long) REFRESH_TICKS) == 0L;
         }

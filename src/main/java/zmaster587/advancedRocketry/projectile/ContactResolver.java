@@ -46,10 +46,23 @@ public final class ContactResolver {
     public static final class Resolution {
         public final ContactResult result;
         public final double distance;
+        /**
+         * Whether the body came OUT the other side, as opposed to still being in there.
+         *
+         * <p>The distinction a residual energy cannot make on its own, and the one that decides
+         * whether the tick is over. A bore that stalled inside armour with energy to spare has
+         * spent this tick's travel and resumes next tick from where it stopped — that is what
+         * "penetration takes time" means. A body that left the far side has NOT spent the tick: it
+         * is in open air with travel still owing, and whatever stands in the rest of that travel is
+         * entitled to be asked. Reading only the residual blurs the two, which is how spaced armour
+         * came to be passed through without its second plate ever being consulted.</p>
+         */
+        public final boolean leftTheStructure;
 
-        Resolution(ContactResult result, double distance) {
+        Resolution(ContactResult result, double distance, boolean leftTheStructure) {
             this.result = result;
             this.distance = Math.max(0.0D, distance);
+            this.leftTheStructure = leftTheStructure;
         }
     }
 
@@ -67,7 +80,7 @@ public final class ContactResolver {
     public static Resolution resolve(World world, TravellingBody body, StructureCrossing.Hit hit,
                                      double reachBlocks, boolean resumingBore) {
         if (world == null || body == null || hit == null) {
-            return new Resolution(ContactResult.stopped(), 0.0D);
+            return new Resolution(ContactResult.stopped(), 0.0D, false);
         }
 
         Contact contact = new Contact(hit.block, hit.point, hit.entryFace,
@@ -84,14 +97,16 @@ public final class ContactResolver {
                 // A block that answered for itself did not walk anything, so the body is advanced past
                 // the block it was answered by — otherwise the next test finds the same block, asks
                 // again, and a round argues with one plate until the tick's crossing budget runs out.
-                return new Resolution(answer, answer.isStopped() ? 0.0D : 1.0D);
+                // A block that answered for itself did not walk anything, and an answer that is not
+                // "stopped" means the body is past IT — so the next thing along is owed a question.
+                return new Resolution(answer, answer.isStopped() ? 0.0D : 1.0D, !answer.isStopped());
             }
         }
         ContactResult skipped = ricochet(world, contact, body);
         if (skipped != null) {
             // A graze that skipped off did not walk into anything, so the body is moved past the block
             // it bounced from, exactly as a block that answered for itself would have left it.
-            return new Resolution(skipped, 1.0D);
+            return new Resolution(skipped, 1.0D, true);
         }
         return defaultLaw(world, body, contact, reachBlocks, resumingBore);
     }
@@ -219,11 +234,18 @@ public final class ContactResolver {
 
         int residual = report.getBudgetLeft();
         if (residual <= 0) {
-            return new Resolution(ContactResult.stopped(), report.getDistanceWalked());
+            return new Resolution(ContactResult.stopped(), report.getDistanceWalked(), false);
         }
         // It got through what it met, or as far as this tick's travel allowed. Either way it is still
-        // a shot, and the substrate advances it by what the walk says it covered.
-        return new Resolution(ContactResult.passedThrough(residual), report.getDistanceWalked());
+        // a shot, and the substrate advances it by what the walk says it covered. Only the FIRST of
+        // those two is leaving: a walk that ran out of tick inside the material is still in there.
+        // The REASON and not the outcome: a walk that ran out of granted path inside the material
+        // hands its budget back exactly as one that came out the far side does, and only the reason
+        // says which happened. Reading the outcome told a round that had bored a fifth of a block
+        // that it was through the plate.
+        return new Resolution(ContactResult.passedThrough(residual), report.getDistanceWalked(),
+                report.getStopReason()
+                        == zmaster587.advancedRocketry.api.damage.StopReason.EXITED_FAR_SIDE);
     }
 
     /**

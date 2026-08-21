@@ -182,7 +182,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         // Rebuilt into a thrower while it was burning: the light goes out, and whoever was watching
         // is told so, exactly as if the trigger had been released.
         beamLit = false;
-        beamChannel.update(world, pos, beamStartedAt, beamEndedAt, false);
+        beamChannel.update(world, pos, replicatedPath(), false);
 
         if (!onTarget || isHoldingFire() || !canFireNow()) {
             return;
@@ -239,7 +239,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         beamLit = burnOneTick(wantsToFire, shipId);
         // Told here and nowhere else, so every way of NOT burning — no trigger, too hot, saving up,
         // no line of fire — reaches the players watching by the same road as burning does.
-        beamChannel.update(world, pos, beamStartedAt, beamEndedAt, beamLit);
+        beamChannel.update(world, pos, replicatedPath(), beamLit);
     }
 
     /**
@@ -287,6 +287,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         heat += spec.getHeatPerShot();
         beamStartedAt = muzzle.point;
         beamEndedAt = emission.endedAt;
+        beamPath = emission.path;
         if (emission.hitSomething()) {
             shotsFired++;
         }
@@ -312,6 +313,16 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
     /** Dark and saving up, because the feed could not keep up. Persisted — it is a real refusal. */
     private boolean beamRecharging;
     /** Where the beam left the gun last time it was lit — the muzzle, in world coordinates. */
+    /**
+     * The line the last tick of beam actually occupied, muzzle first.
+     *
+     * <p>Two points for the ordinary beam and more where a mirror turned it. Not persisted and not
+     * part of the gun's state: it is what the current tick's emission said, kept only long enough to
+     * be replicated, because a bent beam drawn as one muzzle-to-end line is drawn through the very
+     * plating that bent it.</p>
+     */
+    private java.util.List<Vec3d> beamPath = java.util.Collections.emptyList();
+
     private Vec3d beamStartedAt;
     /** Where the beam ended last time it was lit; for instruments and for drawing it. */
     private Vec3d beamEndedAt;
@@ -348,6 +359,23 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
     /** Where the beam last ended, or null if it has not been lit. */
     public Vec3d getBeamEndedAt() {
         return beamEndedAt;
+    }
+
+    /**
+     * The path to replicate: this tick's line if there is one, else the two ends we last had.
+     *
+     * <p>The fallback matters on the way OUT. A gun going dark is announced along the line it last
+     * occupied, because those are the players holding a drawing of it; falling back to the ends
+     * keeps that true for a gun whose last emission is no longer in hand.</p>
+     */
+    private java.util.List<Vec3d> replicatedPath() {
+        if (beamPath.size() >= 2) {
+            return beamPath;
+        }
+        if (beamStartedAt == null || beamEndedAt == null) {
+            return java.util.Collections.emptyList();
+        }
+        return java.util.Arrays.asList(beamStartedAt, beamEndedAt);
     }
 
     private boolean launch(String shipId) {
@@ -831,7 +859,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
      */
     private void extinguishBeam() {
         beamLit = false;
-        beamChannel.update(world, pos, beamStartedAt, beamEndedAt, false);
+        beamChannel.update(world, pos, replicatedPath(), false);
     }
 
     // ---- linker: the no-network way to give a gun a target

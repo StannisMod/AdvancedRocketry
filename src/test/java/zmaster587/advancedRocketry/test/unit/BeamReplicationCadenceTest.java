@@ -27,6 +27,14 @@ import static org.junit.Assert.assertTrue;
 public class BeamReplicationCadenceTest {
 
     private static final BlockPos GUN = new BlockPos(100, 70, 100);
+    /** A dark gun offers no line at all, which is the shape "not burning" has on the wire. */
+    private static final java.util.List<Vec3d> NO_LINE = java.util.Collections.emptyList();
+
+    /** The ordinary beam: two points. A bent one would have more, and the cadence does not care. */
+    private static java.util.List<Vec3d> line(Vec3d from, Vec3d to) {
+        return java.util.Arrays.asList(from, to);
+    }
+
     private static final Vec3d MUZZLE = new Vec3d(100.5D, 74.0D, 100.5D);
     private static final Vec3d TARGET = new Vec3d(140.5D, 74.0D, 100.5D);
 
@@ -40,7 +48,7 @@ public class BeamReplicationCadenceTest {
             assertFalse("a gun that is not burning, and was not burning last time anybody was told,"
                     + " sent a packet on tick " + tick + " — every idle gun in the world would then"
                     + " be paying for a beam it does not have",
-                    channel.offer(tick, PHASE, false, null, null));
+                    channel.offer(tick, PHASE, false, NO_LINE));
         }
     }
 
@@ -49,20 +57,20 @@ public class BeamReplicationCadenceTest {
         BeamReplication.Channel channel = new BeamReplication.Channel();
         assertTrue("the tick a beam lit was not announced: a client is told nothing else about a"
                 + " beam, so one that is not announced is one nobody can see",
-                channel.offer(0L, PHASE, true, MUZZLE, TARGET));
+                channel.offer(0L, PHASE, true, line(MUZZLE, TARGET)));
     }
 
     @Test
     public void goingOutIsAnnouncedOnceAndThenTheGunIsQuietAgain() {
         BeamReplication.Channel channel = new BeamReplication.Channel();
-        channel.offer(0L, PHASE, true, MUZZLE, TARGET);
+        channel.offer(0L, PHASE, true, line(MUZZLE, TARGET));
 
         assertTrue("the beam went out and nobody was told: the client would hold the last segment it"
                 + " was sent, drawing a beam from a gun that has stopped firing",
-                channel.offer(1L, PHASE, false, null, null));
+                channel.offer(1L, PHASE, false, NO_LINE));
         for (long tick = 2; tick < 60; tick++) {
             assertFalse("the gun kept announcing that it is not burning, on tick " + tick,
-                    channel.offer(tick, PHASE, false, null, null));
+                    channel.offer(tick, PHASE, false, NO_LINE));
         }
     }
 
@@ -78,7 +86,7 @@ public class BeamReplicationCadenceTest {
         int sinceSent = 0;
         int sent = 0;
         for (long tick = 0; tick < 400; tick++) {
-            if (channel.offer(tick, PHASE, true, MUZZLE, TARGET)) {
+            if (channel.offer(tick, PHASE, true, line(MUZZLE, TARGET))) {
                 sent++;
                 longestSilence = Math.max(longestSilence, sinceSent);
                 sinceSent = 0;
@@ -100,19 +108,19 @@ public class BeamReplicationCadenceTest {
     @Test
     public void anAimThatIsMovingIsAnnouncedAsItMoves() {
         BeamReplication.Channel channel = new BeamReplication.Channel();
-        channel.offer(0L, PHASE, true, MUZZLE, TARGET);
+        channel.offer(0L, PHASE, true, line(MUZZLE, TARGET));
 
         // The gun tracks a target across its front: one tick later the far end is metres away from
         // where the client was told it was.
         Vec3d swung = new Vec3d(TARGET.x, TARGET.y, TARGET.z + 4.0D);
         assertTrue("the beam swung four blocks across and the client was not told: it would be drawn"
                 + " burning into whatever it was pointed at half a second ago",
-                channel.offer(1L, PHASE, true, MUZZLE, swung));
+                channel.offer(1L, PHASE, true, line(MUZZLE, swung)));
 
         // And the muzzle itself moves when the gun is on a ship under way.
         Vec3d carried = new Vec3d(MUZZLE.x + 3.0D, MUZZLE.y, MUZZLE.z);
         assertTrue("the gun itself moved and the client was not told: a beam on a moving ship would"
-                + " hang in the air behind it", channel.offer(2L, PHASE, true, carried, swung));
+                + " hang in the air behind it", channel.offer(2L, PHASE, true, line(carried, swung)));
     }
 
     /**
@@ -135,7 +143,7 @@ public class BeamReplicationCadenceTest {
     public void theClientDrawsNothingUntilItIsTold() {
         ClientBeamTracker.clear();
         assertEquals("the client's beam tracker did not start empty", 0, ClientBeamTracker.count());
-        ClientBeamTracker.lit(GUN.toLong(), MUZZLE, TARGET);
+        ClientBeamTracker.lit(GUN.toLong(), line(MUZZLE, TARGET));
         assertEquals("a beam the client was told about is not being drawn", 1,
                 ClientBeamTracker.count());
         ClientBeamTracker.extinguished(GUN.toLong());
@@ -150,7 +158,7 @@ public class BeamReplicationCadenceTest {
     @Test
     public void aBeamNobodyMentionsAgainStopsBeingDrawn() {
         ClientBeamTracker.clear();
-        ClientBeamTracker.lit(GUN.toLong(), MUZZLE, TARGET);
+        ClientBeamTracker.lit(GUN.toLong(), line(MUZZLE, TARGET));
         for (int tick = 0; tick < ClientBeamTracker.stalenessTicks(); tick++) {
             ClientBeamTracker.tick();
         }

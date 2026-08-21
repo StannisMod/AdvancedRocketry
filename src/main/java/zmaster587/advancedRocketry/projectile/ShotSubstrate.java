@@ -289,15 +289,27 @@ public final class ShotSubstrate {
                     timeLeft -= (structure.distance + CROSSING_EPSILON) / speed;
                     velocity = contact.result.getDeflectedVelocity();
                     position = structure.point.add(velocity.normalize().scale(CROSSING_EPSILON));
-                } else {
-                    // It is still going, so it used this tick's travel: it is as deep as its speed
-                    // took it, and no deeper. That is the whole of "penetration takes time" — the
-                    // depth per tick is the distance per tick, and the next tick starts from here.
+                } else if (!contact.leftTheStructure) {
+                    // Still in there. It used this tick's travel: it is as deep as its speed took it,
+                    // and no deeper. That is the whole of "penetration takes time" — the depth per
+                    // tick is the distance per tick, and the next tick starts from here.
                     position = structure.point.add(direction.scale(reachInside));
                     timeLeft = 0.0D;
                     velocity = slowedByWorkDone(velocity, energyBefore, shot.getImpactEnergy(),
                             shot.getKind());
                     endedInsideHull = structure.shipId;
+                } else {
+                    // It came out the far side with travel still owing, so the tick is NOT over and
+                    // whatever stands in the rest of it is owed a question. Ending here instead moved
+                    // the round the whole remaining distance in one go, straight past a second plate
+                    // that was never asked — which is exactly the arrangement spaced armour is.
+                    double advanced = Math.min(reachInside,
+                            Math.max(contact.distance, CROSSING_EPSILON));
+                    position = structure.point.add(direction.scale(advanced + CROSSING_EPSILON));
+                    timeLeft -= (structure.distance + advanced + CROSSING_EPSILON) / speed;
+                    velocity = slowedByWorkDone(velocity, energyBefore, shot.getImpactEnergy(),
+                            shot.getKind());
+                    endedInsideHull = null;
                 }
 
                 if (velocity.lengthVector()

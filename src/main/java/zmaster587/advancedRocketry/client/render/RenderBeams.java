@@ -93,25 +93,34 @@ public class RenderBeams {
         buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR);
 
         for (ClientBeamTracker.ClientBeam beam : ClientBeamTracker.burning()) {
-            Vec3d from = beam.getFrom();
-            Vec3d to = beam.getTo();
-            if (from == null || to == null) {
-                continue;
+            // A beam is a PATH: one leg for the ordinary one, more where a mirror turned it. Each
+            // leg is a ribbon of its own because each faces the camera differently, and only the
+            // LAST one ends in a spot — the corners are places the beam went on from, not places it
+            // landed, and a glow at a corner would read as a hit that never happened.
+            java.util.List<Vec3d> path = beam.getPath();
+            for (int leg = 0; leg + 1 < path.size(); leg++) {
+                Vec3d from = path.get(leg);
+                Vec3d to = path.get(leg + 1);
+                if (from == null || to == null) {
+                    continue;
+                }
+                Vec3d axis = to.subtract(from);
+                if (axis.lengthVector() < 1.0E-6D) {
+                    continue;
+                }
+                axis = axis.normalize();
+                Vec3d across = across(axis, from, to, eye);
+                if (across == null) {
+                    continue;
+                }
+                ribbon(buffer, from, to, across.scale(HALO_HALF_WIDTH), eye,
+                        1.0F, 0.32F, 0.16F, 0.35F);
+                ribbon(buffer, from, to, across.scale(CORE_HALF_WIDTH), eye,
+                        1.0F, 0.93F, 0.85F, 1.0F);
+                if (leg + 2 == path.size()) {
+                    spot(buffer, to, axis, eye);
+                }
             }
-            Vec3d axis = to.subtract(from);
-            if (axis.lengthVector() < 1.0E-6D) {
-                continue;
-            }
-            axis = axis.normalize();
-            Vec3d across = across(axis, from, to, eye);
-            if (across == null) {
-                continue;
-            }
-            ribbon(buffer, from, to, across.scale(HALO_HALF_WIDTH), eye,
-                    1.0F, 0.32F, 0.16F, 0.35F);
-            ribbon(buffer, from, to, across.scale(CORE_HALF_WIDTH), eye,
-                    1.0F, 0.93F, 0.85F, 1.0F);
-            spot(buffer, to, axis, eye);
         }
 
         tessellator.draw();

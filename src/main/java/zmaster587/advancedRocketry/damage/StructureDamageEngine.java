@@ -342,8 +342,13 @@ public final class StructureDamageEngine {
                 return result;
             }
             // Budget still in hand at the path limit: hand it back rather than absorb it silently.
+            // WHERE it ran out is the caller's question, though, and the two answers are not the
+            // same fact: still in the material with the path spent, or out the far side with path
+            // to spare. A body that "exited" without leaving would be advanced past whatever stood
+            // beyond it, which is not a thing it ever reached.
             result.outcome = DamageOutcome.EXITED;
-            result.stopReason = StopReason.EXITED_FAR_SIDE;
+            result.stopReason = previousWasSolid
+                    ? StopReason.REACH_EXHAUSTED : StopReason.EXITED_FAR_SIDE;
             result.exitPoint = previousWasSolid ? farEnd : lastSolidExit;
             return result;
         }

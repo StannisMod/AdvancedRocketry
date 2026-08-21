@@ -2,6 +2,10 @@ package zmaster587.advancedRocketry.client;
 
 import net.minecraft.util.math.Vec3d;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,14 +41,17 @@ public final class ClientBeamTracker {
     private ClientBeamTracker() {
     }
 
-    /** This gun's beam is burning along this segment, as of now. */
-    public static void lit(long gun, Vec3d from, Vec3d to) {
-        ClientBeam beam = BEAMS.get(gun);
-        if (beam == null) {
-            BEAMS.put(gun, new ClientBeam(from, to));
+    /** This gun's beam is burning along this PATH, as of now. */
+    public static void lit(long gun, List<Vec3d> path) {
+        if (path == null || path.size() < 2) {
             return;
         }
-        beam.refresh(from, to);
+        ClientBeam beam = BEAMS.get(gun);
+        if (beam == null) {
+            BEAMS.put(gun, new ClientBeam(path));
+            return;
+        }
+        beam.refresh(path);
     }
 
     /** This gun's beam has gone out. */
@@ -60,6 +67,24 @@ public final class ClientBeamTracker {
     /** How many beams the client is drawing. The observable a client test can ask about. */
     public static int count() {
         return BEAMS.size();
+    }
+
+    /**
+     * How many of them have a CORNER in them — a beam something turned.
+     *
+     * <p>The second observable, and it exists because the first cannot see the thing that goes
+     * wrong here. A bent beam sent to a client as two ends is still one drawn beam, so a count of
+     * beams is green whether the corner arrived or not; what a player would see is a laser drawn
+     * straight through the mirror that turned it.</p>
+     */
+    public static int bentCount() {
+        int bent = 0;
+        for (ClientBeam beam : BEAMS.values()) {
+            if (beam.isBent()) {
+                bent++;
+            }
+        }
+        return bent;
     }
 
     public static void clear() {
@@ -82,21 +107,24 @@ public final class ClientBeamTracker {
         BEAMS.values().removeIf(ClientBeam::ageAndCheckStale);
     }
 
-    /** One drawn beam: where it starts, where it ends, both in world coordinates. */
+    /**
+     * One drawn beam: the path it occupies, in world coordinates, muzzle first.
+     *
+     * <p>Two points for the ordinary beam, more where something turned it. {@link #getFrom} and
+     * {@link #getTo} are kept because the ends are what most readers want, and because a beam that
+     * has not been bent is exactly its two ends.</p>
+     */
     public static final class ClientBeam {
 
-        private Vec3d from;
-        private Vec3d to;
+        private List<Vec3d> path;
         private int sinceHeard;
 
-        private ClientBeam(Vec3d from, Vec3d to) {
-            this.from = from;
-            this.to = to;
+        private ClientBeam(List<Vec3d> path) {
+            this.path = new ArrayList<Vec3d>(path);
         }
 
-        private void refresh(Vec3d newFrom, Vec3d newTo) {
-            from = newFrom;
-            to = newTo;
+        private void refresh(List<Vec3d> newPath) {
+            path = new ArrayList<Vec3d>(newPath);
             sinceHeard = 0;
         }
 
@@ -104,12 +132,22 @@ public final class ClientBeamTracker {
             return ++sinceHeard > STALE_TICKS;
         }
 
+        /** Every point of the line, muzzle first. Never fewer than two. */
+        public List<Vec3d> getPath() {
+            return Collections.unmodifiableList(path);
+        }
+
+        /** Whether something turned this beam, which is the only case the path has a corner. */
+        public boolean isBent() {
+            return path.size() > 2;
+        }
+
         public Vec3d getFrom() {
-            return from;
+            return path.get(0);
         }
 
         public Vec3d getTo() {
-            return to;
+            return path.get(path.size() - 1);
         }
     }
 }

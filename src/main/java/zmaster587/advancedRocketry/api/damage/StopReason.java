@@ -17,6 +17,18 @@ public enum StopReason {
     EXITED_FAR_SIDE,
 
     /**
+     * The granted PATH ran out while the body was still inside structure, with budget in hand.
+     * Pairs with {@link DamageOutcome#EXITED}, because the budget is handed back either way — and
+     * that shared outcome is exactly why this reason has to exist separately.
+     *
+     * <p>"Budget left over" and "came out the other side" are different facts, and a caller that
+     * has to decide whether the body is still IN there can only tell them apart here. Reported as
+     * {@code EXITED_FAR_SIDE} until 2026-08-20, which told a round that had bored a fifth of a
+     * block that it had left the plate.</p>
+     */
+    REACH_EXHAUSTED,
+
+    /**
      * The target region is not loaded, so nothing could be resolved. <b>Not</b> a statement that there
      * is nothing there — a caller able to retry should, and one that treats this as "clean miss"
      * silently loses shots into unloaded space.

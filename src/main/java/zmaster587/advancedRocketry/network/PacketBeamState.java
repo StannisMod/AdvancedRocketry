@@ -6,6 +6,9 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.network.PacketBuffer;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
+
+import java.util.ArrayList;
+import java.util.List;
 import zmaster587.advancedRocketry.client.ClientBeamTracker;
 import zmaster587.libVulpes.network.BasePacket;
 
@@ -28,25 +31,35 @@ import zmaster587.libVulpes.network.BasePacket;
  */
 public class PacketBeamState extends BasePacket {
 
+    /**
+     * A beam is a PATH and not a segment, because something can turn it.
+     *
+     * <p>Two points for the ordinary beam. More where a mirror sent it back: the corner is a real
+     * point on the line the beam occupies, and a bent beam drawn muzzle-to-end would be drawn
+     * straight through the very plating that turned it. The cap is a wire bound and matches the
+     * server's own segment budget, so a path that reaches it is drawn as far as it was resolved.</p>
+     */
+    private static final int MAX_POINTS = 9;
+
     private long gun;
     private boolean lit;
-    private double fromX, fromY, fromZ;
-    private double toX, toY, toZ;
+    private final List<Vec3d> path = new ArrayList<Vec3d>(2);
 
     public PacketBeamState() {
     }
 
-    public static PacketBeamState of(BlockPos gun, Vec3d from, Vec3d to, boolean lit) {
+    public static PacketBeamState of(BlockPos gun, List<Vec3d> path, boolean lit) {
         PacketBeamState packet = new PacketBeamState();
         packet.gun = gun.toLong();
-        packet.lit = lit && from != null && to != null;
+        packet.lit = lit && path != null && path.size() >= 2;
         if (packet.lit) {
-            packet.fromX = from.x;
-            packet.fromY = from.y;
-            packet.fromZ = from.z;
-            packet.toX = to.x;
-            packet.toY = to.y;
-            packet.toZ = to.z;
+            for (Vec3d point : path) {
+                if (point == null || packet.path.size() >= MAX_POINTS) {
+                    break;
+                }
+                packet.path.add(point);
+            }
+            packet.lit = packet.path.size() >= 2;
         }
         return packet;
     }
@@ -59,12 +72,12 @@ public class PacketBeamState extends BasePacket {
         if (!lit) {
             return;
         }
-        buffer.writeDouble(fromX);
-        buffer.writeDouble(fromY);
-        buffer.writeDouble(fromZ);
-        buffer.writeDouble(toX);
-        buffer.writeDouble(toY);
-        buffer.writeDouble(toZ);
+        buffer.writeByte(path.size());
+        for (Vec3d point : path) {
+            buffer.writeDouble(point.x);
+            buffer.writeDouble(point.y);
+            buffer.writeDouble(point.z);
+        }
     }
 
     @Override
@@ -75,12 +88,12 @@ public class PacketBeamState extends BasePacket {
         if (!lit) {
             return;
         }
-        fromX = buffer.readDouble();
-        fromY = buffer.readDouble();
-        fromZ = buffer.readDouble();
-        toX = buffer.readDouble();
-        toY = buffer.readDouble();
-        toZ = buffer.readDouble();
+        int count = Math.min(MAX_POINTS, buffer.readUnsignedByte());
+        path.clear();
+        for (int i = 0; i < count; i++) {
+            path.add(new Vec3d(buffer.readDouble(), buffer.readDouble(), buffer.readDouble()));
+        }
+        lit = path.size() >= 2;
     }
 
     @Override
@@ -91,7 +104,7 @@ public class PacketBeamState extends BasePacket {
     @Override
     public void executeClient(EntityPlayer player) {
         if (lit) {
-            ClientBeamTracker.lit(gun, new Vec3d(fromX, fromY, fromZ), new Vec3d(toX, toY, toZ));
+            ClientBeamTracker.lit(gun, path);
         } else {
             ClientBeamTracker.extinguished(gun);
         }
