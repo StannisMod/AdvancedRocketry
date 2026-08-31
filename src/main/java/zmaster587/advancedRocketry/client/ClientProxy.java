@@ -111,6 +111,8 @@ public class ClientProxy extends CommonProxy {
         ClientRegistry.bindTileEntitySpecialRenderer(TileCuttingMachine.class, new RendererCuttingMachine());
         ClientRegistry.bindTileEntitySpecialRenderer(TileCrystallizer.class, new RendererCrystallizer());
         ClientRegistry.bindTileEntitySpecialRenderer(TileObservatory.class, new RendererObservatory());
+        ClientRegistry.bindTileEntitySpecialRenderer(zmaster587.advancedRocketry.tile.weapon.TileTurret.class,
+                new zmaster587.advancedRocketry.client.render.RendererTurret());
         ClientRegistry.bindTileEntitySpecialRenderer(TileAstrobodyDataProcessor.class, new RenderAstrobodyDataProcessor());
         ClientRegistry.bindTileEntitySpecialRenderer(TileLathe.class, new RendererLathe());
         ClientRegistry.bindTileEntitySpecialRenderer(TileRollingMachine.class, new RendererRollingMachine());
@@ -410,6 +412,8 @@ public class ClientProxy extends CommonProxy {
         super.registerEventHandlers();
         MinecraftForge.EVENT_BUS.register(new RocketEventHandler());
         MinecraftForge.EVENT_BUS.register(new DelayedParticleRenderingEventHandler());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.client.render.RenderShots());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.client.render.RenderBeams());
         MinecraftForge.EVENT_BUS.register(ModuleContainerPan.class);
         MinecraftForge.EVENT_BUS.register(new RenderComponents());
 

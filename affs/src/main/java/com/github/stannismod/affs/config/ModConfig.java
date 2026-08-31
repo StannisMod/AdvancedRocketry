@@ -60,15 +60,31 @@ public final class ModConfig {
     // multi-emitter network squeezed through one thin line. Tunable, never balance-pinned.
     public static int cableThroughputPerTick = 20_000;
 
+    // A shield node's condition drives what it DELIVERS. Two coefficients because the two consequences
+    // are different in kind, not in size: a scalar node (generator / cable / accumulator) simply moves
+    // less, while an emitter projects a SMALLER SPHERE — the one consequence a player can see coming,
+    // before the shell collapses. Each is the fraction lost at the last stage before destruction; 0
+    // disables that consequence entirely. Neither touches what the shield COSTS: a shrunken emitter is
+    // still billed for the radius it was told to hold, or being shot would save energy.
+    public static double shieldNodeDamagePenaltyMax = 0.75D;
+    public static double emitterRadiusDamagePenaltyMax = 0.5D;
+
     // D134-2 tier-1 cooperative weapon interaction (axis-G tunable, never balance-pinned):
     //  - shieldStrikeAbsorptionRate: shield energy spent per unit of a cooperative strike's declared
     //    impact energy. spent = min(stored, impactEnergy x rate x kindMult / tierEff).
     //  - shieldStrikeDamageToEnergyFactor: converts a cooperating source's *damage* value to declared
     //    impact energy when it reports damage rather than energy.
+    //  - shieldStrikeReflectionRestitution: how much of a declared travelling body's relative speed
+    //    survives the mirror. 1.0 is a perfect mirror — exactly what the per-tick entity scan does — so
+    //    at the default the two populations behave identically; the knob exists so they can be split
+    //    later without touching the entity compatibility path. It scales SPEED ONLY: the absorption
+    //    cost stays impactEnergy x rate x kindMult / tierEff, because one impact must have exactly one
+    //    pricing path. Clamped to [0, 1] — above 1 the shell would hand out energy it never absorbed.
     // The tier-2 residual hitscan-ray hook (a blanket World.rayTraceBlocks mixin) is deferred to its own
     // task; its config lands with it, not here.
     public static double shieldStrikeAbsorptionRate = 1.0D;
     public static double shieldStrikeDamageToEnergyFactor = 500.0D;
+    public static double shieldStrikeReflectionRestitution = 1.0D;
 
     private ModConfig() {
     }
@@ -235,6 +251,28 @@ public final class ModConfig {
                         + "your emitters, not by pipe-sizing. Lower it to make plumbing a real constraint."
         );
 
+        shieldNodeDamagePenaltyMax = configuration.getFloat(
+                "shieldNodeDamagePenaltyMax",
+                CATEGORY_SHIELD,
+                0.75F,
+                0.0F,
+                1.0F,
+                "How much of a shield generator's conversion, a cable's transport or an accumulator's "
+                        + "reserve is lost when the block is one stage from destruction. 0 makes battle "
+                        + "damage free for these blocks."
+        );
+
+        emitterRadiusDamagePenaltyMax = configuration.getFloat(
+                "emitterRadiusDamagePenaltyMax",
+                CATEGORY_SHIELD,
+                0.5F,
+                0.0F,
+                1.0F,
+                "How much of an emitter's radius is lost when the block is one stage from destruction. "
+                        + "The field visibly draws in, uncovering whatever it used to reach; the emitter is "
+                        + "still billed for its declared radius, so damage never saves energy."
+        );
+
         generatorShieldBuffer = configuration.getInt(
                 "generatorShieldBuffer",
                 CATEGORY_BUFFERS,
@@ -291,6 +329,18 @@ public final class ModConfig {
                 Float.MAX_VALUE,
                 "Converts a cooperating weapon's damage value into declared shield impact energy when the "
                         + "source reports damage rather than energy."
+        );
+
+        shieldStrikeReflectionRestitution = configuration.getFloat(
+                "shieldStrikeReflectionRestitution",
+                CATEGORY_WEAPONS,
+                1.0F,
+                0.0F,
+                1.0F,
+                "Fraction of a declared travelling body's relative speed that survives reflection off the "
+                        + "shell. 1.0 is a perfect mirror (what the per-tick entity scan does). Scales speed "
+                        + "only — the absorption cost is unaffected. Applies to declared strikes that carry a "
+                        + "body; the entity scan is never affected."
         );
 
         if (configuration.hasChanged()) {

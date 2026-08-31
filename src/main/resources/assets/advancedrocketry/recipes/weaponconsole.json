@@ -1,0 +1,26 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        "ici",
+        "iri",
+        "iii"
+    ],
+    "key": {
+        "i": {
+            "type": "forge:ore_dict",
+            "ore": "ingotIron"
+        },
+        "c": {
+            "type": "forge:ore_dict",
+            "ore": "circuitBasic"
+        },
+        "r": {
+            "type": "forge:ore_dict",
+            "ore": "blockRedstone"
+        }
+    },
+    "result": {
+        "item": "advancedrocketry:weaponConsole",
+        "count": 1
+    }
+}

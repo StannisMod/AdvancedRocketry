@@ -238,6 +238,21 @@ public class TestProbeCommand extends CommandBase {
                 case "shield":
                     handleShield(server, sender, tail(args));
                     break;
+                case "damage":
+                    handleDamage(server, sender, tail(args));
+                    break;
+                case "shot":
+                    handleShot(server, sender, tail(args));
+                    break;
+                case "turret":
+                    handleTurret(server, sender, tail(args));
+                    break;
+                case "weaponconsole":
+                    handleWeaponConsole(server, sender, tail(args));
+                    break;
+                case "sensor":
+                    handleFireControlSensor(server, sender, tail(args));
+                    break;
                 case "sound":
                     handleSound(server, sender, tail(args));
                     break;
@@ -247,6 +262,551 @@ public class TestProbeCommand extends CommandBase {
         } catch (RuntimeException e) {
             send(sender, "{\"error\":\"" + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
         }
+    }
+
+    // Projectile substrate probes -----------------------------------------
+
+    /**
+     * {@code /artest shot ...} — fire and observe shots as the substrate holds them.
+     * <ul>
+     *   <li>{@code fire <dim> <x> <y> <z> <vx> <vy> <vz> <energy> [lifetime] [kind]} — admit one shot
+     *       through production's own entry point and report the id it was given ({@code -1} = the
+     *       launch was refused, which is a real answer and not an error);</li>
+     *   <li>{@code list <dim>} — every shot in flight in that world;</li>
+     *   <li>{@code read <dim> <id>} — one shot, or {@code present:false} once it has ended;</li>
+     *   <li>{@code clear <dim>} — drop everything in flight there (scenario isolation);</li>
+     *   <li>{@code trace <dim> [id] [limit]} — what each step DECIDED: the shield distance and the
+     *       structure distance as the step saw them, so "the wall was never found" and "the impact
+     *       was refused" stop looking alike. Earliest entries first, and {@code matched} says how
+     *       many there were;</li>
+     *   <li>{@code traceclear <dim>} — a clean instrument for one scenario; the ring is shared and
+     *       outlives any single test;</li>
+     *   <li>{@code crossing <dim> <x0> <y0> <z0> <x1> <y1> <z1>} — the control query: does production
+     *       itself say this segment is blocked, and what does each voxel along it look like. Asks
+     *       {@code StructureCrossing} rather than re-deriving an answer beside it.</li>
+     * </ul>
+     *
+     * <p>There is deliberately no "step one shot" verb: shots advance through the world tick, so a
+     * test drives them with {@code /artest shield tick <dim>}, which posts the real end-phase event.
+     * A probe that stepped a shot privately would prove the integrator works when called by the
+     * probe.</p>
+     */
+    private void handleShot(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"usage: /artest shot fire|list|read|clear|trace|traceclear|crossing ...\"}");
+            return;
+        }
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        int dim = args.length >= 2 ? parseIntOr(args[1], Integer.MIN_VALUE) : Integer.MIN_VALUE;
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        zmaster587.advancedRocketry.projectile.ShotRegistry registry =
+                zmaster587.advancedRocketry.projectile.ShotRegistry.get(world);
+
+        if ("fire".equals(sub) && args.length >= 9) {
+            net.minecraft.util.math.Vec3d origin = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            net.minecraft.util.math.Vec3d velocity = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            int energy = parseIntOr(args[8], 0);
+            zmaster587.advancedRocketry.api.projectile.ShotSpec spec =
+                    zmaster587.advancedRocketry.api.projectile.ShotSpec.kinetic(origin, velocity, energy);
+            if (args.length >= 10) {
+                spec = spec.withLifetime(parseIntOr(args[9], 1200));
+            }
+            if (args.length >= 11) {
+                spec = spec.withKind(zmaster587.advancedRocketry.api.damage.ImpactKind
+                        .valueOf(args[10].toUpperCase(java.util.Locale.ROOT)));
+            }
+            // The BODY, optionally: radius then mass. A round's cross-section is what its energy is
+            // spread over, so a test that wants to compare calibres has to be able to state one — the
+            // default is the reference body every other verb fires.
+            if (args.length >= 12) {
+                spec = spec.withBody(parseDoubleOr(args[11], 0.25D),
+                        args.length >= 13 ? parseDoubleOr(args[12], 1.0D) : 1.0D);
+            }
+            long id = zmaster587.advancedRocketry.projectile.ShotSubstrate.launch(world, spec);
+            send(sender, "{\"ok\":true,\"id\":" + id + ",\"count\":" + registry.count() + "}");
+            return;
+        }
+        if ("list".equals(sub)) {
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"count\":")
+                    .append(registry.count()).append(",\"shots\":[");
+            boolean first = true;
+            for (zmaster587.advancedRocketry.projectile.Shot shot : registry.inFlight()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                first = false;
+                sb.append(shotJson(world, shot));
+            }
+            send(sender, sb.append("]}").toString());
+            return;
+        }
+        if ("read".equals(sub) && args.length >= 3) {
+            zmaster587.advancedRocketry.projectile.Shot shot =
+                    registry.get(Long.parseLong(args[2]));
+            if (shot == null) {
+                zmaster587.advancedRocketry.projectile.ShotRegistry.Ending ended =
+                        registry.endingOf(Long.parseLong(args[2]));
+                send(sender, "{\"ok\":true,\"present\":false,\"ended\":\""
+                        + (ended == null ? "" : ended.getReason().name()) + "\""
+                        + (ended == null ? "" : ",\"endX\":" + ended.getPoint().x
+                                + ",\"endY\":" + ended.getPoint().y
+                                + ",\"endZ\":" + ended.getPoint().z)
+                        + ",\"count\":" + registry.count() + "}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"present\":true,\"shot\":" + shotJson(world, shot) + "}");
+            return;
+        }
+        if ("clear".equals(sub)) {
+            int before = registry.count();
+            registry.clear();
+            send(sender, "{\"ok\":true,\"cleared\":" + before + "}");
+            return;
+        }
+        if ("trace".equals(sub)) {
+            long only = args.length >= 3 ? parseLongOr(args[2], -1L) : -1L;
+            int limit = args.length >= 4 ? parseIntOr(args[3], 24) : 24;
+            send(sender, "{\"ok\":true,\"trace\":"
+                    + zmaster587.advancedRocketry.projectile.ShotCrossingTrace.summaryJson(only, limit)
+                    + "}");
+            return;
+        }
+        if ("traceclear".equals(sub)) {
+            zmaster587.advancedRocketry.projectile.ShotCrossingTrace.reset();
+            send(sender, "{\"ok\":true,\"cleared\":true}");
+            return;
+        }
+        if ("crossing".equals(sub) && args.length >= 8) {
+            net.minecraft.util.math.Vec3d from = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            net.minecraft.util.math.Vec3d to = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            // Production's own answer, not a re-derivation: a probe that re-implemented "is there
+            // structure here" would be a second opinion, and the whole question is whose is wrong.
+            boolean blocked = zmaster587.advancedRocketry.projectile.StructureCrossing
+                    .isBlocked(world, from, to);
+            final StringBuilder voxels = new StringBuilder();
+            final int[] listed = new int[1];
+            final net.minecraft.world.WorldServer scanned = world;
+            zmaster587.advancedRocketry.util.SweptVolume.traverse(from, to, 0.0D, 4096,
+                    new zmaster587.advancedRocketry.util.SweptVolume.LayerVisitor() {
+                @Override
+                public boolean visit(zmaster587.advancedRocketry.util.SweptVolume.Layer layer) {
+                    net.minecraft.util.math.BlockPos pos = layer.axis;
+                    boolean loaded = scanned.isBlockLoaded(pos);
+                    net.minecraft.block.state.IBlockState state = loaded
+                            ? scanned.getBlockState(pos) : null;
+                    boolean structure = loaded && zmaster587.advancedRocketry.damage
+                            .StructureDamageEngine.isStructure(scanned, pos, state);
+                    if (listed[0] < 32) {
+                        if (listed[0] > 0) {
+                            voxels.append(',');
+                        }
+                        voxels.append("{\"x\":").append(pos.getX()).append(",\"y\":").append(pos.getY())
+                                .append(",\"z\":").append(pos.getZ())
+                                .append(",\"loaded\":").append(loaded)
+                                .append(",\"block\":\"")
+                                .append(state == null ? "" : state.getBlock().getRegistryName())
+                                .append("\",\"structure\":").append(structure).append('}');
+                    }
+                    listed[0]++;
+                    return structure; // stop where production would have stopped
+                }
+            });
+            send(sender, "{\"ok\":true,\"blocked\":" + blocked + ",\"walked\":" + listed[0]
+                    + ",\"voxels\":[" + voxels + "]}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown shot subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    /**
+     * {@code /artest turret ...} — build a gun, point it, and read what it thinks it is.
+     * <ul>
+     *   <li>{@code read <dim> <x> <y> <z>} — the derived spec, the mount's bearing and drive state,
+     *       heat, buffered energy and how many rounds this gun has fired;</li>
+     *   <li>{@code target <dim> <x> <y> <z> <tx> <ty> <tz>} — give the gun ITSELF a target, the way a
+     *       linker does. Deliberately not routed through a network: the no-network path is the one
+     *       that has to work;</li>
+     *   <li>{@code cleartarget <dim> <x> <y> <z>};</li>
+     *   <li>{@code charge <dim> <x> <y> <z>} — fill the buffer, for a scenario that is about firing
+     *       rather than about wiring;</li>
+     *   <li>{@code drive <dim> <x> <y> <z> <state>} — set the traverse drive to one of the failure
+     *       states, so a killed drive can be observed without breaking blocks.</li>
+     * </ul>
+     */
+    private void handleTurret(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: /artest turret read|target|cleartarget|charge|drive <dim> <x> <y> <z> ...\"}");
+            return;
+        }
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        net.minecraft.tileentity.TileEntity tile = world.getTileEntity(pos);
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.weapon.TileTurret)) {
+            send(sender, "{\"error\":\"no turret there\",\"x\":" + pos.getX() + ",\"y\":" + pos.getY()
+                    + ",\"z\":" + pos.getZ() + "}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.weapon.TileTurret turret =
+                (zmaster587.advancedRocketry.tile.weapon.TileTurret) tile;
+
+        if ("target".equals(sub) && args.length >= 8) {
+            turret.setTarget(new net.minecraft.util.math.Vec3d(parseDoubleOr(args[5], 0),
+                    parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0)));
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("cleartarget".equals(sub)) {
+            turret.setTarget(null);
+            turret.setTargetEntity(null);
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("charge".equals(sub)) {
+            turret.chargeFully();
+            send(sender, "{\"ok\":true,\"energy\":" + turret.getEnergyStored() + "}");
+            return;
+        }
+        if ("drive".equals(sub) && args.length >= 6) {
+            turret.setDriveState(zmaster587.advancedRocketry.api.weapon.TurretDriveState
+                    .valueOf(args[5].toUpperCase(java.util.Locale.ROOT)));
+            send(sender, "{\"ok\":true,\"drive\":\"" + turret.getMechanism().getDriveState().name() + "\"}");
+            return;
+        }
+        if ("target-player".equals(sub) && args.length >= 6) {
+            net.minecraft.entity.player.EntityPlayerMP player =
+                    server.getPlayerList().getPlayerByUsername(args[5]);
+            if (player == null) {
+                send(sender, jsonError("no such player"));
+                return;
+            }
+            turret.setTargetEntity(player.getUniqueID());
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("code".equals(sub)) {
+            turret.setAccessCode(args.length >= 6 ? args[5] : "");
+            send(sender, "{\"ok\":true,\"code\":\"" + escapeJson(turret.getEffectiveAccessCode()) + "\"}");
+            return;
+        }
+        if ("manual".equals(sub) && args.length >= 6) {
+            turret.setManualControl(Boolean.parseBoolean(args[5]));
+            send(sender, "{\"ok\":true,\"manual\":" + turret.isManuallyControlled() + "}");
+            return;
+        }
+        if ("bearing".equals(sub) && args.length >= 7) {
+            turret.commandManualBearing(parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0));
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("fire".equals(sub)) {
+            send(sender, "{\"ok\":true,\"fired\":" + turret.fireOnce() + "}");
+            return;
+        }
+        if ("read".equals(sub)) {
+            zmaster587.advancedRocketry.api.weapon.GunSpec spec = turret.getSpec();
+            zmaster587.advancedRocketry.weapon.TurretMechanism mount = turret.getMechanism();
+            net.minecraft.util.math.Vec3d target = turret.getEffectiveTarget();
+            send(sender, "{\"ok\":true"
+                    + ",\"operable\":" + spec.isOperable()
+                    + ",\"parts\":" + spec.getPartCount()
+                    + ",\"muzzleSpeed\":" + spec.getMuzzleSpeed()
+                    + ",\"impactEnergy\":" + spec.getImpactEnergy()
+                    + ",\"fireInterval\":" + spec.getFireIntervalTicks()
+                    + ",\"energyPerShot\":" + spec.getEnergyPerShot()
+                    + ",\"spread\":" + spec.getSpreadDegrees()
+                    + ",\"traverseRate\":" + spec.getTraverseDegreesPerTick()
+                    + ",\"heat\":" + turret.getHeat()
+                    + ",\"heatCapacity\":" + spec.getHeatCapacity()
+                    + ",\"energy\":" + turret.getEnergyStored()
+                    // The beam half: lit is "burning right now", recharging is "dark because it
+                    // is saving up", and the two are different answers a fire control needs to
+                    // tell apart. beamPower is 0 for a gun that throws rounds.
+                    + ",\"beamPower\":" + spec.getBeamPowerPerTick()
+                    + ",\"weaponsDisabled\":" + turret.isDisabledByConfig()
+                    + ",\"beamLit\":" + turret.isBeamLit()
+                    + ",\"beamRecharging\":" + turret.isBeamRecharging()
+                    + ",\"yaw\":" + mount.getYaw()
+                    + ",\"pitch\":" + mount.getPitch()
+                    + ",\"saturated\":" + mount.isSaturated()
+                    + ",\"onTarget\":" + mount.isOnTarget()
+                    + ",\"drive\":\"" + mount.getDriveState().name() + "\""
+                    + ",\"shots\":" + turret.getShotsFired()
+                    + ",\"lastShot\":" + turret.getLastShotId()
+                    + ",\"trackingEntity\":" + (turret.getTargetEntity() != null)
+                    + ",\"acquired\":" + (turret.acquiredTrack() != null)
+                    + (turret.acquiredTrack() == null ? ""
+                            : ",\"acquiredQuality\":" + turret.acquiredTrack().getQuality())
+                    + ",\"code\":\"" + escapeJson(turret.getEffectiveAccessCode()) + "\""
+                    + ",\"manual\":" + turret.isManuallyControlled()
+                    + ",\"inputs\":\"" + escapeJson(spec.getDeclaredInputs().toString()) + "\""
+                    + ",\"hasTarget\":" + (target != null)
+                    + (target == null ? "" : ",\"targetX\":" + target.x + ",\"targetY\":" + target.y
+                            + ",\"targetZ\":" + target.z)
+                    + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown turret subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    /**
+     * {@code /artest weaponconsole ...} — drive the one thing the weapons network adds.
+     * <ul>
+     *   <li>{@code read <dim> <x> <y> <z>} — the network as this console sees it: status, how many
+     *       guns it is commanding, the shared target, hold-fire;</li>
+     *   <li>{@code target <dim> <x> <y> <z> <tx> <ty> <tz>} — point every gun on the network;</li>
+     *   <li>{@code cleartarget <dim> <x> <y> <z>};</li>
+     *   <li>{@code holdfire <dim> <x> <y> <z> <true|false>} — track without shooting.</li>
+     * </ul>
+     * Each command answers {@code applied:false} when the console is on no network — which is a real
+     * answer (a console alone commands nothing), not an error.
+     */
+    private void handleWeaponConsole(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: /artest weaponconsole read|target|cleartarget|holdfire <dim> <x> <y> <z> ...\"}");
+            return;
+        }
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        net.minecraft.tileentity.TileEntity tile = world.getTileEntity(pos);
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole)) {
+            send(sender, "{\"error\":\"no weapon console there\",\"x\":" + pos.getX() + ",\"y\":"
+                    + pos.getY() + ",\"z\":" + pos.getZ() + "}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole console =
+                (zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole) tile;
+
+        if ("target".equals(sub) && args.length >= 8) {
+            boolean applied = console.assignTarget(new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0)));
+            send(sender, "{\"ok\":true,\"applied\":" + applied + "}");
+            return;
+        }
+        if ("cleartarget".equals(sub)) {
+            send(sender, "{\"ok\":true,\"applied\":" + console.clearTarget() + "}");
+            return;
+        }
+        if ("holdfire".equals(sub) && args.length >= 6) {
+            boolean applied = console.setHoldFire(Boolean.parseBoolean(args[5]));
+            send(sender, "{\"ok\":true,\"applied\":" + applied + ",\"holdFire\":"
+                    + console.isHoldFire() + "}");
+            return;
+        }
+        if ("target-player".equals(sub) && args.length >= 6) {
+            net.minecraft.entity.player.EntityPlayerMP player =
+                    server.getPlayerList().getPlayerByUsername(args[5]);
+            if (player == null) {
+                send(sender, jsonError("no such player"));
+                return;
+            }
+            send(sender, "{\"ok\":true,\"applied\":"
+                    + console.assignTargetEntity(player.getUniqueID()) + "}");
+            return;
+        }
+        if ("code".equals(sub)) {
+            boolean applied = console.setAccessCode(args.length >= 6 ? args[5] : "");
+            send(sender, "{\"ok\":true,\"applied\":" + applied + ",\"code\":\""
+                    + escapeJson(console.getAccessCode()) + "\"}");
+            return;
+        }
+        if ("read".equals(sub)) {
+            net.minecraft.util.math.Vec3d target = console.getTarget();
+            send(sender, "{\"ok\":true"
+                    + ",\"network\":" + (console.network() != null)
+                    + ",\"status\":\"" + escapeJson(console.getNetworkStatusToken()) + "\""
+                    + ",\"guns\":" + console.getGunCount()
+                    + ",\"onTarget\":" + console.getMountTelemetry()[0]
+                    + ",\"saturated\":" + console.getMountTelemetry()[1]
+                    + ",\"holdFire\":" + console.isHoldFire()
+                    + ",\"code\":\"" + escapeJson(console.getAccessCode()) + "\""
+                    + ",\"sensorContact\":" + (console.getAcquiredTrack() != null)
+                    + (console.getAcquiredTrack() == null ? ""
+                            : ",\"sensorQuality\":" + console.getAcquiredTrack().getQuality())
+                    + ",\"trackingEntity\":" + (console.getTargetEntity() != null)
+                    + ",\"hasTarget\":" + (target != null)
+                    + (target == null ? "" : ",\"targetX\":" + target.x + ",\"targetY\":" + target.y
+                            + ",\"targetZ\":" + target.z)
+                    + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown weaponconsole subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    /**
+     * {@code /artest sensor ...} — what the battery's eyes can see, and which way they are working.
+     * <ul>
+     *   <li>{@code read <dim> <x> <y> <z>} — the mode it is in, what it is actually managing (an
+     *       unpowered illuminator falls back to listening), how many contacts it holds and how well
+     *       it holds the best one;</li>
+     *   <li>{@code mode <dim> <x> <y> <z> <passive|active>};</li>
+     *   <li>{@code code <dim> <x> <y> <z> [code]} — the credential that keeps a friend out of the
+     *       contact list entirely;</li>
+     *   <li>{@code charge <dim> <x> <y> <z>} — fill the buffer, for scenarios that are not about
+     *       wiring;</li>
+     *   <li>{@code sees <dim> <x> <y> <z> <player>} — whether ONE named player is a contact, which
+     *       is what a friend-or-foe test needs: a count cannot distinguish "this player was
+     *       excluded" from "something else was found instead".</li>
+     * </ul>
+     * <p>{@code locked} is the field a test about the passive/active trade watches: a contact can be
+     * present and not lockable, which is the whole of what illuminating buys.</p>
+     */
+    private void handleFireControlSensor(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: /artest sensor read|mode|code|charge <dim> <x> <y> <z> ...\"}");
+            return;
+        }
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        net.minecraft.tileentity.TileEntity tile = world.getTileEntity(pos);
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor)) {
+            send(sender, "{\"error\":\"no fire control sensor there\",\"x\":" + pos.getX() + ",\"y\":"
+                    + pos.getY() + ",\"z\":" + pos.getZ() + "}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor sensor =
+                (zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor) tile;
+
+        if ("mode".equals(sub) && args.length >= 6) {
+            zmaster587.advancedRocketry.api.sensor.SensorMode wanted;
+            try {
+                wanted = zmaster587.advancedRocketry.api.sensor.SensorMode
+                        .valueOf(args[5].toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                send(sender, jsonError("unknown mode: " + args[5]));
+                return;
+            }
+            sensor.setMode(wanted);
+            send(sender, "{\"ok\":true,\"mode\":\"" + sensor.getMode().name() + "\"}");
+            return;
+        }
+        if ("code".equals(sub)) {
+            sensor.setAccessCode(args.length >= 6 ? args[5] : "");
+            send(sender, "{\"ok\":true,\"code\":\"" + escapeJson(sensor.effectiveAccessCode()) + "\"}");
+            return;
+        }
+        if ("charge".equals(sub)) {
+            sensor.chargeFully();
+            send(sender, "{\"ok\":true,\"energy\":" + sensor.getEnergyStored() + "}");
+            return;
+        }
+        if ("sees".equals(sub) && args.length >= 6) {
+            // Whether ONE named player is in the contact list. Asked by name rather than counted,
+            // because "the list is empty" is a different claim: a cave full of mobs a hundred blocks
+            // away would make it false without saying anything about the player this is asking about.
+            net.minecraft.entity.player.EntityPlayerMP player =
+                    server.getPlayerList().getPlayerByUsername(args[5]);
+            if (player == null) {
+                send(sender, jsonError("no such player"));
+                return;
+            }
+            boolean seen = false;
+            double quality = 0.0D;
+            for (zmaster587.advancedRocketry.api.sensor.TargetTrack track : sensor.getContacts()) {
+                if (player.getUniqueID().equals(track.getEntity())) {
+                    seen = true;
+                    quality = track.getQuality();
+                    break;
+                }
+            }
+            send(sender, "{\"ok\":true,\"seen\":" + seen + ",\"quality\":" + quality
+                    + ",\"contacts\":" + sensor.getContacts().size() + "}");
+            return;
+        }
+        if ("read".equals(sub)) {
+            zmaster587.advancedRocketry.api.sensor.TargetTrack best = sensor.getBestContact();
+            double floor = zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig()
+                    .fireControlSensorLockQualityToFire;
+            send(sender, "{\"ok\":true"
+                    + ",\"enabled\":" + zmaster587.advancedRocketry.api.ARConfiguration
+                            .getCurrentConfig().enableFireControlSensor
+                    + ",\"mode\":\"" + sensor.getMode().name() + "\""
+                    + ",\"effectiveMode\":\"" + sensor.effectiveMode().name() + "\""
+                    + ",\"emitting\":" + sensor.isEmitting()
+                    + ",\"underpowered\":" + sensor.isUnderpowered()
+                    + ",\"energy\":" + sensor.getEnergyStored()
+                    + ",\"network\":" + (sensor.networkState() != null)
+                    + ",\"code\":\"" + escapeJson(sensor.effectiveAccessCode()) + "\""
+                    + ",\"contacts\":" + sensor.getContacts().size()
+                    + ",\"hasContact\":" + (best != null)
+                    + (best == null ? "" : ",\"quality\":" + best.getQuality()
+                            + ",\"locked\":" + best.isLocked(floor)
+                            + ",\"distance\":" + best.getDistance()
+                            + ",\"radiance\":" + best.getRadianceWattsPerSquareMetre()
+                            + ",\"contactX\":" + best.getPosition().x
+                            + ",\"contactY\":" + best.getPosition().y
+                            + ",\"contactZ\":" + best.getPosition().z
+                            + ",\"speed\":" + best.getVelocity().lengthVector())
+                    + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown sensor subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    /** One-line error payload, so a new verb does not hand-build JSON and get a quote wrong. */
+    private static String jsonError(String message) {
+        return "{\"error\":\"" + escapeJson(message) + "\"}";
+    }
+
+    /**
+     * One shot, in WORLD terms whatever frame it is being kept in — plus, when it is drilling a hull,
+     * the hull's id and the shot's place in that hull's own frame. Both are reported because they
+     * answer different questions: "where is the round" is a world question, and "did it stay put in
+     * the plate while the ship manoeuvred" can only be asked in the plate's frame.
+     */
+    private static String shotJson(net.minecraft.world.World world,
+                                   zmaster587.advancedRocketry.projectile.Shot shot) {
+        net.minecraft.util.math.Vec3d pos =
+                zmaster587.advancedRocketry.projectile.ShotFrame.worldPosition(world, shot);
+        net.minecraft.util.math.Vec3d vel =
+                zmaster587.advancedRocketry.projectile.ShotFrame.worldVelocity(world, shot);
+        String hull = shot.getHullId();
+        String inHull = hull == null ? ",\"hull\":null"
+                : ",\"hull\":\"" + escapeJson(hull) + "\""
+                        + ",\"hullX\":" + shot.getPosition().x
+                        + ",\"hullY\":" + shot.getPosition().y
+                        + ",\"hullZ\":" + shot.getPosition().z;
+        return "{\"id\":" + shot.getId()
+                + ",\"x\":" + pos.x
+                + ",\"y\":" + pos.y
+                + ",\"z\":" + pos.z
+                + ",\"vx\":" + vel.x
+                + ",\"vy\":" + vel.y
+                + ",\"vz\":" + vel.z
+                + ",\"speed\":" + vel.lengthVector()
+                + ",\"energy\":" + shot.getImpactEnergy()
+                + ",\"age\":" + shot.getAge()
+                + ",\"lifetime\":" + shot.getLifetimeTicks()
+                + ",\"kind\":\"" + shot.getKind().name() + "\""
+                + inHull + "}";
     }
 
     // Vendored AFFS shield probes -----------------------------------------
@@ -309,8 +869,14 @@ public class TestProbeCommand extends CommandBase {
                 info.put("powered", emitter.isFieldPowered());
                 info.put("shieldStored", emitter.getEnergyStored());
                 info.put("shieldMax", emitter.getMaxEnergyStored());
+                // The field it PROJECTS beside the field it was DECLARED to hold, and the bill. A
+                // damaged emitter separates the three: the first shrinks, the second does not, and the
+                // third is charged against the second — so a test can read "damage never pays" off one
+                // response instead of inferring it.
                 info.put("radius", emitter.getRadius());
-                info.put("requested", emitter.getRequestedShieldEnergy());
+                info.put("declaredRadius", emitter.getDeclaredRadius());
+                info.put("cycleCost", emitter.getShieldCycleCost());
+                info.put("requested", emitter.getRequested());
                 // P2 (D134-3/4): the emitter's tier, its tier-scaled recharge throughput (the per-zone
                 // regen cap), the passive-maintenance draw this tick, and how much it actually received
                 // this tick — so a test can assert the throughput cap and the tier scaling.
@@ -327,7 +893,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("worldZ", wc.z);
                 info.put("shipFramed", emitter.isShipFramed());
                 info.put("frameReady", emitter.isFrameReady());
-                info.put("priority", emitter.getShieldPriority());
+                info.put("priority", emitter.getPriority());
                 // P4 (D134-5/6): the emitter's domain, the priority group that lists it (if any), and its
                 // carried access credential — so a test can assert group push-down and code rotation.
                 String domainId = com.github.stannismod.affs.world.shield.ShieldDomains.forBlock(
@@ -346,7 +912,10 @@ public class TestProbeCommand extends CommandBase {
                 info.put("kind", "generator");
                 info.put("shieldStored", gen.getShieldStored());
                 info.put("feStored", gen.getFeStored());
-                info.put("available", gen.getAvailableShieldEnergy());
+                info.put("available", gen.getAvailable());
+                // The conversion CAP in this generator's current condition — independent of how full
+                // its FE buffer happens to be, which is what makes it readable as an ordering.
+                info.put("conversionPerTick", gen.getConversionPerTick());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldCable) {
                 // P6: a cable's transport cap, so a test can compare the two limiters (transport vs the
                 // emitter's recharge throughput) without pinning either magnitude.
@@ -360,8 +929,10 @@ public class TestProbeCommand extends CommandBase {
                 info.put("kind", "accumulator");
                 info.put("shieldStored", acc.getShieldStored());
                 info.put("shieldMax", acc.getMaxShieldStored());
-                info.put("available", acc.getAvailableShieldEnergy());
-                info.put("free", acc.getFreeShieldCapacity());
+                // Rated capacity above, what this bank can still hold in its current condition here.
+                info.put("shieldMaxEffective", acc.getEffectiveMaxShieldStored());
+                info.put("available", acc.getAvailable());
+                info.put("free", acc.getFreeCapacity());
             } else {
                 info.put("error", "not a shield tile");
                 info.put("tileClass", tile == null ? "null" : tile.getClass().getName());
@@ -411,6 +982,22 @@ public class TestProbeCommand extends CommandBase {
             info.put("posY", y);
             info.put("posZ", z);
             info.put("activeEmitters", emitters.size());
+            // Zone ownership answers WHICH emitter is responsible for a point; coverage answers whether
+            // anything actually reaches it. They come apart exactly when an emitter shrinks — its zone
+            // is still nearest, and the hull inside it is no longer under the shell — which is the
+            // consequence a damaged emitter is supposed to have, so both are reported side by side.
+            // Signed: negative is inside the field, positive is the gap outside it.
+            double hullDistance = com.github.stannismod.affs.world.FieldSurfaceMath
+                    .compositeHullDistance(emitters, point);
+            info.put("hullDistance", Double.isInfinite(hullDistance) ? Double.MAX_VALUE : hullDistance);
+            boolean covered = false;
+            for (com.github.stannismod.affs.te.TileEntityFieldGenerator emitter : emitters) {
+                if (emitter.protects(new BlockPos(x, y, z))) {
+                    covered = true;
+                    break;
+                }
+            }
+            info.put("covered", covered);
             if (owner == null) {
                 info.put("owned", false);
             } else {
@@ -515,7 +1102,72 @@ public class TestProbeCommand extends CommandBase {
             if (args.length >= 6) {
                 emitter.setPriority(parseIntOr(args[5], 0));
             }
-            send(sender, "{\"ok\":true,\"priority\":" + emitter.getShieldPriority() + "}");
+            send(sender, "{\"ok\":true,\"priority\":" + emitter.getPriority() + "}");
+            return;
+        }
+        if (args.length >= 5 && "console-info".equalsIgnoreCase(args[0])) {
+            // console-info <dim> <x> <y> <z> — what a shield CONSOLE is currently displaying, as
+            // opposed to what the network state says. The two can disagree, and that disagreement is
+            // the bug class this verb exists to make visible (ledger #260). Read out of the console's
+            // own writeToNBT, so it reports the same fields production persists rather than a
+            // parallel accessor that could drift from them.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof com.github.stannismod.affs.te.TileEntityShieldConsole)) {
+                send(sender, "{\"error\":\"not a TileEntityShieldConsole\",\"tile\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound shown =
+                    tile.writeToNBT(new net.minecraft.nbt.NBTTagCompound());
+            send(sender, "{\"ok\":true"
+                    + ",\"networkConnected\":" + shown.getBoolean("networkConnected")
+                    + ",\"networkStatus\":" + shown.getInteger("networkStatus")
+                    + ",\"cableCount\":" + shown.getInteger("cableCount")
+                    + ",\"sourceAvailable\":" + shown.getInteger("sourceAvailable")
+                    + ",\"sinkRequested\":" + shown.getInteger("sinkRequested")
+                    + ",\"deliveredFlow\":" + shown.getInteger("deliveredFlow")
+                    + ",\"resistanceBias\":" + shown.getDouble("shieldEnergyResistanceBias") + "}");
+            return;
+        }
+        if (args.length >= 6 && "console-bias".equalsIgnoreCase(args[0])) {
+            // console-bias <dim> <x> <y> <z> <0..1> — drive the console's own
+            // applyShieldEnergyResistanceBias, the method its GUI slider calls. The setting is
+            // console-OWNED and console-persisted, which is the property a restart test pins.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            double bias;
+            try {
+                bias = Double.parseDouble(args[5]);
+            } catch (NumberFormatException badNumber) {
+                send(sender, "{\"error\":\"bias must be a number\",\"got\":\"" + escapeJson(args[5]) + "\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof com.github.stannismod.affs.te.TileEntityShieldConsole)) {
+                send(sender, "{\"error\":\"not a TileEntityShieldConsole\"}");
+                return;
+            }
+            com.github.stannismod.affs.te.TileEntityShieldConsole consoleTile =
+                    (com.github.stannismod.affs.te.TileEntityShieldConsole) tile;
+            consoleTile.applyShieldEnergyResistanceBias(bias);
+            send(sender, "{\"ok\":true,\"resistanceBias\":"
+                    + consoleTile.getShieldEnergyResistanceBias() + "}");
             return;
         }
         if (args.length >= 6 && "group".equalsIgnoreCase(args[0])) {
@@ -611,11 +1263,14 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 11 && "strike".equalsIgnoreCase(args[0])) {
-            // strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> — fire a
-            // cooperative D134-2 tier-1 strike (a declared-energy beam) at the field along a ray and
-            // report what the ShieldStrikeService absorbed: intercepted / fullyAbsorbed / spent shield
-            // energy / residual impact energy that passed / the shell hit point. This is the honest
-            // server-tier verification of the strike seam AR turrets will implement.
+            // strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> [bvx bvy bvz]
+            // — fire a cooperative D134-2 tier-1 strike at the field along a ray and report what the
+            // ShieldStrikeService absorbed: intercepted / fullyAbsorbed / spent shield energy / residual
+            // impact energy that passed / the shell hit point. This is the honest server-tier
+            // verification of the strike seam AR turrets will implement.
+            // The optional trailing triple DECLARES A TRAVELLING BODY at that world velocity — a shot
+            // that exists as a record rather than as an entity. A fully absorbed KINETIC strike carrying
+            // one is mirrored off the shell instead of stopped, and the reply reports the new velocity.
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             net.minecraft.world.WorldServer world = server.getWorld(dim);
             if (world == null) {
@@ -632,12 +1287,19 @@ public class TestProbeCommand extends CommandBase {
                     "KINETIC".equalsIgnoreCase(args[10])
                             ? com.github.stannismod.affs.world.shield.ShieldStrikeKind.KINETIC
                             : com.github.stannismod.affs.world.shield.ShieldStrikeKind.RADIANT;
+            net.minecraft.util.math.Vec3d bodyVelocity = null;
+            if (args.length >= 14) {
+                bodyVelocity = new net.minecraft.util.math.Vec3d(
+                        parseDoubleOr(args[11], 0), parseDoubleOr(args[12], 0), parseDoubleOr(args[13], 0));
+            }
             com.github.stannismod.affs.world.shield.ShieldStrike strike =
-                    com.github.stannismod.affs.world.shield.ShieldStrike.beam(origin, dir, maxDist, impactEnergy, kind);
+                    new com.github.stannismod.affs.world.shield.ShieldStrike(
+                            origin, dir, maxDist, impactEnergy, kind, false, bodyVelocity);
             com.github.stannismod.affs.world.shield.ShieldStrikeResult result =
                     com.github.stannismod.affs.world.shield.ShieldStrikeService.resolve(world, strike);
             Map<String, Object> info = new LinkedHashMap<>();
             info.put("dim", dim);
+            info.put("declaredBody", strike.hasBody());
             info.put("intercepted", result.isIntercepted());
             info.put("fullyAbsorbed", result.isFullyAbsorbed());
             info.put("absorbed", result.getAbsorbedShieldEnergy());
@@ -649,10 +1311,274 @@ public class TestProbeCommand extends CommandBase {
                 info.put("hitY", hit.y);
                 info.put("hitZ", hit.z);
             }
+            // Emitted in EVERY state (zeros when nothing was reflected) so a consumer parsing them never
+            // meets a dropped key; "reflected" is what says whether the numbers mean anything.
+            net.minecraft.util.math.Vec3d newVel = result.getReflectedVelocity();
+            info.put("reflected", result.isReflected());
+            info.put("newVx", newVel != null ? newVel.x : 0.0D);
+            info.put("newVy", newVel != null ? newVel.y : 0.0D);
+            info.put("newVz", newVel != null ? newVel.z : 0.0D);
             send(sender, jsonMap(info));
             return;
         }
-        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value] | strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> | group <dim> <x> <y> <z> <op> [...] | rotate-code <dim> <x> <y> <z>\"}");
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value] | strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> [bvx] [bvy] [bvz] | group <dim> <x> <y> <z> <op> [...] | rotate-code <dim> <x> <y> <z>\"}");
+    }
+
+    /**
+     * Structural damage probes. Declares a real impact through the production service and reports the
+     * report it hands back, so a test drives the same seam a weapon will.
+     */
+    private void handleDamage(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"missing damage subcommand\"}");
+            return;
+        }
+        if ("guard".equalsIgnoreCase(args[0])) {
+            // guard <dim> <x> <y> <z> <true|false> — stand in for a claim mod: an ordinary
+            // BreakEvent subscriber that refuses this position, so a test can drive the refusal
+            // path weapon fire takes with every protection system it will ever meet.
+            if (args.length < 6) {
+                send(sender, "{\"error\":\"usage: damage guard <dim> <x> <y> <z> <true|false>\"}");
+                return;
+            }
+            int dim = parseIntOr(args[1], 0);
+            net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                    parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            boolean guarded = Boolean.parseBoolean(args[5]);
+            int now = WeaponFireVetoProbe.guard(dim, pos, guarded);
+            send(sender, "{\"ok\":true,\"guarded\":" + guarded + ",\"count\":" + now + "}");
+            return;
+        }
+        if ("unguard-all".equalsIgnoreCase(args[0])) {
+            WeaponFireVetoProbe.clear();
+            send(sender, "{\"ok\":true,\"cleared\":true}");
+            return;
+        }
+        if ("clear-impacts".equalsIgnoreCase(args[0])) {
+            // The dedup memory outlives a scenario on a shared server; this is its reset.
+            int before = zmaster587.advancedRocketry.damage.ShipDamageService.rememberedImpactCount();
+            zmaster587.advancedRocketry.damage.ShipDamageService.clearRecentImpacts();
+            send(sender, "{\"ok\":true,\"cleared\":" + before + "}");
+            return;
+        }
+        if ("occurrences".equalsIgnoreCase(args[0])) {
+            // occurrences [clear] — what the damage service TOLD the units. The recorder attaches to
+            // every tile on a harness server, so "nothing recorded" means nothing was delivered, not
+            // that nobody was listening.
+            DamageOccurrenceRecorder.ensureRegistered();
+            if (args.length >= 2 && "clear".equalsIgnoreCase(args[1])) {
+                send(sender, "{\"ok\":true,\"cleared\":" + DamageOccurrenceRecorder.clear() + "}");
+                return;
+            }
+            send(sender, DamageOccurrenceRecorder.json());
+            return;
+        }
+        if (args.length >= 3 && "impact-memory".equalsIgnoreCase(args[0])) {
+            // impact-memory <dim> <impactId> — is this identity already spent, and since when. A
+            // refusal reports only that it was seen; WHEN it was seen is what names the other caller.
+            int memDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer memWorld = server.getWorld(memDim);
+            if (memWorld == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + memDim + "}");
+                return;
+            }
+            long askedId = parseLongOr(args[2], 0L);
+            Long at = zmaster587.advancedRocketry.damage.ShipDamageService.rememberedTickOf(memWorld, askedId);
+            send(sender, "{\"ok\":true,\"impactId\":" + askedId
+                    + ",\"remembered\":" + (at != null)
+                    + ",\"at\":" + (at == null ? "null" : at.toString())
+                    + ",\"now\":" + memWorld.getTotalWorldTime()
+                    + ",\"size\":" + zmaster587.advancedRocketry.damage.ShipDamageService
+                            .rememberedImpactCount() + "}");
+            return;
+        }
+        if (args.length >= 5 && "stage".equalsIgnoreCase(args[0])) {
+            // stage <dim> <x> <y> <z> — the unified stage reader, whichever home owns it.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("ok", true);
+            info.put("stage", zmaster587.advancedRocketry.damage.DamageState.getStage(world, pos));
+            info.put("maxStage", zmaster587.advancedRocketry.damage.DamageState.getMaxStage(world, pos));
+            info.put("stageCost", zmaster587.advancedRocketry.damage.StructureDamageEngine.stageCost(world, pos));
+            // What the SAME stage costs a beam: the ablation column, so a test can see which column
+            // it is being charged from rather than inferring it from a depth.
+            info.put("stageCostBeam", zmaster587.advancedRocketry.damage.StructureDamageEngine.stageCost(
+                    world, pos, 1.0D, zmaster587.advancedRocketry.api.damage.ImpactKind.BEAM));
+            info.put("block", String.valueOf(world.getBlockState(pos).getBlock().getRegistryName()));
+            String destroyed = zmaster587.advancedRocketry.damage.BlockDamageSavedData.get(world)
+                    .getDestroyedBlockName(pos);
+            info.put("wasDestroyed", destroyed != null);
+            info.put("destroyedBlock", destroyed == null ? "" : destroyed);
+            send(sender, jsonMap(info));
+            return;
+        }
+        if (args.length >= 7 && "weld".equalsIgnoreCase(args[0])) {
+            // weld <dim> <x> <y> <z> <charge> <material|none> [count] — one use of the repair welder
+            // against the block at (x,y,z), by a player carrying exactly what this call says: the
+            // tool at <charge> FE and <count> of <material>. Drives production's own decision
+            // (ItemRepairWelder.weld), so a refusal here is the item's refusal, not the probe's.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            int charge = parseIntOr(args[5], 0);
+            String materialId = args[6];
+            int materialCount = args.length >= 8 ? parseIntOr(args[7], 0) : 0;
+
+            net.minecraft.entity.player.EntityPlayerMP welder = weldingPlayer(server, world, pos);
+            welder.inventory.clear();
+            net.minecraft.item.ItemStack tool = new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemRepairWelder);
+            zmaster587.advancedRocketry.item.ItemRepairWelder.setStoredEnergy(tool, charge);
+            welder.inventory.addItemStackToInventory(tool);
+            net.minecraft.item.Item material = "none".equalsIgnoreCase(materialId)
+                    ? null : net.minecraft.item.Item.getByNameOrId(materialId);
+            if (material != null && materialCount > 0) {
+                welder.inventory.addItemStackToInventory(
+                        new net.minecraft.item.ItemStack(material, materialCount));
+            }
+
+            int stageBefore = zmaster587.advancedRocketry.damage.DamageState.getStage(world, pos);
+            int materialBefore = countOf(welder, material);
+            zmaster587.advancedRocketry.item.ItemRepairWelder.Outcome outcome =
+                    zmaster587.advancedRocketry.item.ItemRepairWelder.weld(welder, world, pos, tool);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ok", true);
+            m.put("outcome", outcome.name());
+            m.put("stageBefore", stageBefore);
+            m.put("stageAfter", zmaster587.advancedRocketry.damage.DamageState.getStage(world, pos));
+            m.put("energyBefore", charge);
+            m.put("energyAfter", zmaster587.advancedRocketry.item.ItemRepairWelder.storedEnergy(tool));
+            m.put("materialBefore", materialBefore);
+            m.put("materialAfter", countOf(welder, material));
+            m.put("block", String.valueOf(world.getBlockState(pos).getBlock().getRegistryName()));
+            send(sender, jsonMap(m));
+            return;
+        }
+        if (args.length >= 8 && "records".equalsIgnoreCase(args[0])) {
+            // records <dim> <minX> <minY> <minZ> <maxX> <maxY> <maxZ> — every damage record the world
+            // holds inside the inclusive box. A single position's reading is "stage"; this is what a
+            // whole STRUCTURE carries, which is the only way to ask whether a relocation lost some of
+            // it. Positions come back sorted so two readings of the same structure compare directly,
+            // and "count" is emitted as 0 with an empty list rather than the list being dropped.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + ",\"count\":0,\"entries\":[]}");
+                return;
+            }
+            int minX = parseIntOr(args[2], 0), minY = parseIntOr(args[3], 0), minZ = parseIntOr(args[4], 0);
+            int maxX = parseIntOr(args[5], 0), maxY = parseIntOr(args[6], 0), maxZ = parseIntOr(args[7], 0);
+            zmaster587.advancedRocketry.damage.BlockDamageSavedData data =
+                    zmaster587.advancedRocketry.damage.BlockDamageSavedData.get(world);
+            java.util.List<BlockPos> found = data.positionsIn(minX, minY, minZ, maxX, maxY, maxZ);
+            found.sort(java.util.Comparator.comparingInt(BlockPos::getX)
+                    .thenComparingInt(BlockPos::getY).thenComparingInt(BlockPos::getZ));
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"ok\":true,\"count\":").append(found.size()).append(",\"entries\":[");
+            for (int i = 0; i < found.size(); i++) {
+                BlockPos p = found.get(i);
+                String was = data.getDestroyedBlockName(p);
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append("{\"x\":").append(p.getX()).append(",\"y\":").append(p.getY())
+                        .append(",\"z\":").append(p.getZ())
+                        .append(",\"stage\":").append(data.getStage(p))
+                        .append(",\"wasDestroyed\":").append(was != null)
+                        .append(",\"destroyedBlock\":\"").append(was == null ? "" : was).append("\"}");
+            }
+            sb.append("]}");
+            send(sender, sb.toString());
+            return;
+        }
+        if (args.length >= 10 && "impact".equalsIgnoreCase(args[0])) {
+            // impact <dim> <x> <y> <z> <dx> <dy> <dz> <budget> [kind] [impactId] — declare one impact
+            // against whatever structure occupies the point and report what the engine did with it.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.util.math.Vec3d point = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            net.minecraft.util.math.Vec3d dir = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            int budget = parseIntOr(args[8], 0);
+            zmaster587.advancedRocketry.api.damage.ImpactKind kind =
+                    zmaster587.advancedRocketry.api.damage.ImpactKind.KINETIC;
+            if (args.length >= 10) {
+                try {
+                    kind = zmaster587.advancedRocketry.api.damage.ImpactKind.valueOf(args[9].toUpperCase());
+                } catch (IllegalArgumentException ignored) {
+                    // keep KINETIC; the reply echoes what was used so a typo is visible
+                }
+            }
+            // A hand-declared identity is moved into a band production never mints. Production hands
+            // out 1, 2, 3 ... from the world's own counter, and a test that picks "7000" is picking a
+            // number that counter will reach on a long-lived shared server — at which point the test's
+            // impact is refused as a repeat of a shot's, spends nothing, and reads as a gun that did
+            // no damage. The offset is injective over the non-negative values anyone passes, so a
+            // repeated declaration is still a repeat, which is what the dedup tests are about.
+            long declaredId = args.length >= 11 ? (long) parseDoubleOr(args[10], 0)
+                    : world.getTotalWorldTime();
+            long impactId = Long.MIN_VALUE + Math.max(0L, declaredId);
+
+            zmaster587.advancedRocketry.api.damage.DamageReport report =
+                    zmaster587.advancedRocketry.damage.ShipDamageService.apply(world,
+                            zmaster587.advancedRocketry.api.damage.ImpactRequest.penetrating(
+                                    impactId, point, dir, budget, kind));
+
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("ok", true);
+            info.put("kind", kind.name());
+            // Both, because they are two different facts: what the caller asked for, and the identity
+            // the service was actually given. A probe that reported only the first would be hiding the
+            // one a memory query has to be made with.
+            info.put("declaredId", declaredId);
+            info.put("impactId", impactId);
+            // Which target the service resolved, and how many ships even offered themselves. Without
+            // these a miss cannot be told apart from a hit on the wrong thing: the report names no
+            // ship on purpose, so the instrument has to.
+            info.put("candidateShips", zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .shipIdsAt(world, point.x, point.y, point.z).size());
+            String resolved = zmaster587.advancedRocketry.damage.ShipDamageService
+                    .resolveTargetShip(world, point, dir);
+            info.put("onShip", resolved != null);
+            info.put("shipId", resolved == null ? "" : resolved);
+            info.put("outcome", report.getOutcome().name());
+            info.put("stopReason", report.getStopReason().name());
+            info.put("spent", report.getBudgetSpent());
+            info.put("left", report.getBudgetLeft());
+            info.put("staged", report.getBlocksStaged());
+            info.put("destroyed", report.getBlocksDestroyed());
+            info.put("depth", report.getPenetrationDepth());
+            // Points are emitted in every state, with a flag saying whether they mean anything, so a
+            // consumer never meets a dropped key on the uninteresting answer.
+            net.minecraft.util.math.Vec3d entry = report.getEntryPoint();
+            net.minecraft.util.math.Vec3d exit = report.getExitPoint();
+            info.put("hasEntry", entry != null);
+            info.put("entryX", entry != null ? entry.x : 0.0D);
+            info.put("entryY", entry != null ? entry.y : 0.0D);
+            info.put("entryZ", entry != null ? entry.z : 0.0D);
+            info.put("hasExit", exit != null);
+            info.put("exitX", exit != null ? exit.x : 0.0D);
+            info.put("exitY", exit != null ? exit.y : 0.0D);
+            info.put("exitZ", exit != null ? exit.z : 0.0D);
+            send(sender, jsonMap(info));
+            return;
+        }
+        send(sender, "{\"error\":\"unknown damage subcommand — try impact <dim> <x> <y> <z> <dx> <dy> <dz> <budget> [kind] [impactId] | stage <dim> <x> <y> <z> | clear-impacts\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------
@@ -11412,6 +12338,9 @@ public class TestProbeCommand extends CommandBase {
                     // off to pin that a valid rocket still assembles (no fuel-adequacy
                     // gate) — the regression the weight-system merge introduced.
                     "rocketRequireFuel",
+                    // enableWeapons: the off switch has to END what is in the air,
+                    // not suspend it, and only a test that flips it at runtime can see that.
+                    "enableWeapons",
                     // The telescope's reach and what a look costs in time, all read at scan START,
                     // so flipping them at runtime is enough to exercise a short scan in a test
                     // without waiting out a production-length observation.
@@ -11427,7 +12356,20 @@ public class TestProbeCommand extends CommandBase {
                     "telescopeObscuredAtMagnitudes",
                     // The research master switch. A survey is instant without it and paced by the
                     // time curve with it, so both halves of boundary B need it flippable at runtime.
-                    "planetsMustBeDiscovered"));
+                    "planetsMustBeDiscovered",
+                    // Fire control. The master switch is here so a test can watch the SAME battery
+                    // and the SAME target with acquisition off and then on — a control in the same
+                    // run, rather than the hope that a gun which fired did so because of the sensor.
+                    // The rest are the tuning a lock/no-lock scenario has to state rather than
+                    // assume: a test that silently depended on the shipped radius would go red the
+                    // day somebody rebalanced it, for a reason that has nothing to do with it.
+                    "enableFireControlSensor",
+                    "fireControlSensorRadius",
+                    "fireControlSensorScanIntervalTicks",
+                    "fireControlSensorActiveEnergyPerTick",
+                    "fireControlSensorActiveLockQuality",
+                    "fireControlSensorLockQualityToFire",
+                    "fireControlSensorAcquireHostilesOnly"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -13834,7 +14776,14 @@ public class TestProbeCommand extends CommandBase {
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
-                    if (world.setBlockState(new BlockPos(x, y, z), state)) {
+                    BlockPos at = new BlockPos(x, y, z);
+                    // A fill is the harness saying "this region is fresh". Setting the state alone is
+                    // not: recorded damage is keyed by POSITION and lives outside the block, and it is
+                    // cleared in production by the place and break EVENTS, which setting a state
+                    // directly never fires. So a scenario rebuilding a wall over an earlier scenario's
+                    // crater would arrive pre-damaged, and read as its own doing.
+                    zmaster587.advancedRocketry.damage.BlockDamageSavedData.get(world).clear(at);
+                    if (world.setBlockState(at, state)) {
                         placed++;
                     }
                 }
@@ -17997,6 +18946,46 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
+     * A player for the welding probe, its OWN and not the shared fake one: this player is handed a
+     * cleared inventory on every call, which would rob whatever else the shared player is carrying.
+     * Connectionless like the shared one, so nothing may send it a packet — which is why the probe
+     * drives {@code ItemRepairWelder.weld} (silent) rather than {@code onItemUse} (speaks).
+     */
+    private static net.minecraft.entity.player.EntityPlayerMP weldingPlayer(
+            MinecraftServer server, net.minecraft.world.WorldServer world, BlockPos near) {
+        if (weldTestPlayer == null) {
+            weldTestPlayer = new net.minecraft.entity.player.EntityPlayerMP(server, world,
+                    new com.mojang.authlib.GameProfile(
+                            java.util.UUID.nameUUIDFromBytes("ARWeldTestPlayer".getBytes()),
+                            "ARWeldTestPlayer"),
+                    new net.minecraft.server.management.PlayerInteractionManager(world));
+            weldTestPlayer.capabilities.disableDamage = true;
+        }
+        weldTestPlayer.setWorld(world);
+        weldTestPlayer.dimension = world.provider.getDimension();
+        weldTestPlayer.setLocationAndAngles(near.getX() + 0.5, near.getY() + 1.0, near.getZ() + 0.5, 0, 0);
+        return weldTestPlayer;
+    }
+
+    private static net.minecraft.entity.player.EntityPlayerMP weldTestPlayer;
+
+    /** How many of {@code item} the player is carrying, counting every slot; 0 for a null item. */
+    private static int countOf(net.minecraft.entity.player.EntityPlayerMP player,
+                               net.minecraft.item.Item item) {
+        if (item == null) {
+            return 0;
+        }
+        int total = 0;
+        for (int i = 0; i < player.inventory.getSizeInventory(); i++) {
+            net.minecraft.item.ItemStack stack = player.inventory.getStackInSlot(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                total += stack.getCount();
+            }
+        }
+        return total;
+    }
+
+    /**
      * Player-state probe. Used by the testClient e2e pin for
      * the {@code MixinEntityPlayer(MP)InventoryAccess} {@code @Redirect}:
      * a real-player GUI session can only exercise the rocket-inventory
@@ -20580,7 +21569,7 @@ public class TestProbeCommand extends CommandBase {
 
     private void handleChunk(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length == 0) {
-            send(sender, "{\"error\":\"usage: /artest chunk forceload <dim> <cx> <cz> | cycle <dim> <cx> <cz> | release <dim> <cx> <cz> | release-all | list\"}");
+            send(sender, "{\"error\":\"usage: /artest chunk forceload <dim> <cx> <cz> | cycle <dim> <cx> <cz> | loaded <dim> [cx cz] | release <dim> <cx> <cz> | release-all | list\"}");
             return;
         }
         String sub = args[0].toLowerCase(java.util.Locale.ROOT);
@@ -20668,6 +21657,29 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"wasLoaded\":" + wasLoaded + ",\"dropped\":" + dropped
                     + ",\"reloaded\":" + (fresh != null)
                     + ",\"sameInstance\":" + (fresh == loaded) + "}");
+            return;
+        }
+        if ("loaded".equals(sub) && args.length >= 2) {
+            // loaded <dim> [cx cz] — read-only: is that chunk in memory, and how many are. Asked
+            // WITHOUT loading anything (getLoadedChunk, never provideChunk), because the question
+            // "did this cause a load" cannot be answered by an instrument that loads.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.world.gen.ChunkProviderServer provider = world.getChunkProvider();
+            if (args.length >= 4) {
+                int cx = parseIntOr(args[2], Integer.MIN_VALUE);
+                int cz = parseIntOr(args[3], Integer.MIN_VALUE);
+                boolean present = provider.id2ChunkMap.containsKey(
+                        net.minecraft.util.math.ChunkPos.asLong(cx, cz));
+                send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"cx\":" + cx + ",\"cz\":" + cz
+                        + ",\"loaded\":" + present + ",\"count\":" + provider.id2ChunkMap.size() + "}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"count\":" + provider.id2ChunkMap.size() + "}");
             return;
         }
         if ("release".equals(sub) && args.length >= 4) {
@@ -20975,6 +21987,108 @@ public class TestProbeCommand extends CommandBase {
                 net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
                         new net.minecraftforge.event.entity.living.LivingEvent.LivingUpdateEvent(fakePlayer));
             }
+        }
+    }
+
+    /**
+     * Records the {@link zmaster587.advancedRocketry.api.damage.DamageOccurrence}s delivered to units,
+     * by ATTACHING the capability to every tile on a harness server.
+     *
+     * <p>Attaching rather than implementing is the point: it is exactly the route a foreign mod takes
+     * to make somebody else's machine damage-aware, so what this exercises is the shipped delivery
+     * path and not a private one. Nothing in production carries {@code IDamageAware} yet — enrolling a
+     * real unit means designing that unit's own consequence, which is its owner's decision — so
+     * without this the interface would have no consumer and no test could tell whether it delivers.</p>
+     *
+     * <p>Test mode only, and the list is a bounded, single-writer diagnostic that OUTLIVES a scenario
+     * on a shared server: {@code /artest damage occurrences clear} is how a scenario claims a clean
+     * one.</p>
+     */
+    public static final class DamageOccurrenceRecorder {
+
+        private static final int CAPACITY = 256;
+        private static final java.util.List<String> SEEN = new java.util.ArrayList<String>();
+        private static volatile boolean registered = false;
+
+        public static synchronized void ensureRegistered() {
+            if (registered) {
+                return;
+            }
+            net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new DamageOccurrenceRecorder());
+            registered = true;
+        }
+
+        static synchronized void record(zmaster587.advancedRocketry.api.damage.DamageOccurrence o) {
+            if (SEEN.size() >= CAPACITY) {
+                SEEN.remove(0);
+            }
+            SEEN.add("{\"cause\":\"" + o.getCause() + "\",\"kind\":"
+                    + (o.getKind() == null ? "null" : "\"" + o.getKind() + "\"")
+                    + ",\"x\":" + o.getPos().getX() + ",\"y\":" + o.getPos().getY()
+                    + ",\"z\":" + o.getPos().getZ()
+                    + ",\"stageBefore\":" + o.getStageBefore()
+                    + ",\"stageAfter\":" + o.getStageAfter()
+                    + ",\"maxStage\":" + o.getMaxStage()
+                    + ",\"spent\":" + o.getBudgetSpent()
+                    + ",\"destroyed\":" + o.isDestroyed()
+                    + ",\"ship\":" + (o.getShipId() == null ? "null" : "\"" + o.getShipId() + "\"")
+                    + ",\"hasWorld\":" + (o.getWorld() != null)
+                    + ",\"hasWhere\":" + (o.getWhere() != null) + "}");
+        }
+
+        static synchronized String json() {
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"count\":").append(SEEN.size())
+                    .append(",\"occurrences\":[");
+            for (int i = 0; i < SEEN.size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(SEEN.get(i));
+            }
+            return sb.append("]}").toString();
+        }
+
+        static synchronized int clear() {
+            int had = SEEN.size();
+            SEEN.clear();
+            return had;
+        }
+
+        @net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+        public void onAttach(net.minecraftforge.event.AttachCapabilitiesEvent<
+                net.minecraft.tileentity.TileEntity> event) {
+            if (zmaster587.advancedRocketry.api.capability.CapabilityDamageAware.DAMAGE_AWARE == null) {
+                return;
+            }
+            event.addCapability(new net.minecraft.util.ResourceLocation("advancedrocketry",
+                    "test_damage_recorder"), new RecorderProvider());
+        }
+    }
+
+    /** The provider half of the recorder attachment; one listener per tile, holding nothing. */
+    private static final class RecorderProvider
+            implements net.minecraftforge.common.capabilities.ICapabilityProvider {
+        private final zmaster587.advancedRocketry.api.damage.IDamageAware listener =
+                new zmaster587.advancedRocketry.api.damage.IDamageAware() {
+            @Override
+            public void onDamage(zmaster587.advancedRocketry.api.damage.DamageOccurrence occurrence) {
+                DamageOccurrenceRecorder.record(occurrence);
+            }
+        };
+
+        @Override
+        public boolean hasCapability(net.minecraftforge.common.capabilities.Capability<?> capability,
+                                     net.minecraft.util.EnumFacing facing) {
+            return capability
+                    == zmaster587.advancedRocketry.api.capability.CapabilityDamageAware.DAMAGE_AWARE;
+        }
+
+        @Override
+        public <T> T getCapability(net.minecraftforge.common.capabilities.Capability<T> capability,
+                                   net.minecraft.util.EnumFacing facing) {
+            return capability
+                    == zmaster587.advancedRocketry.api.capability.CapabilityDamageAware.DAMAGE_AWARE
+                    ? (T) listener : null;
         }
     }
 

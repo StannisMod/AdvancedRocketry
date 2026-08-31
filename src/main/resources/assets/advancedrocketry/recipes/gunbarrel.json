@@ -1,0 +1,18 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        "i i",
+        "i i",
+        "iii"
+    ],
+    "key": {
+        "i": {
+            "type": "forge:ore_dict",
+            "ore": "ingotIron"
+        }
+    },
+    "result": {
+        "item": "advancedrocketry:gunBarrel",
+        "count": 2
+    }
+}

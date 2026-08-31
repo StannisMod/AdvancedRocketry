@@ -3,7 +3,8 @@ package com.github.stannismod.affs.block;
 import com.github.stannismod.affs.AdvancedForceFieldSystem;
 import com.github.stannismod.affs.item.ItemBlockTiered;
 import com.github.stannismod.affs.te.TileEntityShieldCable;
-import com.github.stannismod.affs.world.shield.IShieldNetworkNode;
+import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemNetworkNode;
 import net.minecraft.block.Block;
 import net.minecraft.block.ITileEntityProvider;
 import net.minecraft.block.SoundType;
@@ -213,7 +214,10 @@ public class BlockShieldCable extends Block implements ITileEntityProvider, IHas
 
     private boolean canConnect(IBlockAccess world, BlockPos pos, EnumFacing facing) {
         TileEntity tileEntity = world.getTileEntity(pos.offset(facing));
-        return tileEntity instanceof IShieldNetworkNode;
+        // A cable connects to shield nodes only: a ventilation duct laid through the same wall is a
+        // network node too, and joining it would draw an arm to a block this line never feeds.
+        return tileEntity instanceof ISubsystemNetworkNode
+                && ((ISubsystemNetworkNode) tileEntity).getNetworkDomain() == ShieldNetworkManager.DOMAIN;
     }
 
     @Override

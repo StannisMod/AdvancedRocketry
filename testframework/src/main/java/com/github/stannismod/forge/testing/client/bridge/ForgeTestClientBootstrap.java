@@ -1124,6 +1124,26 @@ public final class ForgeTestClientBootstrap {
                     }
                     return response;
                 });
+            case "tile_nbt":
+                // What the CLIENT's own tile entity holds, as the tile itself describes it.
+                // block_state answers which class is there; this answers what that instance believes,
+                // which is the only honest way to ask whether a server-side change reached the client
+                // — a renderer's output is not readable from here, but the state it draws from is.
+                // Reads getUpdateTag() rather than writeToNBT(): the update tag is exactly the subset
+                // a tile chooses to replicate, so a test that reads it is asking about the wire and
+                // not about the tile's private bookkeeping.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    BlockPos pos = new BlockPos(requireInt(request, "x"), requireInt(request, "y"),
+                            requireInt(request, "z"));
+                    JsonObject response = ok();
+                    net.minecraft.tileentity.TileEntity tile =
+                            mc.world == null ? null : mc.world.getTileEntity(pos);
+                    response.addProperty("present", tile != null);
+                    response.addProperty("tile", tile == null ? "" : tile.getClass().getName());
+                    response.addProperty("nbt", tile == null ? "" : tile.getUpdateTag().toString());
+                    return response;
+                });
             case "invoke_static_int":
                 // Drive a mod's own CLIENT-side input entry point on the client thread. The sibling of
                 // set_key: that one writes KeyBinding state rather than feeding the LWJGL key queue,

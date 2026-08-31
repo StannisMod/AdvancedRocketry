@@ -1,0 +1,329 @@
+package zmaster587.advancedRocketry.api.weapon;
+
+import zmaster587.advancedRocketry.api.damage.ImpactKind;
+
+/**
+ * What a built gun IS, once its parts have been counted: everything the firing code needs and
+ * nothing about which blocks produced it.
+ *
+ * <h3>Derived, never authored per block</h3>
+ * <p>A gun's numbers come from its build — how long the barrel is, how much feed and cooling it was
+ * given. So this object is produced by walking an assembly, not read off the controller: two guns
+ * with the same parts have the same spec wherever they stand, and adding a barrel section is a
+ * change a player can measure rather than a change to a config file.</p>
+ *
+ * <h3>Units are the substrate's units</h3>
+ * <p>{@link #getMuzzleSpeed()} is blocks per <b>tick</b> and {@link #getImpactEnergy()} is in the
+ * same unit a shield spends and a damage budget carries, because those are the units the shot layer
+ * speaks. Nothing downstream converts, so nothing downstream can convert wrongly.</p>
+ *
+ * <h3>A spec is not permission to fire</h3>
+ * <p>It says what a shot would look like; whether one happens is decided by the gun's own energy,
+ * heat and drive state. A spec with a zero fire interval would still not fire a gun that is jammed.</p>
+ */
+public final class GunSpec {
+
+    /** What an assembly with no parts at all is worth: nothing, and it says so rather than firing blanks. */
+    public static final GunSpec EMPTY = new Builder().build();
+
+    private final double muzzleSpeed;
+    private final int impactEnergy;
+    private final int fireIntervalTicks;
+    private final int energyPerShot;
+    private final int heatPerShot;
+    private final int heatCapacity;
+    private final int coolingPerTick;
+    private final double spreadDegrees;
+    private final double traverseDegreesPerTick;
+    private final int lifetimeTicks;
+    private final double projectileRadius;
+    private final double projectileMass;
+    private final ImpactKind kind;
+    private final int beamPowerPerTick;
+    private final int partCount;
+    private final java.util.EnumSet<GunInput> inputs;
+
+    /**
+     * The power a HELD beam puts on target each tick, or {@code 0} for a gun that fires discrete
+     * rounds. It is what makes a gun a beam: there is no separate "weapon type" field, because a type
+     * field and a power field could disagree, and then two places would decide what this gun is.
+     *
+     * <p>Per TICK rather than per shot, and the difference is the family: a discrete gun spends its
+     * energy at intervals and its damage arrives in lumps, while a beam spends every tick it is lit
+     * and its depth grows with how long it is held.</p>
+     */
+    public int getBeamPowerPerTick() {
+        return beamPowerPerTick;
+    }
+
+    /** Does this gun HOLD a beam rather than throw rounds? */
+    public boolean isBeam() {
+        return beamPowerPerTick > 0;
+    }
+
+    private GunSpec(Builder builder) {
+        this.muzzleSpeed = builder.muzzleSpeed;
+        this.impactEnergy = builder.impactEnergy;
+        this.fireIntervalTicks = builder.fireIntervalTicks;
+        this.energyPerShot = builder.energyPerShot;
+        this.heatPerShot = builder.heatPerShot;
+        this.heatCapacity = builder.heatCapacity;
+        this.coolingPerTick = builder.coolingPerTick;
+        this.spreadDegrees = builder.spreadDegrees;
+        this.traverseDegreesPerTick = builder.traverseDegreesPerTick;
+        this.lifetimeTicks = builder.lifetimeTicks;
+        this.projectileRadius = builder.projectileRadius;
+        this.projectileMass = builder.projectileMass;
+        this.kind = builder.kind;
+        this.partCount = builder.partCount;
+        this.inputs = java.util.EnumSet.copyOf(builder.inputs.isEmpty()
+                ? java.util.EnumSet.of(GunInput.FORGE_ENERGY) : builder.inputs);
+        this.beamPowerPerTick = builder.beamPowerPerTick;
+    }
+
+    /**
+     * Whether this assembly can deliver anything at all. Saying so here means every call site asks one
+     * question instead of each inventing its own idea of "complete".
+     *
+     * <p><b>There are two ways to be a weapon, and the first version of this knew only one.</b> A
+     * build missing the part that makes it a thrower — a barrel — has no muzzle speed and no round
+     * worth firing. A BEAM has neither of those by nature and is a weapon anyway: what it has is power
+     * per tick. Written as "throws a round OR holds a beam" rather than as a list of required fields,
+     * because a list of fields is a definition that quietly excludes the next family: the beam was
+     * built, wired, charged, aimed and reported `operable:false`, and every layer above dutifully
+     * refused to fire it.</p>
+     */
+    public boolean isOperable() {
+        if (partCount <= 0) {
+            return false;
+        }
+        return (muzzleSpeed > 0.0D && impactEnergy > 0) || beamPowerPerTick > 0;
+    }
+
+    /** Blocks per TICK, world frame once the mount has rotated it. */
+    public double getMuzzleSpeed() {
+        return muzzleSpeed;
+    }
+
+    /** What one round is worth on arrival, in shield-energy-equivalent units. */
+    public int getImpactEnergy() {
+        return impactEnergy;
+    }
+
+    /** Ticks between two rounds. Never below one: a gun cannot fire twice in one tick. */
+    public int getFireIntervalTicks() {
+        return fireIntervalTicks;
+    }
+
+    /** Forge Energy burned per round. Paid from the gun's own buffer, network or no network. */
+    public int getEnergyPerShot() {
+        return energyPerShot;
+    }
+
+    public int getHeatPerShot() {
+        return heatPerShot;
+    }
+
+    /** Heat the gun may hold before it must stop firing and let the coolers work. */
+    public int getHeatCapacity() {
+        return heatCapacity;
+    }
+
+    public int getCoolingPerTick() {
+        return coolingPerTick;
+    }
+
+    /** Half-angle of the cone a round may leave in, in degrees. Zero is a perfectly true barrel. */
+    public double getSpreadDegrees() {
+        return spreadDegrees;
+    }
+
+    /** How fast the mount may swing, in degrees per tick. A hard capability, never exceeded. */
+    public double getTraverseDegreesPerTick() {
+        return traverseDegreesPerTick;
+    }
+
+    /** How long a round lives before it expires — this gun's reach, expressed in the shot's own unit. */
+    public int getLifetimeTicks() {
+        return lifetimeTicks;
+    }
+
+    public double getProjectileRadius() {
+        return projectileRadius;
+    }
+
+    public double getProjectileMass() {
+        return projectileMass;
+    }
+
+    public ImpactKind getKind() {
+        return kind;
+    }
+
+    /**
+     * What this build needs delivered to it. Never empty: a gun that declared nothing would be a gun
+     * nothing could be said about, so the floor is Forge Energy — which every build draws anyway.
+     */
+    public java.util.Set<GunInput> getDeclaredInputs() {
+        return java.util.Collections.unmodifiableSet(inputs);
+    }
+
+    /** How many parts were counted. Diagnostics, and the "is this thing built" test's raw material. */
+    public int getPartCount() {
+        return partCount;
+    }
+
+    /**
+     * Accumulates part contributions into a spec.
+     *
+     * <p>Parts <b>add</b> rather than set, which is what keeps the contract open: a part shipped by
+     * an addon contributes on the same terms as one of ours, and no part has to know what else the
+     * build contains. The one exception is spread, where more barrel makes a gun truer — a part may
+     * subtract there, and the result is floored at zero rather than allowed to go negative and
+     * become an aim bonus nobody declared.</p>
+     */
+    public static final class Builder {
+
+        private double muzzleSpeed;
+        private int impactEnergy;
+        private int fireIntervalTicks = 20;
+        private int energyPerShot;
+        private int heatPerShot;
+        private int heatCapacity = 100;
+        private int coolingPerTick = 1;
+        private double spreadDegrees = 6.0D;
+        private double traverseDegreesPerTick = 2.0D;
+        private int lifetimeTicks = 200;
+        private double projectileRadius = 0.25D;
+        private double projectileMass = 1.0D;
+        private ImpactKind kind = ImpactKind.KINETIC;
+        private int beamPowerPerTick;
+        private int partCount;
+        private final java.util.EnumSet<GunInput> inputs = java.util.EnumSet.noneOf(GunInput.class);
+        private double contributionScale = 1.0D;
+
+        /**
+         * How much of the NEXT part's contribution counts, 0..1 — a part in poor condition gives
+         * less of whatever it gives.
+         *
+         * <p>Applied to what a part ADDS, never to what it declares or sets: a battered barrel
+         * still fires the same kind of round, it just does not add the same speed to it. It scales
+         * a negative contribution too, and that is the point — a barrel exists to tighten spread,
+         * so a ruined one tightens it less rather than tightening it as though nothing happened.</p>
+         */
+        public Builder withContributionScale(double scale) {
+            this.contributionScale = scale < 0.0D ? 0.0D : (scale > 1.0D ? 1.0D : scale);
+            return this;
+        }
+
+        private double scaled(double value) {
+            return value * contributionScale;
+        }
+
+        private int scaled(int value) {
+            return (int) Math.round(value * contributionScale);
+        }
+
+        public Builder addMuzzleSpeed(double blocksPerTick) {
+            this.muzzleSpeed += scaled(Math.max(0.0D, blocksPerTick));
+            return this;
+        }
+
+        public Builder addImpactEnergy(int energy) {
+            this.impactEnergy += scaled(Math.max(0, energy));
+            return this;
+        }
+
+        /** Faster feed = shorter interval. Floored at one tick, which is the physical limit. */
+        public Builder speedUpFireIntervalBy(int ticks) {
+            this.fireIntervalTicks = Math.max(1, this.fireIntervalTicks - scaled(Math.max(0, ticks)));
+            return this;
+        }
+
+        /**
+         * Declare — or add to — the power this gun holds on target each tick as a BEAM.
+         *
+         * <p>An emitter contributes power here the way a barrel contributes muzzle speed, so a bigger
+         * laser is a laser with more emitters rather than a laser with a bigger number written beside
+         * it. Anything above zero makes the gun a beam.</p>
+         */
+        public Builder addBeamPowerPerTick(int power) {
+            this.beamPowerPerTick += scaled(Math.max(0, power));
+            return this;
+        }
+
+        public Builder addEnergyPerShot(int fe) {
+            this.energyPerShot += scaled(Math.max(0, fe));
+            return this;
+        }
+
+        public Builder addHeatPerShot(int heat) {
+            this.heatPerShot += scaled(Math.max(0, heat));
+            return this;
+        }
+
+        public Builder addHeatCapacity(int heat) {
+            this.heatCapacity += scaled(Math.max(0, heat));
+            return this;
+        }
+
+        public Builder addCoolingPerTick(int heat) {
+            this.coolingPerTick += scaled(Math.max(0, heat));
+            return this;
+        }
+
+        /** Negative tightens the cone; the result never goes below a true barrel. */
+        public Builder addSpreadDegrees(double degrees) {
+            this.spreadDegrees = Math.max(0.0D, this.spreadDegrees + scaled(degrees));
+            return this;
+        }
+
+        public Builder addTraverseDegreesPerTick(double degrees) {
+            this.traverseDegreesPerTick = Math.max(0.0D, this.traverseDegreesPerTick + scaled(degrees));
+            return this;
+        }
+
+        public Builder addLifetimeTicks(int ticks) {
+            this.lifetimeTicks = Math.max(1, this.lifetimeTicks + scaled(ticks));
+            return this;
+        }
+
+        public Builder setProjectileBody(double radius, double mass) {
+            this.projectileRadius = Math.max(0.0D, radius);
+            this.projectileMass = Math.max(0.0D, mass);
+            return this;
+        }
+
+        /**
+         * The last part to state a kind decides it. A build mixing a kinetic feed and a plasma one
+         * is a build whose last-placed part wins, which is a rule a player can see the result of.
+         */
+        public Builder setKind(ImpactKind kind) {
+            if (kind != null) {
+                this.kind = kind;
+            }
+            return this;
+        }
+
+        /**
+         * State that this part needs something delivered. Additive like everything else: a build with
+         * one gas-fed component declares gas, whatever the rest of it wants.
+         */
+        public Builder declareInput(GunInput input) {
+            if (input != null) {
+                this.inputs.add(input);
+            }
+            return this;
+        }
+
+        /** Called once per part counted, by the assembly walk rather than by the parts themselves. */
+        public Builder countPart() {
+            this.partCount++;
+            return this;
+        }
+
+        public GunSpec build() {
+            return new GunSpec(this);
+        }
+    }
+}

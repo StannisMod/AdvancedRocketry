@@ -20,6 +20,18 @@ public class AdvancedRocketryBlocks {
     public static Block blockPlanetAnalyser;
     public static Block blockLaunchpad;
     public static Block blockStructureTower;
+    /**
+     * Mirror plating, one block per FILM. The tiers are the reflectances of the metals mirrors are
+     * really made of, so the ladder is physics rather than invention: aluminium is the workhorse,
+     * silver the best in the visible band, and gold the infrared mirror — which is the band a weapon
+     * laser lives in, and the reason gold answers one weapon family and not another.
+     */
+    public static Block blockMirrorPlatingAluminium;
+    public static Block blockMirrorPlatingSilver;
+    public static Block blockMirrorPlatingGold;
+    /** Reactive plating: a charge that spends itself. Two thicknesses, and layering is allowed. */
+    public static Block blockReactivePlate;
+    public static Block blockReactiveBlock;
     public static Block blockRocketBuilder;
     public static Block blockGenericSeat;
     public static Block blockPilotSeat;
@@ -39,6 +51,24 @@ public class AdvancedRocketryBlocks {
     public static Block blockGuidanceComputer;
     public static Block blockAdvancedFlightComputer;
     public static Block blockNavigationComputer;
+    /**
+     * The gun family: a controller, and the parts a gun's numbers are derived from. A turret is
+     * whatever was built around the controller, so these are placed rather than crafted into a
+     * fixed shape.
+     */
+    public static Block blockTurret;
+    public static Block blockGunBarrel;
+    public static Block blockGunAmmoFeed;
+    public static Block blockGunBeamEmitter;
+	public static Block blockGunCooling;
+    /** The one thing the weapons network adds: a place to point every gun at once. */
+    public static Block blockWeaponConsole;
+    /**
+     * The eyes of a battery: it finds targets so that nobody has to name them, and hands its
+     * network one contact at a time. Off a ship it is a planetary-defence radar; the block is the
+     * same either way.
+     */
+    public static Block blockFireControlSensor;
     /** The hyperdrive family: the machines that make a jump possible. */
     public static Block blockHyperdriveGenerator;
     public static Block blockHyperdriveCoil;

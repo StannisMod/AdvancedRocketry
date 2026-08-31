@@ -49,6 +49,7 @@ public class ARConfiguration {
     private final static String OXYGEN = "Oxygen System";
     private final static String ENERGY = "Energy Production";
     private final static String MISSION = "Resource Collection Missions";
+    private final static String WEAPONS = "Weapons";
     private final static String PERFORMANCE = "Performance";
     private final static String CLIENT = "Client";
     private final static String COMPAT = "Compatibility";
@@ -138,6 +139,7 @@ public class ARConfiguration {
     public int dilithiumPerChunk;
     @ConfigProperty
     public int dilithiumPerChunkMoon;
+    @ConfigProperty
     public int aluminumPerChunk;
     @ConfigProperty
     public int aluminumClumpSize;
@@ -412,6 +414,187 @@ public class ARConfiguration {
     public boolean wearCriticalBlocksLaunch = false;
     @ConfigProperty(needsSync = true)
     public double serviceStationStandaloneRepairMultiplier = 3.0;
+    /**
+     * Share of a block's own crafting recipe charged to repair it from destroyed-adjacent back to
+     * pristine BY HAND, spread over its stages. 1.0 means a full hand repair costs about what the
+     * block costs — the welder's advantage over simply replacing it is that the block, and whatever
+     * its tile entity holds, stays where it is.
+     */
+    @ConfigProperty(needsSync = true)
+    public double repairCostPerStageFraction = 1.0;
+    @ConfigProperty(needsSync = true)
+    public int repairWelderEnergyPerStage = 2000;
+    @ConfigProperty(needsSync = true)
+    public int repairWelderCapacity = 100000;
+    /**
+     * Whether the war exists: whether a weapon fires, a sensor acquires, and weapon fire damages
+     * anything.
+     *
+     * <h3>One key, because a pack asks one question</h3>
+     * <p>What a server owner wants to decide is "is there combat here", and the answer has to cover
+     * every weapon family at once. The key this replaced gated the shot registry alone, which left a
+     * held beam burning hulls with the war "off" — a switch that covers half a mechanic is worse than
+     * none, because it reads as a promise.</p>
+     *
+     * <h3>OFF is reversible, and that bounds what it may do</h3>
+     * <p>It is meant to be thrown on a world that has already been fought over, and thrown back later
+     * on the same save. So OFF destroys nothing a later ON would need: guns keep their builds,
+     * buffers and targets, damage records stay on the blocks that carry them, repair keeps working,
+     * and shields — which defend against more than weapons — are untouched. The one thing it ends is
+     * flights, because a round left in the registry is written back into the save forever and would
+     * resume months later into a world that has moved on.</p>
+     *
+     * <p>A gun that is off SAYS so rather than falling silent: "the war is off" is a distinct answer
+     * beside "holding fire" and "nothing left to fire with".</p>
+     */
+    @ConfigProperty(needsSync = true)
+    public boolean enableWeapons = true;
+    /**
+     * Below this speed, in blocks per tick, a shot mirrored off a shield is ended at the shell rather
+     * than left alive. A body deflected to nearly nothing has to be somewhere if it is an entity; a
+     * record does not, and a cloud of near-motionless rounds loitering against a shell is both a
+     * simulation cost and a lie about what is in the air.
+     */
+    @ConfigProperty(needsSync = true)
+    public double shotReflectionSpeedFloor = 0.05;
+    @ConfigProperty(needsSync = true)
+    public double shotPenetrationSpeedFloor = 0.05;
+    /**
+     * The widest a shot's body may be treated as, in blocks, however wide it was declared. A body
+     * sweeps a cylinder rather than a line, and the blocks one step examines grow with the SQUARE of
+     * its width, so this is what keeps an absurd calibre from being a way of making the server do
+     * arbitrary work. It caps the geometry only: the declared cross-section still prices the shot.
+     */
+    @ConfigProperty(needsSync = true)
+    public double shotBodyRadiusCap = 2.0;
+    /**
+     * How much dearer a block is to BOIL AWAY than to push through, when nothing has written it its
+     * own ablation row. Both figures are energy per unit of volume removed — the same dimension — and
+     * they are nowhere near the same magnitude: for steel, being pushed through costs of order a
+     * gigajoule per cubic metre while heating, melting and vaporising it costs tens of them. So per
+     * joule a kinetic round removes far more hull than a beam does, and a laser buys precision,
+     * instantaneity and nothing to reload instead of digging power.
+     */
+    @ConfigProperty(needsSync = true)
+    public double ablationResistanceFactor = 20.0;
+    /**
+     * The power density below which a beam does not drill at all — it warms the plate and the energy
+     * is conducted away — as energy per unit of the body's cross-section, in the units an impact
+     * budget is in. <b>Off by default, and the reason is worth reading before turning it on.</b>
+     *
+     * <p>The worry it was written for is real: a linear ablation law would let a faint beam held long
+     * enough cut a battleship. But the law is NOT linear in the way that worry assumes — a stage is
+     * bought whole or not at all, and a beam that cannot afford one keeps its energy and buys nothing
+     * this tick or any other. Since a stage costs `perStage x ablation x area / referenceArea`, "can
+     * this beam afford a stage" is ALREADY the question "is this beam intense enough", with a
+     * threshold of `perStage x ablation / referenceArea` that each block sets for itself. A faint beam
+     * therefore never accumulates, and the battleship is safe without this knob.</p>
+     *
+     * <p>What the knob buys, at a value ABOVE that affordability line, is the thing the pricing does
+     * NOT do: a sub-threshold beam's energy is ABSORBED. Without it a beam too weak to mark a plate
+     * does not warm it — it passes clean through with everything it arrived with, a free x-ray of the
+     * hull. That, rather than the battleship, is why the threshold is set.</p>
+     *
+     * <p><b>The default sits above the affordability line of METAL.</b> The line is
+     * `perStage x ablation / referenceArea`, which each block sets for itself: with the shipped table
+     * that is of order 8 000 for stone and 38 500 for an iron block. At 50 000 a small emitter does
+     * nothing whatever to a metal hull, however long it is held, and its energy stays in the plate —
+     * which is the qualitative gap between a big emitter and a small one, and the reason a pulsed
+     * laser is worth building. Zero disables it and restores the x-ray.</p>
+     */
+    @ConfigProperty(needsSync = true)
+    public double beamAblationIntensityThreshold = 50000.0;
+    /**
+     * How glancing a hit has to be before a solid round skips off METAL instead of digging in, as the
+     * angle between the round and the surface normal in degrees: 0 is square-on, 90 is a pure graze.
+     * Only metal deflects — a round never skips off a plank wall — so a player meets bouncing rounds
+     * where a player expects them. 90 disables ricochet entirely.
+     */
+    @ConfigProperty(needsSync = true)
+    public double ricochetIncidenceDegrees = 65.0;
+    /**
+     * How much of its speed a ricocheting round keeps. Below 1 a bounce costs something, which is what
+     * stops a round skipping between two plates forever; at 1 a graze is free.
+     */
+    @ConfigProperty(needsSync = true)
+    public double ricochetRestitution = 0.75;
+    /**
+     * How many shots one world may carry at once. A refusal, not an eviction: dropping somebody
+     * else's round to make room would turn a burst of cheap fire into a way of deleting incoming fire.
+     */
+    @ConfigProperty(needsSync = true)
+    public int maxShotsPerWorld = 256;
+    /**
+     * How near a player's eye a round's PATH — or a held beam's lit LENGTH — must pass before that
+     * player is told about it, in blocks. Weapon fire is a server record, so being told is the only
+     * way a client can draw any of it; sending every round to everybody in the world would put a
+     * battery's whole rate of fire on every player's connection, including the ones on the far side
+     * of a planet. Zero switches the whole drawing channel off: the mechanics still work and nothing
+     * is drawn. One radius covers both families deliberately — it is the same question about the
+     * same guns, and two knobs would be two answers.
+     */
+    @ConfigProperty(needsSync = true)
+    public int shotVisibilityRadius = 256;
+    /**
+     * Whether the fire-control sensor searches for targets at all. With this off the block still
+     * exists and still says what it is, and it acquires nothing, publishes nothing and draws no
+     * power — so a battery falls back to being pointed by hand, which is exactly what it was before
+     * the sensor existed rather than a broken version of it.
+     */
+    @ConfigProperty(needsSync = true)
+    public boolean enableFireControlSensor = true;
+    /** How far a fire-control sensor can look at all, in blocks. Its envelope, not its lock range. */
+    @ConfigProperty(needsSync = true)
+    public double fireControlSensorRadius = 96.0;
+    /**
+     * Ticks between sweeps. A contact's position is re-read by the gun every tick from the entity
+     * itself, so this is the cadence at which the sensor reconsiders WHICH thing to shoot at, not
+     * the cadence at which the mount is allowed to follow it.
+     */
+    @ConfigProperty(needsSync = true)
+    public int fireControlSensorScanIntervalTicks = 10;
+    /** How many contacts one sensor can hold. A bound on work, and on how much a readout can say. */
+    @ConfigProperty(needsSync = true)
+    public int fireControlSensorMaxTracks = 8;
+    /**
+     * FE per tick an ACTIVE sensor draws. An illuminating sensor is a machine that is running; a
+     * listening one costs nothing, which is what makes going quiet a genuine option rather than a
+     * penalty. A sensor that cannot pay falls back to listening rather than lying about its lock.
+     */
+    @ConfigProperty(needsSync = true)
+    public int fireControlSensorActiveEnergyPerTick = 40;
+    /**
+     * The lock quality an ACTIVE sensor holds a contact at inside its envelope. This is the
+     * passive/active gap: everything a listening sensor gets is bounded by what the target radiates,
+     * and this is what illuminating buys instead.
+     */
+    @ConfigProperty(needsSync = true)
+    public double fireControlSensorActiveLockQuality = 0.95;
+    /**
+     * How well a contact must be resolved before a gun will fire at it, 0..1. Below it a battery
+     * still tracks — knowing something is out there and being unable to hit it is a real state, and
+     * the reason to switch the sensor on.
+     */
+    @ConfigProperty(needsSync = true)
+    public double fireControlSensorLockQualityToFire = 0.25;
+    /**
+     * Whether acquisition is limited to hostile mobs and players. Off, a defence battery opens up on
+     * whatever wanders past, which is a legitimate way to run a perimeter and a poor default.
+     */
+    @ConfigProperty(needsSync = true)
+    public boolean fireControlSensorAcquireHostilesOnly = true;
+    /**
+     * How far gone a turret's own block must be, 0..1, before its traverse slows and then seizes.
+     * The ORDER of the two rungs is the mechanic and is not configurable; where they sit is balance.
+     *
+     * <p>Note what is deliberately absent: no flag disables this. Damage and wear advance the same
+     * stage counter, so a switch here would be a switch that makes ships unkillable — and the
+     * parts-wear flag gates wear where wear ACCRUES, never where a consequence is read.</p>
+     */
+    @ConfigProperty(needsSync = true)
+    public double turretDerateDamageFraction = 0.25;
+    @ConfigProperty(needsSync = true)
+    public double turretJamDamageFraction = 0.75;
     @ConfigProperty(needsSync = true)
     public double wearTankLeakChanceMax = 0.5;
     @ConfigProperty(needsSync = true)
@@ -650,14 +833,37 @@ public class ARConfiguration {
         arConfig.weightMaterialScale = config.get(ROCKET, "weightMaterialScale", 1.0, "Global multiplier applied to material-derived and fallback block weights (does not affect explicit overrides or rocket component parts). Raise to make hulls/structure mass matter more").getDouble();
         arConfig.fuelMassScale = config.get(ROCKET, "fuelMassScale", 1.0, "Global multiplier applied to the mass of fuel/oxidizer carried by a rocket. Raise to make full tanks weigh more relative to thrust").getDouble();
         arConfig.minLaunchTWR = config.get(ROCKET, "minLaunchTWR", 1.05, "Minimum thrust-to-weight ratio (thrust / wet weight) a rocket needs before it is allowed to launch. 1.0 means it can barely lift itself; values above 1.0 add a safety margin").getDouble();
-        arConfig.wearThrustPenaltyMax = config.get(ROCKET, "wearThrustPenaltyMax", 0.5, "Fraction of thrust a fully-worn rocket motor loses (partsWearSystem). 0.5 means a motor at max wear produces half thrust; 0 disables the thrust penalty (wear then only affects explosion chance)").getDouble();
+        arConfig.wearThrustPenaltyMax = config.get(ROCKET, "wearThrustPenaltyMax", 0.5, "Fraction of thrust a fully-worn rocket motor loses. 0.5 means a motor at max wear produces half thrust; 0 disables the thrust penalty entirely (condition then only affects the failure roll). Independent of partsWearSystem, which gates only whether wear ACCRUES").getDouble();
         arConfig.wearWarnProbability = config.get(ROCKET, "wearWarnProbability", 0.05, "Failure probability (0..1) at or above which the pilot is warned before launch that the rocket is worn. Also the threshold that blocks launch when wearCriticalBlocksLaunch is true").getDouble();
         arConfig.wearCriticalBlocksLaunch = config.get(ROCKET, "wearCriticalBlocksLaunch", false, "If true, a rocket whose failure probability is at/above wearWarnProbability is refused launch (no explosion). If false, the pilot is warned but may still launch and risk the stochastic explosion").getBoolean();
         arConfig.serviceStationStandaloneRepairMultiplier = config.get(ROCKET, "serviceStationStandaloneRepairMultiplier", 3.0, "Resource cost multiplier when the service station repairs a worn part WITHOUT a linked PrecisionAssembler (consumes the repair recipe's non-part ingredients times this factor). The assembler-backed path stays at 1x").getDouble();
+        arConfig.repairCostPerStageFraction = config.get(ROCKET, "repairCostPerStageFraction", 1.0, "Share of a block's own crafting recipe charged for a FULL hand repair with the welder, spread evenly over its damage stages (1.0 = repairing a block from its worst stage costs about what crafting it costs). Ingredient counts round up, so no stage is ever free").getDouble();
+        arConfig.repairWelderEnergyPerStage = config.get(ROCKET, "repairWelderEnergyPerStage", 2000, "Forge Energy the repair welder spends per stage of damage removed").getInt();
+        arConfig.repairWelderCapacity = config.get(ROCKET, "repairWelderCapacity", 100000, "Forge Energy the repair welder holds when fully charged").getInt();
         arConfig.wearTankLeakChanceMax = config.get(ROCKET, "wearTankLeakChanceMax", 0.5, "Chance (0..1) that a fully-worn fuel tank carrying fuel/oxidizer leaks at launch. Scaled by the tank's wear stage. A leak both bleeds fuel and adds to the launch failure (explosion) probability").getDouble();
         arConfig.wearTankLeakFuelLoss = config.get(ROCKET, "wearTankLeakFuelLoss", 0.25, "Fraction of a fuel type's loaded fuel lost when a worn tank of that type leaks at launch").getDouble();
         arConfig.wearSeatBlockStageFraction = config.get(ROCKET, "wearSeatBlockStageFraction", 0.7, "Wear fraction (0..1 of max stage) at or above which a worn seat blocks a CREWED launch. Uncrewed/automated rockets ignore seat wear").getDouble();
-        arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enable rocket part wear and exploding chance.").getBoolean();
+        arConfig.enableWeapons = config.get(WEAPONS, "enableWeapons", true, "Whether combat exists on this server: whether guns fire (thrown rounds and held beams alike), whether sensors acquire targets, and whether weapon fire damages anything. Safe to switch off and back on again on a live world - guns keep their builds, buffers and targets, damage already done stays on the blocks that carry it, repair keeps working, and shields are unaffected. The only thing ending is the rounds still in the air, which would otherwise sit in the save waiting to resume. A gun with combat off reports itself disabled rather than silently doing nothing").getBoolean();
+        arConfig.shotReflectionSpeedFloor = config.get(WEAPONS, "shotReflectionSpeedFloor", 0.05, "Speed in blocks per tick below which a shot deflected by a shield is ended at the shell instead of continuing. Prevents near-motionless rounds loitering against a shield", 0.0, Double.MAX_VALUE).getDouble();
+        arConfig.shotPenetrationSpeedFloor = config.get(WEAPONS, "shotPenetrationSpeedFloor", 0.05, "Speed in blocks per tick below which a round boring through a hull is treated as having come to rest inside it. Penetration costs a round its speed, and without a floor a spent one creeps forward forever", 0.0, Double.MAX_VALUE).getDouble();
+        arConfig.shotBodyRadiusCap = config.get(WEAPONS, "shotBodyRadiusCap", 2.0, "The widest a shot's body is treated as when it sweeps its way through blocks, in blocks. A body sweeps a cylinder rather than a line and the work one step does grows with the square of its width, so this bounds what an absurd calibre can cost the server. The declared cross-section still prices the shot; only the geometry is capped", 0.0, 8.0).getDouble();
+        arConfig.ricochetIncidenceDegrees = config.get(WEAPONS, "ricochetIncidenceDegrees", 65.0, "How glancing a hit must be before a solid round skips off METAL rather than digging in, in degrees from the surface normal: 0 is square-on, 90 a pure graze. Only metal deflects, so a round never skips off a plank wall. 90 disables ricochet", 0.0, 90.0).getDouble();
+        arConfig.ricochetRestitution = config.get(WEAPONS, "ricochetRestitution", 0.75, "How much of its speed a ricocheting round keeps. Below 1 a bounce costs something, which is what stops a round skipping between two plates forever", 0.0, 1.0).getDouble();
+        arConfig.ablationResistanceFactor = config.get(WEAPONS, "ablationResistanceFactor", 20.0, "How much dearer a block is to boil away than to push through, when nothing has written it its own ablation row. Both are energy per unit volume removed; they are nowhere near the same magnitude, which is why a laser buys precision rather than digging power. 1.0 makes a beam dig exactly like a slug", 0.01, 1000.0).getDouble();
+        arConfig.beamAblationIntensityThreshold = config.get(WEAPONS, "beamAblationIntensityThreshold", 50000.0, "Energy per unit of a beam's cross-section below which it removes nothing and its energy is absorbed as heat instead of being carried onward. The default sits above the affordability line of metal (order 38500 for an iron block), so a small emitter does nothing to a metal hull however long it is held. 0 disables it, and a sub-threshold beam then passes clean through the plate with everything it arrived with", 0.0, Double.MAX_VALUE).getDouble();
+        arConfig.maxShotsPerWorld = config.get(WEAPONS, "maxShotsPerWorld", 256, "How many shots one world may have in flight at once. Further fire is refused until some land; nothing already in flight is ever dropped to make room", 1, Integer.MAX_VALUE).getInt();
+        arConfig.shotVisibilityRadius = config.get(WEAPONS, "shotVisibilityRadius", 256, "How near a player the path of a fired round, or the lit length of a held beam, must pass before that player is told about it and can see it drawn, in blocks. 0 disables weapon-fire replication entirely — the mechanics still work, nothing is drawn", 0, Integer.MAX_VALUE).getInt();
+        arConfig.enableFireControlSensor = config.get(WEAPONS, "enableFireControlSensor", true, "Whether fire-control sensors search for targets. Off, a sensor acquires nothing, publishes nothing and draws no power: batteries are pointed by hand, as they were before sensors existed").getBoolean();
+        arConfig.fireControlSensorRadius = config.get(WEAPONS, "fireControlSensorRadius", 96.0, "How far a fire-control sensor can look, in blocks. Its envelope — a target inside it may still be too poorly resolved to shoot at", 1.0, 1024.0).getDouble();
+        arConfig.fireControlSensorScanIntervalTicks = config.get(WEAPONS, "fireControlSensorScanIntervalTicks", 10, "Ticks between sweeps. The cadence at which a sensor reconsiders which contact to hand its battery, not the rate at which the guns follow it", 1, 200).getInt();
+        arConfig.fireControlSensorMaxTracks = config.get(WEAPONS, "fireControlSensorMaxTracks", 8, "How many contacts one sensor holds at once", 1, 64).getInt();
+        arConfig.fireControlSensorActiveEnergyPerTick = config.get(WEAPONS, "fireControlSensorActiveEnergyPerTick", 40, "FE per tick an actively illuminating sensor draws. Passive listening is free; a sensor that cannot pay falls back to listening", 0, Integer.MAX_VALUE).getInt();
+        arConfig.fireControlSensorActiveLockQuality = config.get(WEAPONS, "fireControlSensorActiveLockQuality", 0.95, "Lock quality an active sensor holds a contact at inside its envelope, 0..1 — what illuminating buys over listening", 0.0, 1.0).getDouble();
+        arConfig.fireControlSensorLockQualityToFire = config.get(WEAPONS, "fireControlSensorLockQualityToFire", 0.25, "How well a contact must be resolved, 0..1, before a gun fires at it. Below it the battery tracks without shooting", 0.0, 1.0).getDouble();
+        arConfig.fireControlSensorAcquireHostilesOnly = config.get(WEAPONS, "fireControlSensorAcquireHostilesOnly", true, "Whether acquisition is limited to hostile mobs and players. Off, a battery engages whatever wanders into range").getBoolean();
+        arConfig.turretDerateDamageFraction = config.get(WEAPONS, "turretDerateDamageFraction", 0.25, "How far gone a turret's own block must be, 0..1, before its traverse slows down. The order of the rungs is the mechanic; where they sit is balance", 0.0, 1.0).getDouble();
+        arConfig.turretJamDamageFraction = config.get(WEAPONS, "turretJamDamageFraction", 0.75, "How far gone a turret's own block must be, 0..1, before its traverse seizes entirely. A seized mount still fires down the bearing it stopped at", 0.0, 1.0).getDouble();
+        arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Whether rocket parts ACCRUE wear: whether a launch advances a seat, tank or motor towards its next stage. It does not gate what a worn part then DOES - a rocket shot up on the pad has to fly like a rocket shot up on the pad whatever this says, because battle damage and a long career put stages on the same axis. Off means a save stops getting worse, not that the damage already on it stops mattering: the launch warning, the critical-wear refusal, the failure roll and the tank leaks all still apply").getBoolean();
         arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Chance for each part to gain wear on launch.").getDouble();
 
         //Ore configuration

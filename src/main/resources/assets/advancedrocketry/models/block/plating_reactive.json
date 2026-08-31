@@ -1,0 +1,21 @@
+{
+    "parent": "block/block",
+    "textures": {
+        "all": "advancedrocketry:blocks/blastbrick",
+        "particle": "advancedrocketry:blocks/blastbrick"
+    },
+    "elements": [
+        {
+            "from": [0, 0, 0],
+            "to": [16, 2, 16],
+            "faces": {
+                "down":  {"texture": "#all", "cullface": "down"},
+                "up":    {"texture": "#all"},
+                "north": {"texture": "#all"},
+                "south": {"texture": "#all"},
+                "west":  {"texture": "#all"},
+                "east":  {"texture": "#all"}
+            }
+        }
+    ]
+}

@@ -42,7 +42,9 @@ public class GuiFieldGenerator extends GuiAffsBase {
         }
 
         if (button.id == 0 || button.id == 1) {
-            int radius = tile.getRadius();
+            // The SETTING, not what a damaged emitter currently manages to project: stepping from the
+            // shrunken radius would quietly re-declare the field smaller every time it was nudged.
+            int radius = tile.getDeclaredRadius();
             radius += button.id == 0 ? -1 : 1;
             AdvancedForceFieldSystem.NETWORK.sendToServer(new PacketSetFieldRadius(tile.getPos(), radius));
         }
@@ -57,7 +59,11 @@ public class GuiFieldGenerator extends GuiAffsBase {
     protected void drawGuiContainerForegroundLayer(int mouseX, int mouseY) {
         drawTitle(I18n.format("tile.field_generator.name"));
         drawStat(I18n.format("gui.affs.access_code"), tile.getAccessCode(), rowY(0));
-        drawStat(I18n.format("gui.affs.radius"), tile.getRadius(), rowY(2));
+        // Projected / declared while damage is holding the field in, so the panel says which of the two
+        // numbers the bill below is charging for; one number while they agree.
+        drawStat(I18n.format("gui.affs.radius"), tile.getRadius() == tile.getDeclaredRadius()
+                ? String.valueOf(tile.getDeclaredRadius())
+                : tile.getRadius() + " / " + tile.getDeclaredRadius(), rowY(2));
         drawStat(I18n.format("gui.affs.shield_accumulator"), tile.getEnergyStored() + " / " + tile.getMaxEnergyStored(), rowY(5));
         drawStat(I18n.format("gui.affs.tier"), (tile.getTier() + 1) + " / 4", rowY(6));
         drawStat(I18n.format("gui.affs.impact_efficiency"), String.format(Locale.ROOT, "%.2fx", tile.getImpactEfficiencyMultiplier()), rowY(7));

@@ -297,6 +297,21 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * What the CLIENT's tile entity at these coordinates holds, as its own update tag.
+     *
+     * <p>The honest observable for "did a server-side change reach the client": a renderer's output
+     * cannot be read from a test, but the state it draws from can. Answers {@code present},
+     * {@code tile} (class name) and {@code nbt} (the update tag, stringified).</p>
+     */
+    public JsonObject tileNbt(int x, int y, int z) throws IOException {
+        JsonObject command = command("tile_nbt");
+        command.addProperty("x", x);
+        command.addProperty("y", y);
+        command.addProperty("z", z);
+        return assertOk(execute(command));
+    }
+
+    /**
      * Call a static {@code void}/value method with {@code int} parameters on the CLIENT thread.
      *
      * <p>The mouse counterpart of {@link #setKey}: a bot has no window, so it cannot feed LWJGL's

@@ -62,6 +62,9 @@ public class LangKeyCrossReferenceTest {
             Pattern.compile("translateToLocal\\s*\\(\\s*\"([^\"]+)\""),
             Pattern.compile("new\\s+TextComponentTranslation\\s*\\(\\s*\"([^\"]+)\""),
             Pattern.compile("\\btr\\s*\\(\\s*\"([^\"]+)\""),
+            // AR's readout helper: getLocalizedString plus String.format, so the key reaches the
+            // catalogue through one more hop and would otherwise be invisible here.
+            Pattern.compile("\\breadoutText\\s*\\(\\s*\"([^\"]+)\""),
     };
 
     /**

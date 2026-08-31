@@ -156,6 +156,19 @@ import java.util.Map.Entry;
 @Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = Constants.DEPENDENCIES)
 public class AdvancedRocketry {
 
+    /**
+     * How much absorbed energy a mirror's metal film sheds before it melts. Shared by every tier: a
+     * film is a film, and what separates aluminium from gold is how much of a hit it lets into that
+     * film rather than how much the film can take.
+     */
+    private static final int MIRROR_FILM_DISSIPATION = 4000;
+    /**
+     * How much of an impact one PLATE of reactive armour swallows; a full block takes twice. Set so
+     * that ordinary fire is eaten whole and a railgun-class round is not — which is the ordering the
+     * mechanic exists to produce, not a number anybody should read as sacred.
+     */
+    private static final int REACTIVE_PLATE_CAPACITY = 10000;
+
     private static final String PLANET = "Planet";
     public static final RecipeHandler machineRecipes = new RecipeHandler();
     public static final Logger logger = LogManager.getLogger(Constants.modId);
@@ -455,6 +468,12 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TilePrecisionLaserEtcher.class, new ResourceLocation(Constants.modId, "ARPrecisionLaserEtcher"));
         GameRegistry.registerTileEntity(TileSolarArray.class, new ResourceLocation(Constants.modId, "ARSolarArray"));
         GameRegistry.registerTileEntity(TileOrbitalRegistry.class, new ResourceLocation(Constants.modId, "orbitalRegistry"));
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.weapon.TileTurret.class,
+                new ResourceLocation(Constants.modId, "ARturret"));
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole.class,
+                new ResourceLocation(Constants.modId, "ARweaponConsole"));
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor.class,
+                new ResourceLocation(Constants.modId, "ARfireControlSensor"));
 
         if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().enableGravityController)
             GameRegistry.registerTileEntity(TileAreaGravityController.class, "ARGravityMachine");
@@ -538,6 +557,7 @@ public class AdvancedRocketry {
         //TODO: move registration in the case we have more than one chip type
         AdvancedRocketryItems.itemDataUnit = new ItemData().setUnlocalizedName("advancedrocketry:dataUnit").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemMemoryCrystal = new zmaster587.advancedRocketry.item.ItemMemoryCrystal().setUnlocalizedName("advancedrocketry:memoryCrystal").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryItems.itemRepairWelder = new zmaster587.advancedRocketry.item.ItemRepairWelder().setUnlocalizedName("advancedrocketry:repairWelder").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemOreScanner = new ItemOreScanner().setUnlocalizedName("OreScanner").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemQuartzCrucible = new ItemBlock(AdvancedRocketryBlocks.blockQuartzCrucible).setUnlocalizedName("qcrucible").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemSatellite = new ItemSatellite().setUnlocalizedName("satellite").setCreativeTab(tabAdvRocketry).setMaxStackSize(1);
@@ -595,6 +615,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemSpaceStationChip.setRegistryName("spaceStationChip"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemDataUnit.setRegistryName("dataUnit"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemMemoryCrystal.setRegistryName("memoryCrystal"));
+        LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemRepairWelder.setRegistryName("repairWelder"));
         //Satellite bits
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemSatellite.setRegistryName("satellite"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemSatellitePowerSource.setRegistryName("satellitePowerSource"));
@@ -655,6 +676,20 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockBlastBrick = new BlockMultiBlockComponentVisible(Material.ROCK).setCreativeTab(tabAdvRocketry).setUnlocalizedName("blastBrick").setHardness(3F).setResistance(15F);
         AdvancedRocketryBlocks.blockStructureTower = new BlockAlphaTexture(Material.IRON).setUnlocalizedName("structuretower").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockLens = new BlockLens().setUnlocalizedName("lens").setCreativeTab(tabAdvRocketry).setHardness(0.3f);
+        // The tiers differ ONLY in reflectance, deliberately: the film they share is the same
+        // thickness, so what a better mirror buys is that less of each hit stays in it.
+        AdvancedRocketryBlocks.blockMirrorPlatingAluminium = new BlockMirrorPlating(0.90D, MIRROR_FILM_DISSIPATION)
+                .setUnlocalizedName("mirrorPlatingAluminium").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockMirrorPlatingSilver = new BlockMirrorPlating(0.96D, MIRROR_FILM_DISSIPATION)
+                .setUnlocalizedName("mirrorPlatingSilver").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockMirrorPlatingGold = new BlockMirrorPlating(0.97D, MIRROR_FILM_DISSIPATION)
+                .setUnlocalizedName("mirrorPlatingGold").setCreativeTab(tabAdvRocketry);
+        // Heavy plating swallows twice what light does; nothing else separates the two, because what a
+        // body meets is the voxel and not the shape inside it.
+        AdvancedRocketryBlocks.blockReactivePlate = new BlockReactivePlating(REACTIVE_PLATE_CAPACITY)
+                .setUnlocalizedName("reactivePlate").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockReactiveBlock = new BlockReactivePlating(REACTIVE_PLATE_CAPACITY * 2)
+                .setUnlocalizedName("reactiveBlock").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryBlocks.blockSolarPanel = new Block(Material.IRON).setUnlocalizedName("solarPanel").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockSolarArrayPanel = new BlockMultiBlockComponentVisibleAlphaTexture(Material.IRON).setUnlocalizedName("solararraypanel").setCreativeTab(tabAdvRocketry).setHardness(1).setResistance(1f);
         AdvancedRocketryBlocks.blockQuartzCrucible = new BlockQuartzCrucible().setUnlocalizedName("qcrucible").setCreativeTab(tabAdvRocketry);
@@ -724,6 +759,43 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockOxidizerFuelTank = new BlockOxidizerFuelTank(Material.IRON).setUnlocalizedName("oxidizerfueltank").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockNuclearFuelTank = new BlockNuclearFuelTank(Material.IRON).setUnlocalizedName("nuclearfueltank").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockNuclearCore = new BlockNuclearCore(Material.IRON).setUnlocalizedName("nuclearcore").setCreativeTab(tabAdvRocketry).setHardness(2f);
+        // The gun family. Each part states what it is worth and nothing else; the numbers a built
+        // gun ends up with are the sum, which is why a longer barrel is a real decision rather than
+        // a tier. A part contributes only when it is placed against a gun, so these are ordinary
+        // blocks with no wiring of their own.
+        AdvancedRocketryBlocks.blockTurret = new zmaster587.advancedRocketry.block.weapon.BlockTurret()
+                .setUnlocalizedName("turret").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockGunBarrel = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
+                builder -> builder.addMuzzleSpeed(0.9D).addImpactEnergy(8).addSpreadDegrees(-0.8D)
+                        .addLifetimeTicks(20).addEnergyPerShot(50).addHeatPerShot(1))
+                .setUnlocalizedName("gunBarrel").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockGunAmmoFeed = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
+                builder -> builder.speedUpFireIntervalBy(3).addImpactEnergy(6).addEnergyPerShot(75)
+                        .addHeatPerShot(2)
+                        .declareInput(zmaster587.advancedRocketry.api.weapon.GunInput.FORGE_ENERGY))
+                .setUnlocalizedName("gunAmmoFeed").setCreativeTab(tabAdvRocketry);
+        // The one part that makes a gun a BEAM rather than a thrower. Power per TICK, so a bigger
+        // laser is a laser with more emitters rather than a bigger number written beside one; the
+        // declared kind is what makes it priced against the ablation column and absorbed whole by a
+        // shell instead of being thrown back off it.
+        AdvancedRocketryBlocks.blockGunBeamEmitter = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
+                builder -> builder.addBeamPowerPerTick(4_000).setKind(
+                        zmaster587.advancedRocketry.api.damage.ImpactKind.BEAM)
+                        .addHeatPerShot(1).addHeatCapacity(20)
+                        .declareInput(zmaster587.advancedRocketry.api.weapon.GunInput.FORGE_ENERGY))
+                .setUnlocalizedName("gunBeamEmitter").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockGunCooling = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
+                builder -> builder.addHeatCapacity(40).addCoolingPerTick(2).addTraverseDegreesPerTick(0.5D))
+                .setUnlocalizedName("gunCooling").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryBlocks.blockWeaponConsole = new BlockTile(zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole.class,
+                GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("weaponConsole")
+                .setCreativeTab(tabAdvRocketry).setHardness(3f);
+        // The battery's eyes. A node of the same network the guns are on, so a sensor placed against
+        // a gun feeds it with no wiring, and one placed alone feeds nothing - which is honest: there
+        // is nothing for it to hand a contact to.
+        AdvancedRocketryBlocks.blockFireControlSensor = new BlockTile(zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor.class,
+                GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("fireControlSensor")
+                .setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockGuidanceComputer = new BlockTile(TileGuidanceComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("guidanceComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockAdvancedFlightComputer = new zmaster587.advancedRocketry.block.BlockAdvancedFlightComputer(GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("advancedFlightComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         // MODULARNOINV, not MODULAR: the console needs the whole panel for its own controls, and a
@@ -843,6 +915,11 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockBlastBrick.setRegistryName("blastbrick"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockStructureTower.setRegistryName("structureTower"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLens.setRegistryName("blockLens"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMirrorPlatingAluminium.setRegistryName("mirrorPlatingAluminium"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMirrorPlatingSilver.setRegistryName("mirrorPlatingSilver"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMirrorPlatingGold.setRegistryName("mirrorPlatingGold"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockReactivePlate.setRegistryName("reactivePlate"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockReactiveBlock.setRegistryName("reactiveBlock"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSolarPanel.setRegistryName("solarPanel"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSolarArrayPanel.setRegistryName("solararraypanel"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockQuartzCrucible.setRegistryName("quartzcrucible"), null, false);
@@ -914,6 +991,13 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxidizerFuelTank.setRegistryName("oxidizerfueltank"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNuclearFuelTank.setRegistryName("nuclearfueltank"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNuclearCore.setRegistryName("nuclearcore"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTurret.setRegistryName("turret"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockWeaponConsole.setRegistryName("weaponConsole"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockFireControlSensor.setRegistryName("fireControlSensor"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunBarrel.setRegistryName("gunBarrel"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunAmmoFeed.setRegistryName("gunAmmoFeed"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunBeamEmitter.setRegistryName("gunBeamEmitter"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunCooling.setRegistryName("gunCooling"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGuidanceComputer.setRegistryName("guidanceComputer"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockAdvancedFlightComputer.setRegistryName("advancedFlightComputer"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNavigationComputer.setRegistryName("navigationComputer"));
@@ -1132,6 +1216,7 @@ public class AdvancedRocketry {
 
         CapabilitySpaceArmor.register();
         zmaster587.advancedRocketry.api.capability.CapabilityWear.register();
+        zmaster587.advancedRocketry.api.capability.CapabilityDamageAware.register();
         //Need to raise the Max Entity Radius to allow player interaction with rockets
         World.MAX_ENTITY_RADIUS = 20;
 
@@ -1188,6 +1273,8 @@ public class AdvancedRocketry {
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.weather.PlanetWeatherEventHandler());
         // Acid rain damage on planets flagged acidicRain
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.event.AcidRainHandler());
+        // Forget a block's damage record when a player breaks or replaces that block
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.damage.DamageInvalidationHandler());
 
         WirelessDataTickHandler wirelessTickHandler = new WirelessDataTickHandler();
         MinecraftForge.EVENT_BUS.register(wirelessTickHandler);

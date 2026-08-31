@@ -581,6 +581,19 @@ final class VSBridge {
     }
 
     /**
+     * Whether {@code pos} lies in the region Valkyrien Skies reserves for ship blocks.
+     *
+     * <p>Pure arithmetic on the chunk allocator's own constants, so it answers correctly whether or
+     * not VS is running — which is the case that matters. A world that once had ships still has
+     * their blocks out there, and their tiles still tick; code that asks "am I on a ship" and gets
+     * "no" because VS is absent must not conclude "then I am in the ordinary world".</p>
+     */
+    static boolean isBlockInShipyard(BlockPos pos) {
+        return pos != null && org.valkyrienskies.mod.common.ships.chunk_claims.ShipChunkAllocator
+                .isBlockInShipyard(pos);
+    }
+
+    /**
      * The uuid of the registered ship whose SHIPYARD claim owns the blocks at world point
      * {@code (x,y,z)}... which is not a question the claim can answer, so this asks the one that is
      * both answerable and right for a PARKED ship: which registered ship's transform sits within
@@ -1255,6 +1268,27 @@ final class VSBridge {
         } catch (Throwable ignored) {
         }
         return ids;
+    }
+
+    /**
+     * Every loaded ship in {@code world} as uuid string → its grown world AABB. The SEGMENT-shaped
+     * sibling of {@link #shipIdsAt}: a body that moves a long way in one tick has no single point to
+     * ask about, and asking about its endpoints would miss every ship it passed through in between.
+     * Boxes overlap and overstate, exactly as they do for the point query, so a caller still has to
+     * confirm in each candidate's own frame.
+     */
+    static java.util.Map<String, AxisAlignedBB> loadedShipWorldBounds(World world) {
+        java.util.Map<String, AxisAlignedBB> out = new java.util.LinkedHashMap<>();
+        try {
+            for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+                AxisAlignedBB bb = physo.getShipBB();
+                if (bb != null) {
+                    out.put(physo.getShipData().getUuid().toString(), bb.grow(ABOARD_MARGIN));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
     }
 
     /** World point -> ship-frame point, for the ship {@code shipId}. Null when it is not loaded. */
