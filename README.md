@@ -1,3 +1,26 @@
+> ## ➡️ Development has moved to [StannisMod/Stellurgy](https://github.com/StannisMod/Stellurgy)
+>
+> **This repository is no longer where Stellurgy is developed.** As of **2026-08-31** the project
+> continues in its own standalone repository: **https://github.com/StannisMod/Stellurgy**
+>
+> This one keeps the **Advanced Rocketry line**: the full history up to the split, every issue and
+> pull request number ever opened here, and the fork relationship to
+> [Advanced-Rocketry/AdvancedRocketry](https://github.com/Advanced-Rocketry/AdvancedRocketry) and to
+> the forks descending from it. Nothing was deleted and nothing was rewritten.
+>
+> **Why:** GitHub renders a fork's parent by its *current* name. While this repository was called
+> "Stellurgy", every fork of it advertised that it had been forked from Stellurgy — which reverses
+> the actual order of events, since those forks were taken from here when it was still Advanced
+> Rocketry. Separating the two lets each name mean what it says.
+>
+> - **New issues, pull requests and development** → [StannisMod/Stellurgy](https://github.com/StannisMod/Stellurgy)
+> - **Older references** (`#20`–`#27`, and anything from before the split) live here and are **not**
+>   redirected.
+>
+> The text below describes the project as of the split and is kept for context.
+
+---
+
 # Stellurgy
 
 **Stellurgy is still in development. There is no public build yet.**
